@@ -1,0 +1,744 @@
+#!/usr/bin/env python
+
+import errno,os,random,re,select,socket,string,sys,time
+
+dbg=1
+
+def Ws(s):
+    sys.stdout.write(s)
+    sys.stdout.flush()
+
+def Es(s):
+    sys.stderr.write(s)
+    sys.stderr.flush()
+    
+class ifconfig:
+    """
+    ifconfig().get_my_addrs() will return a list of
+    IP addresses of this host
+    """
+    def __init__(self):
+        self.v4ip_pat_str = "(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})"
+        self.v4ip_p = re.compile(self.v4ip_pat_str)
+        self.ifconfig_list = [ "LANG=C /sbin/ifconfig -a 2> /dev/null" ]
+
+    def parse_ip_addr(self, addr):
+        """
+        '12.34.56.78' --> (12,34,56,78)
+        """
+        m = re.match(self.v4ip_pat_str, addr)
+        if m is None: return None
+        A,B,C,D = m.group(1,2,3,4)
+        try:
+            return string.atoi(A),string.atoi(B),string.atoi(C),string.atoi(D)
+        except ValueError,e:
+            return None
+
+    def is_global_ip_addr(self, addr):
+        a,b,c,d = self.parse_ip_addr(addr)
+        if a == 192 and b == 168: return 0
+        if a == 172 and 16 <= b < 32: return 0
+        if a == 10: return 0
+        if a == 127: return 0
+        return 1
+
+    def is_local_ip_addr(self, addr):
+        if addr == "127.0.0.1":
+            return 1
+        else:
+            return 0
+
+    def is_private_ip_addr(self, addr):
+        a,b,c,d = self.parse_ip_addr(addr)
+        if a == 192 and b == 168: return 1
+        if a == 172 and 16 <= b < 32: return 1
+        if a == 10: return 1
+        return 0
+
+    def is_global_ip_addr(self, addr):
+        if self.is_local_ip_addr(addr): return 0
+        if self.is_private_ip_addr(addr): return 0
+        return 1
+
+    def in_same_private_subnet(self, P, Q):
+        """
+        true when (1) both P and Q are private, and (2) they belong
+        to the same subnets.
+        """
+        if self.is_private_ip_addr(P) == 0: return 0
+        if self.is_private_ip_addr(Q) == 0: return 0
+        a,b,c,d = self.parse_ip_addr(P)
+        A,B,C,D = self.parse_ip_addr(Q)
+        if a == 192 and b == 168     and A == 192 and B == 168: return 1
+        if a == 172 and 16 <= b < 32 and A == 172 and 16 <= B < 32: return 1
+        if a == 10 and A == 10: return 1
+        return 0
+
+    def guess_connectable(self, P, Q):
+        """
+        P : address, Q : endpoint name.
+        (e.g.,
+        P = '133.11.238.3',
+        Q = ('tcp', (('157.82.246.104', '192.168.1.254'), 59098))
+        )
+        """
+        # consider * -> private is allowed
+        # Qas is like ('157.82.246.104', '192.168.1.254')
+        proto, (Qas, Qp) = Q            
+        Qa = Qas[0]
+        if self.is_global_ip_addr(Qa): return 1
+        # consider global -> private is blocked
+        if self.is_global_ip_addr(P): return 0
+        if self.in_same_private_subnet(P, Qa): return 1
+        return 0
+
+    def get_my_addrs_by_ifconfig(self, hint=None):
+        patterns = [ re.compile("inet addr:([\d|\.]+)"),
+                     re.compile("inet ([\d|\.]+)") ]
+        addrs = []
+        for c in self.ifconfig_list:
+            r = os.popen(c)
+            # blocking=1
+            # pr = ioman.primitive_channel_fd(r.fileno(), 1)
+            # ifconfig_out = r.read()
+            if 0:
+                ifconfig_outs = []
+                while 1:
+                    l,err,msg = pr.read(1000)
+                    if l <= 0: break
+                    ifconfig_outs.append(msg)
+                ifconfig_out = string.join(ifconfig_outs, "")
+            ifconfig_out = r.read()
+            for p in patterns:
+                found = p.findall(ifconfig_out)
+                if len(found) > 0: break
+            for addr in found:
+                if self.parse_ip_addr(addr) is not None:
+                    addrs.append(addr)
+            # ??? we got:
+            # "close failed: [Errno 9] Bad file descriptor"
+            r.close()
+            # pr.close()
+            if len(addrs) > 0: return addrs
+        return []
+
+    def get_my_addrs_by_lookup(self, hint=None):
+        if hint is None:
+            hostname = socket.gethostname()
+        else:
+            hostname = hint
+        try:
+            can_name,aliases,ip_addrs = socket.gethostbyname_ex(hostname)
+        except socket.error,e:
+            return []
+        return ip_addrs
+        
+    def sort_addrs(self, ip_addrs):
+        """
+        1. remove duplicates.
+        2. remove loopback addrs (127.0.0.1).
+        3. sort IP addresses.
+           global addrs first
+        """
+        a = {}
+        for ip in ip_addrs:
+            a[ip] = 1
+        to_sort = []
+        for ip in a.keys():
+            if self.is_local_ip_addr(ip):
+                # exclude '127.0.0.1'
+                continue
+            elif self.is_private_ip_addr(ip):
+                # put addrs like '192.168.XX.XX' at the end
+                to_sort.append((1, len(to_sort), ip))
+            else:
+                # put global ip addrs first
+                to_sort.append((0, len(to_sort), ip))
+        to_sort.sort()
+        sorted_ip_addrs = []
+        for _,_,ip in to_sort:
+            sorted_ip_addrs.append(ip)
+        return sorted_ip_addrs
+
+    def get_my_addrs(self, hint=None):
+        """
+        get my ip address the clients are told to connect to.
+        """
+        # first by ifconfig
+        A = self.get_my_addrs_by_ifconfig(hint=hint)
+        if len(A) > 0: return self.sort_addrs(A)
+        # second by looking up my hostname
+        A = self.get_my_addrs_by_lookup(hint=hint)
+        if len(A) > 0: return self.sort_addrs(A)
+        return []
+
+    
+
+class ring_connector:
+    def up(self, s):
+        os.write(3, s)
+
+    def getline(self):
+        return self.master_fp.readline()
+
+    def decide_src_idx(self, src_spec, dst_spec):
+        """
+        set:
+
+        self.src_idx  : exec_idx of the src proc
+        self.src_file : src filename
+        self.src_sz   : src file size
+        
+        """
+        # "host:file" or "file" ?
+        src_host_and_file = string.split(src_spec, ":", 1)
+        if len(src_host_and_file) == 1:
+            # "file"
+            src_host_regexp = ".*"
+            [ src_file ] = src_host_and_file
+        else:
+            # "host:file"
+            [ src_host_regexp, src_file ] = src_host_and_file
+        # do I have the file?
+        pat = None
+        try:
+            pat = re.compile(src_host_regexp)
+        except Exception,e:
+            if self.exec_idx == 0:
+                Es("bcp: wrong src_host_regexp %s %s\n" \
+                   % (src_host_regexp, e,args))
+        if pat is None:
+            my_sz = -1
+        elif os.path.isfile(src_file) and \
+                 pat.match(self.gxp_host):
+            # yes
+            my_sz = os.path.getsize(src_file)
+        else:
+            # no
+            my_sz = -1
+        # announce if I have the file
+        self.up("%d %d %d\n" % (self.exec_idx, my_sz,
+                                random.randint(0, 100000000)))
+        # calc the maximum size to determine the src
+        max_sz = -1
+        max_idx = -1
+        max_rnd = -1
+        for i in range(self.n_procs):
+            [ idx,sz,rnd ] = string.split(self.getline())
+            idx = int(idx)
+            sz = long(sz)
+            rnd = int(rnd)
+            if sz > max_sz:
+                max_sz = sz
+                max_idx = idx
+                max_rnd = rnd
+        self.src_idx = max_idx
+        self.src_file = src_file
+        self.src_sz = max_sz
+        self.rnd = max_rnd
+        
+        if self.exec_idx == 0:
+            if dbg>=2:
+                Es("src_idx = %d\n" % self.src_idx)
+                Es("src_file = %s\n" % self.src_file)
+                Es("src_sz = %s\n" % self.src_sz)
+        if self.src_idx == -1:
+            if self.exec_idx == 0:
+                Es("bcp: no host has %s\n" % src_file)
+            return -1
+
+        # now src is decided. 
+        # prepare for creating a random file on the destination dir
+
+        dst_host_and_file = string.split(dst_spec, ":", 1)
+        if len(dst_host_and_file) == 1:
+            # "file"
+            [ dst_file ] = dst_host_and_file
+        else:
+            # "host:file"
+            [ _, dst_file ] = dst_host_and_file
+        # check if dst_file is directory or a file and
+        # determine the true destination directory and
+        # the true true destination file.
+        #             dir      file
+        # /tmp     -> /tmp     /tmp/src_file
+        # /tmp/foo -> /tmp/foo /tmp/foo/src_file
+        #             (if /tmp/foo is a dir)
+        # /tmp/foo -> /tmp and /tmp/foo
+        #             (if /tmp/foo is a file)
+        if os.path.isdir(dst_file):
+            # directory
+            src_base = os.path.basename(self.src_file)
+            dst_dir = dst_file
+            dst_file = os.path.join(dst_file, src_base)
+        else:
+            # file
+            dst_dir = os.path.dirname(dst_file)
+            dst_file = dst_file
+        self.dst_file = dst_file
+        self.dst_dir = dst_dir
+        if self.exec_idx == 0:
+            if dbg>=2:
+                Es("dst_file = %s\n" % dst_file)
+                Es("dst_dir = %s\n" % dst_dir)
+
+        self.dst_lock = os.path.join(dst_dir,
+                                     ("bcpdsttmp%08d" % self.rnd))
+        if self.src_idx == self.exec_idx:
+            # I am the sender. I create the rnd file
+            # x = self.create_rnd_file(self.src_rnd)
+            x = self.create_lock_file(self.dst_lock)
+            assert x == self.dst_lock, self.dst_lock
+            self.up("CREATED DST_LOCK\n")
+        msg = self.getline()
+        assert msg == "CREATED DST_LOCK\n"
+            
+        return 0
+
+    def open_server_socket(self):
+        """
+        open server (listen) socket
+
+        set:
+        self.ss
+        self.host
+        self.port
+        """
+        ss = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        ss.bind(("", 0))
+        ss.listen(10)
+        self.ss = ss
+        self.host = socket.gethostname()
+        self.ip_addr = ifconfig().get_my_addrs()[0]
+        _,self.port = ss.getsockname()
+
+    def create_lock_file(self, name):
+        # check if I can CREATE a file under dst_dir.
+        # this effectively elects a single process on
+        # each host (more precisely on each shared
+        # directory)
+        # wfd = -1
+        if dbg>=2:
+            Es("%s : attempt to create %s\n" % (self.gxp_host, name))
+        try:
+            # wfd = os.open(name, os.O_CREAT|os.O_EXCL)
+            os.mkdir(name)
+        except OSError,e:
+            if e.args[0] == errno.EEXIST:
+                if dbg>=2:
+                    Es("%s : %s exists %s\n" % \
+                       (self.gxp_host, name, e.args))
+                return None
+            elif e.args[0] == errno.EACCES:
+                Es("%s : %s unwritable %s\n" % \
+                   (self.gxp_host, name, e.args))
+                return None
+            elif e.args[0] == errno.ENOENT:
+                Es("%s : %s does not exist %s\n" % \
+                   (self.gxp_host, os.path.dirname(name), e.args))
+                return None
+            else:
+                raise
+        if dbg>=2:
+            Es("%s : created %s\n" % (self.gxp_host, name))
+        # os.close(wfd)
+        return name
+        
+    def decide_roles(self, src_spec, dst_spec):
+        """
+        determine who should receive files
+
+        set:
+        self.players : dictionary idx -> (host,port,role)
+
+        """
+        if self.exec_idx == self.src_idx:
+            dst_lock = self.dst_lock
+            assert dst_lock
+        else:
+            dst_lock = self.create_lock_file(self.dst_lock)
+
+        # announce if I am a receiver or not.
+        # if so, open a socket and announce my hostname/port
+        if self.exec_idx == self.src_idx:
+            if os.path.exists(self.dst_file) \
+               and os.path.samefile(self.src_file, self.dst_file):
+                self.role = "SX"        # send not receive
+            else:
+                self.role = "SR"        # send and receive
+        else:
+            if dst_lock is None:
+                self.role = "XX"        # 
+            else:
+                self.role = "XR"        # receive
+        if self.role == "XX":
+            self.host = socket.gethostname()
+            self.ip_addr = None
+            self.port = -1
+        else:
+            self.open_server_socket()
+        self.up("%s %d %s %s %d\n" \
+                % (self.role, self.exec_idx, self.host,
+                   self.ip_addr, self.port))
+
+        # receive announcements
+        players = {}
+        n_receivers = 0
+        n_senders = 0
+        src_host = None
+        for i in range(self.n_procs):
+            [ role,idx,host,ip,port ] = string.split(self.getline())
+            idx = int(idx)
+            port = int(port)
+            if role != "XX":
+                players[idx] = (host,ip,port,role,idx)
+            if role[0] == "S":
+                src_host = host
+                n_senders = n_senders + 1
+            if role[1] == "R":
+                n_receivers = n_receivers + 1
+
+        if n_senders != 1:
+            if self.exec_idx == 0:
+                Es("%s : fatal: %d senders!\n" % \
+                   (self.host, n_senders))
+            return -1
+        if self.exec_idx == 0:
+            if n_receivers == 0:
+                Es("%s : warning: %d receivers\n" % \
+                   (self.host, n_receivers))
+            else:
+                Es("%s : from %s to %d receivers\n" \
+                   % (self.host, src_host, n_receivers))
+                
+        self.n_senders = n_senders
+        self.n_receivers = n_receivers
+        self.players = players
+        if dst_lock is not None:
+            if dbg>=2:
+                Es("%s : remove %s\n" % (self.host, dst_lock))
+            # os.remove(dst_lock)
+            os.rmdir(dst_lock)
+        if n_receivers == 0:
+            return -1
+        else:
+            return 0
+
+    def enlarge_buf(self, so, level, buftype):
+        target_sz = 1024 * 1024
+        ok = so.getsockopt(level, buftype)
+        sz = target_sz
+        # INV:
+        #  <= ok is safe
+        #  
+        for i in range(0, 10):
+            try:
+                # try to increase up to sz
+                so.setsockopt(level, buftype, sz)
+            except socket.error,e:
+                if e.args[0] == errno.ENOBUFS:
+                    sz = (ok + sz) / 2
+                else:
+                    raise
+            break
+        return so.getsockopt(level, buftype)
+
+
+    def connect_to(self, host, ip, port):
+        rs = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if dbg>=2:
+            Es("%s : connect to %s %s:%d\n" % (self.host, host, ip, port))
+        rs.setblocking(0)
+        err = rs.connect_ex((ip, port))
+        if err != errno.EINPROGRESS:
+            raise
+        _,W,_ = select.select([], [rs], [], 5.0)
+        if len(W) == 0:
+            Es("%s : could not connect to %s %s:%d\n" % \
+               (self.host, host, ip, port))
+            return -1
+        rs.setblocking(1)
+        if dbg>=2:
+            Es("%s : connected to %s %s:%d\n" % (self.host, host, ip, port))
+        self.enlarge_buf(rs, socket.SOL_SOCKET,
+                         socket.SO_SNDBUF)
+        return rs
+        
+    def accept(self):
+        if dbg>=2:
+            Es("%s : accept\n" % self.host)
+        ls,_ = self.ss.accept()
+        self.ss.close()
+        self.enlarge_buf(ls, socket.SOL_SOCKET,
+                         socket.SO_RCVBUF)
+        return ls
+
+    def make_ring(self):
+        if not self.players.has_key(self.exec_idx):
+            return -1
+        # make a list of all (host,port,role,idx)
+        # and sort them in hostname order
+        players_list = self.players.values()
+        players_list.sort()
+        # get my position in the list -> rank
+        n = len(players_list)
+        # search my rank in the list
+        self.rank = 0
+        for _,_,_,_,idx in players_list:
+            if idx == self.exec_idx:
+                break
+            self.rank = self.rank + 1
+        assert self.rank < n
+
+        # display for debug
+        if self.rank == 0:
+            if dbg>=2:
+                Es("Ring:\n")
+                rk = 0
+                for host,ip,port,role,idx in players_list:
+                    # rank : role host:port
+                    Es(" %d : %s %s %s:%d\n" % (rk, role, host, ip, port))
+                    rk = rk + 1
+
+        # search src rank in the list
+        self.src_rank = 0
+        for _,_,_,_,idx in players_list:
+            if idx == self.src_idx:
+                break
+            self.src_rank = self.src_rank + 1
+        assert self.src_rank < n
+        # the final destination's rank
+        self.final_rank = (self.src_rank + n - 1) % n
+        # my right neighbor
+        right_host,right_ip,right_port,_,_ = players_list[(self.rank + 1) % n]
+
+        # connect to my right neighbor
+        self.right_so = self.connect_to(right_host, right_ip, right_port)
+        # accept connection from my left neighbor
+        self.left_so = self.accept()
+        return 0
+
+    def test_ring(self):
+        """
+        transfer one byte data from src to dst and back to src
+        """
+        if self.rank == self.src_rank:
+            if dbg>=2:
+                Es("%s : send a token to test ring\n" \
+                   % (self.host))
+            self.right_so.send("a")
+            x = self.left_so.recv(1)
+            if x != "a":
+                Es("%s : could not begin transfer\n" % self.host)
+                return -1
+            if dbg>=2:
+                Es("%s : received a token back. ring OK\n" \
+                   % (self.host))
+        else:
+            if dbg>=2:
+                Es("%s : wait for a token\n" % (self.host))
+            x = self.left_so.recv(1)
+            if dbg>=2:
+                Es("%s : received a token\n" % (self.host))
+            self.right_so.send(x)
+        return 0
+        
+    def setup(self, src_spec, dst_spec):
+        self.master_fp = os.fdopen(4, "rb")
+        if os.environ.has_key("GXP_NUM_EXECS"):
+            self.n_procs = int(os.environ["GXP_NUM_EXECS"])
+            self.exec_idx = int(os.environ["GXP_EXEC_IDX"])
+            self.gxp_host = os.environ["GXP_HOSTNAME"]
+        else:
+            self.n_procs = 1
+            self.exec_idx = 0
+            self.gxp_host = ""
+
+        if self.decide_src_idx(src_spec, dst_spec) == -1: return -1
+        if self.decide_roles(src_spec, dst_spec) == -1: return -1
+        if self.make_ring() == -1: return -1
+        if self.test_ring() == -1: return -1
+        return 0                        # OK
+
+    def transfer(self):
+        """
+        transfer data along the ring
+        """
+        if self.rank == self.src_rank:
+            up_fp = open(self.src_file, "rb")
+            if dbg>=1:
+                Es("%s : transfers %s (%d bytes)\n" \
+                   % (self.host, self.src_file, self.src_sz))
+            if os.path.exists(self.dst_file) and \
+                   os.path.samefile(self.src_file, self.dst_file):
+                down_fp = None
+            else:
+                down_fp = open(self.dst_file, "wb")
+        else:
+            up_fp = None
+            down_fp = open(self.dst_file, "wb")
+
+        if dbg>=2:
+            if down_fp is not None:
+                Es("%s : writes to %s\n" \
+                   % (self.host, self.dst_file))
+
+        read = 0
+        written = 0
+        pkt_sz = 1000000
+        while 1:
+            if up_fp is not None:
+                X = up_fp.read(pkt_sz)
+            else:
+                X = self.left_so.recv(pkt_sz)
+                # X = os.read(self.left_fd, 10000)
+            if X == "": break
+            read = read + len(X)
+            while X:
+                if self.rank == self.final_rank:
+                    l = len(X)
+                else:
+                    # l = os.write(self.right_fd, X)
+                    l = self.right_so.send(X)
+                if down_fp is not None:
+                    written = written + l
+                    down_fp.write(X[:l])
+                X = X[l:]
+        if down_fp is not None and written != self.src_sz:
+            Es(("%s: bcp: error: written sz (%d) did not "
+                "match expected sz (%d)! the file will be "
+                "incorrect\n" % (self.host, written, self.src_sz)))
+        if self.rank == self.final_rank:
+            if dbg>=1:
+                Es("%s : last proc finished\n" % self.host)
+        if dbg>=2:
+            Es("%s : close socket to right neibhbor\n" % self.host)
+        self.right_so.close()
+        if dbg>=2:
+            Es("%s : OK\n" % self.host)
+        if dbg>=2:
+            Es(("%s : wait for socket from left neibhbor to " \
+                "be closed\n" % self.host))
+        c = self.left_so.recv(1)
+        if c != "":
+            Es("%s: bcp: error: socket not cleanly closed\n" \
+               % self.host)
+            return -1
+        if dbg>=2:
+            Es("%s : OK\n" % self.host)
+        return 0
+
+    def usage(self):
+        Es(r"""usage:
+
+  gxpc mw bcp SOURCE [DEST]
+
+Copy SOURCE on a host to DEST on all hosts.
+
+ex.
+
+  gxpc mw bcp shepherd:large_file  /data/your/dir/
+  gxpc mw bcp shep:large_file      /data/your/dir/large_file
+  gxpc mw bcp large_file           /data/your/dir/large_file
+  gxpc mw bcp shepherd:large_file
+  gxpc mw bcp large_file
+
+Format of SOURCE/DEST is a 'host_regexp:pathname' or just a
+'pathname'. The pathname part of the SOURCE must be a filename (not
+a directory). The pathname part of the DEST can be either a
+filename or a directory name. In case of the latter, it is
+complemented by the basename of the src pathname.
+
+When 'host_regexp:' part is given, hosts (more precisely, bcp
+processes running on hosts) whose names match the given regular
+expression and have the specified file are first selected, and then
+one of them is chosen as the source process. If there are multiple
+such processes, one that has the largest file is chosen. If there are
+still multiple processes having the largest file, one is chosen
+arbitrarily among them. If 'host_regexp:' part is omitted, it is
+treated as if the regular expression that matches any stirng
+(i.e. '.*') is given.  That is, a process who has the largest
+specified file is selected as the source.
+
+The 'DEST' can be omitted, in which case it defaults to SOURCE.
+The effect is to propagate SOURCE from one host to all others.
+'host_regexp:' part in the DEST is ignored in any event.
+
+NOTE 1: It is safe to run multiple bcp processes on a single host.
+They detect bcp processes that would write to the same file, and
+elect one process that actually writes to it.
+
+NOTE 2: The process chosen as the source checks if the destination
+file is the same as the source, and if so, it won't write to it.
+Other processes, if elected as a writer, will overwrite the
+destination file.
+
+Examples:
+
+  gxpc mw bcp shepherd:large_file  /data/your/dir/
+
+will copy large_file on host shepherd to /data/your/dir/large_file
+of all hosts.
+
+  gxpc mw bcp shep:large_file      /data/your/dir/large_file
+
+is equivalent, as long as shepherd is the only host matching regular
+expression `shep'.
+
+  gxpc mw bcp large_file           /data/your/dir/large_file
+
+will elect the host that hat the largest 'large_file' and copy it to
+all hosts to /data/your/dir/large_file.
+  
+  gxpc mw bcp shepherd:large_file
+
+will propage large_file from shepherd to all hosts so that all hosts
+will have the same large_file in the end.
+  
+  gxpc mw bcp large_file
+
+will elect the host that hat the largest 'large_file' and all hosts
+will have the same large_file in the end.
+
+BUGS:
+
+It assumes connections are not blocked. If some connections are
+blocked, it will block 5sec and then quit, but even this has not been
+extensively tested. Assume this command is safe only when there are no
+firewall between hosts for now.
+
+""")
+        
+    def main(self, argv):
+        # bcp src [dest]
+        if len(argv) == 0:
+            self.usage()
+            return 1
+        elif len(argv) == 1 and argv[0] == "--help":
+            self.usage()
+            return 1
+        elif len(argv) == 1:
+            src_spec = argv[0]
+            dst_spec = src_spec
+        else:
+            src_spec = argv[0]
+            dst_spec = argv[1]
+        t0 = time.time()
+        if self.setup(src_spec, dst_spec) == -1: return 1
+        t1 = time.time()
+        if self.transfer() == -1: return 1
+        t2 = time.time()
+        if self.rank == self.src_rank:
+            Es(("%s : %.3f sec to setup, %.3f sec to transfer " \
+                "%d bytes (%.3f MB/sec)\n" % \
+                (self.host, t1 - t0, t2 - t1,
+                 self.src_sz,
+                 self.src_sz / (1024.0 * 1024.0 * (t2 - t1)))))
+        return 0
+        
+def main():
+    return ring_connector().main(sys.argv[1:])
+
+if __name__ == "__main__":
+    sys.exit(main())
+

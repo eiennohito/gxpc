@@ -1,0 +1,11 @@
+#!/usr/bin/env python
+try:
+    import sys
+    import gxpc
+
+    if __name__ == "__main__":
+        sys.exit(gxpc.cmd_interpreter().main(sys.argv))
+except KeyboardInterrupt,e:
+    pass
+
+    

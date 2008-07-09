@@ -1,0 +1,37 @@
+#!/usr/bin/expect
+
+#
+# usage:
+#   export SU_PASSWORD=...
+#   ./su_cmd
+#
+# set cmd "chmod 777 /data/local"
+# set cmd [lindex $argv 0]
+set x [array get env SU_PASSWORD]
+if {$x == ""} {
+  puts "su_cmd: set SU_PASSWORD environment variable"; exit 1
+}
+set pw [lindex $x 1]
+set timeout 2
+# do not echo "Password:" prompt
+log_user 0 
+# exec comand without echoing
+spawn -noecho su -c "$argv"
+# wait for "Password:" prompt
+expect {
+  timeout { puts "su_cmd: no password prompt"; exit 1 }
+  "Password:"
+}
+sleep 2
+# send password
+send "$pw\r"
+# su will first write newline. wait for it without echoing
+expect { 
+  timeout { exit 1 }
+  "\n"
+}
+# resume echo
+log_user 1
+expect EOF
+
+

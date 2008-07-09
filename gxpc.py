@@ -1,0 +1,4727 @@
+# Copyright (c) 2008 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2007 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2006 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2005 by Kenjiro Taura. All rights reserved.
+#
+# THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY 
+# EXPRESSED OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
+# 
+# Permission is hereby granted to use or copy this program
+# for any purpose,  provided the above notices are retained on all 
+# copies. Permission to modify the code and to distribute modified
+# code is granted, provided the above notices are retained, and
+# a notice that the code was modified is included with the above
+# copyright notice.
+#
+
+def prompt_():
+    s = os.environ.get("GXP_SESSION", "")
+    if s == "":
+        D = "/tmp/gxp-%s-%s" % (os.environ.get("USER", "unknown"),
+                                os.environ.get("GXP_TMP_SUFFIX", "default"))
+        for d in os.listdir(D):
+            if "gxpsession-" == d[0:len("gxpsession-")]:
+                if s == "":
+                    s = os.path.join(D, d)
+                else:
+                    os.write(1, "[?/?/?]\n")
+                    return 1
+    fp = open(s)
+    os.write(1, fp.readline())
+    return 0
+
+def prompt():
+    try:
+        return prompt_()
+    except:
+        return 1
+    
+import os,sys
+if len(sys.argv) == 2 and sys.argv[1] == "prompt":
+    os._exit(prompt())
+    
+import cPickle,cStringIO,errno,fcntl,glob,random,re
+import select,signal,shlex,socket,stat
+import string,time,threading,types,copy
+import opt,gxpm,gxpd
+
+#
+# gxp frontend (command interpreter) that talks to daemons
+#
+
+def Ws(s):
+    sys.stdout.write(s)
+
+def Es(s):
+    sys.stderr.write(s)
+
+class counter:
+    def __init__(self, init):
+        self.x = init
+    def decrement(self):
+        x = self.x
+        self.x = x - 1
+        return x
+    def add(self, y):
+        self.x += y
+
+class peer_tree_node:
+    def __init__(self):
+        self.name = None                # peer_name. initially None
+        self.hostname = None
+        self.children = {}              # nid -> peer_tree_node
+        self.cmd = None                 # cmd issued to get this peer
+        self.target_label = None        # target label
+        self.eenv = gxpm.exec_env()
+
+    def show_rec(self, indent):
+        spaces = " " * indent
+        Ws(("%s%s (= %s %s)\n" 
+            % (spaces, self.target_label, self.hostname, self.name)))
+        for c in self.children.values():
+            c.show_rec(indent + 1)
+
+    def show(self):
+        self.show_rec(0)
+
+class login_method:
+    def __init__(self, prepare, real):
+        self.prepare = prepare
+        self.real = real
+
+class login_method_configs:
+    def __init__(self):
+        self.ssh      = "ssh -o 'StrictHostKeyChecking no' -o 'PreferredAuthentications hostbased,publickey' -A           %target% %cmd%"
+        self.ssh_as   = "ssh -o 'StrictHostKeyChecking no' -o 'PreferredAuthentications hostbased,publickey' -A -l %user% %target% %cmd%"
+        # self.sshx_as   = "ssh -o 'StrictHostKeyChecking no' -A -l %user% %target% %cmd%"
+        # self.sshx      = "ssh -o 'StrictHostKeyChecking no' -A           %target% %cmd%"
+        self.rsh         = "rsh           %target% %cmd%"
+        self.rsh_as      = "rsh -l %user% %target% %cmd%"
+        self.sh          = "sh -c %cmd%"
+        qrsh_common = ("qrsh -v PATH=%s -v PYTHONPATH=%s " 
+                       % (os.environ["PATH"], os.environ["PYTHONPATH"]))
+        self.qrsh        = "qrsh %cmd%"
+        self.qrsh_host   = "qrsh -l hostname=%target% %cmd%"
+
+        self.sge         = "qsub_wrap --sys sge %cmd%"
+        self.sge_host    = "qsub_wrap --qarg -l --qarg hostname=%target% %cmd%"
+        
+        self.torque      = "qsub_wrap --sys torque %cmd%"
+        self.torque_host = "qsub_wrap --qarg -l --qarg nodes=%target% %cmd%"
+
+        self.nqs_hitachi = "qsub_wrap --sys nqs_hitachi %cmd%"
+        self.nqs_fujitsu = "qsub_wrap --sys nqs_fujitsu %cmd%"
+        # aliases
+        self.hitachi     = "qsub_wrap --sys nqs_hitachi %cmd%"
+        self.fujitsu     = "qsub_wrap --sys nqs_fujitsu %cmd%"
+
+        self.n1ge      = "qsub_wrap --sys n1ge %cmd%"
+        self.n1ge_host = "qsub_wrap --qarg -l --qarg host=%target% %cmd%"
+
+class session_state:
+    """
+    State of a gxp session.
+    A session lasts longer than a single command.
+
+    Regular command execution:
+
+    1. specified exec tree is chosen and used to send msgs
+    2. last_exec_tree is set to the chosen exec tree.
+       last_term_status is cleared (empty dictionary)
+    3. termination statuses are written into last_term_status
+    4. when execution is done, last_exec_tree and last_term_status
+       are examined and nodes that are marked successful are counted.
+    5. update last_ok_count by this.
+
+    smask/pushmask:
+
+    1. make a new exec tree based on last_exec_tree and
+       last_term_status.
+    2. install the new tree as stack_exec_trees[0]
+       smask will overwrite the old stack_exec_trees[0],
+       whereas pushmask will not (push).
+
+    rmask/explore:
+    1. stack_exec_trees[0] will become the whole peer_tree
+    2. update peer_tree_count
+    3. last_ok_count = peer_tree_count
+
+    popmask:
+
+    1. delete stack_exec_trees[0]
+    2. 
+
+    
+    """
+    def __init__(self, filename):
+        self.filename = filename
+        self.peer_tree = None           # tree of all live peers
+        self.stack_exec_trees = [ None ] # exec tree,exec count
+        self.saved_exec_trees = {}      #
+        # exec tree used for the last submission
+        self.last_exec_tree = None
+        self.last_term_status = None
+        # of nodes in peer_tree
+        self.peer_tree_count = None
+        # of nodes with eflag=1 in stack_exec_trees[0]
+        self.cur_exec_count = None      
+        # of nodes with term_status=1 in last_exec_tree
+        self.last_ok_count = None       
+        # gupid -> peer_tree_node
+        self.reached = None
+        # dict of successfully reached targets
+        self.successful_targets = {}
+        # whatever is specified via edges commands
+        self.edges = []
+        # some explore parameters
+        #
+        # self.max_children_soft = 10
+        # self.max_children_hard = 100
+        self.default_explore_opts = None
+        # specified targets
+        # self.target_hosts = []
+        # creatd flag is 1 if this was just created.
+        # 0 if unpickled from disk (cleard upon save)
+        self.created = 1
+        # dirty is 0 if it is 100% sure that disk has the same image
+        # OK to always pretend it is 1.
+        self.dirty = 1
+        # set to 1 when other tasks change the state of the tree
+        self.invalid = 0
+        self.init_random_generator()
+        # e.g., [("ssh", ....), ("qrsh", ....)]
+        self.login_methods = {}
+        # default login methods
+        lm = login_method_configs()
+        for name,cmdline in lm.__dict__.items():
+            cmd = shlex.split(cmdline)
+            self.login_methods[name] = login_method(cmd, cmd)
+
+    def show(self, level):
+        Ws("%s\n" % self.filename)
+        if level >= 1:
+            self.peer_tree.show()
+        if level >= 2:
+            Ws("stack_exec_trees:\n")
+            for ex,t in self.stack_exec_trees:
+                Ws(" %s: %s\n" % (ex, t.show()))
+            Ws("saved_exec_trees: %s\n" % self.saved_exec_trees)
+            Ws("last_exec_tree: %s\n" % self.last_exec_tree.show())
+            Ws("last_term_status: %s\n" % self.last_term_status)
+            Ws("peer_tree_count: %s\n" % self.peer_tree_count)
+            Ws("cur_exec_count: %s\n" % self.cur_exec_count)
+            Ws("last_ok_count: %s\n" % self.last_ok_count)
+            Ws("reached: %s\n" % self.reached)
+            Ws("successful_targets: %s\n" % self.successful_targets)
+            Ws("edges: %s\n" % self.edges)
+            Ws("default_explore_opts: %s\n" % self.default_explore_opts)
+            Ws("created: %s\n" % self.created)
+            Ws("dirty: %s\n" % self.dirty)
+            Ws("invalid: %s\n" % self.invalid)
+            Ws("login_methods: %s\n" % self.login_methods)
+
+    def init_random_generator(self):
+        self.rg = random.Random()
+        self.rg.seed(time.time() * os.getpid())
+        
+    def randint(self, a, b):
+        return self.rg.randint(a, b)
+
+    def gen_random_id(self):
+        return self.randint(0, 10**8 - 1)
+
+    def select_exec_tree(self, mask, hostmask, hostnegmask, 
+                         gupidmask, gupidnegmask):
+        """
+        mask : name, number, or None (all)
+
+        based on parameters given in the command line, select
+        and/or make the target tree
+        mask :         given by -m (--withmask)         0
+        hostmask :     given by -h (--withhostmask)     .*
+        hostnegmask :  given by -H (--withhostnegmask)  .*
+        gupidmask :    given by -g (--withgupidmask)    .*
+        gupidnegmask : given by -G (--withgupidnegmask) .*
+
+        """
+
+        # first choose the appropriate tree by mask
+        # most of the time it is in stack_exec_trees[0]
+        if mask is None or self.peer_tree is None:
+            # t = gxpm.target_tree(".*", ".*", 1, 0, None, None)
+            t = gxpm.target_tree(".*", ".*", 1, 0, gxpm.exec_env(), None)
+            ex = None                   # unknown
+        elif type(mask) is types.StringType:
+            if self.saved_exec_trees.has_key(mask):
+                ex,t = self.saved_exec_trees[mask]
+            else:
+                Es("gxpc: no exec tree entry named %s\n" % mask)
+                return (None,None)        # NG
+        elif type(mask) is types.IntType:
+            if 0 <= mask < len(self.stack_exec_trees):
+                ex,t = self.stack_exec_trees[mask]
+            else:
+                Es("gxpc: invalid mask value %d\n" % mask)
+                return (None,None)        # NG
+        # then filter hosts by -h, -H, -g, and -G
+        # 1. compile -h, -H, -g, and -G into regexp objects
+        # --------- hostmask (-h, -H) ---------------
+        if hostmask is not None:
+            try:
+                hostmask_pat = re.compile(hostmask)
+            except Exception,e:
+                Es("gxpc: invalid hostmask '%s' %s\n" % (hostmask, e.args))
+                return (None,None)
+        elif hostnegmask is not None:
+            try:
+                hostnegmask_pat = re.compile(hostnegmask)
+            except Exception,e:
+                Es("gxpc: invalid hostnegmask '%s' %s\n" % (hostnegmask, e.args))
+                return (None,None)
+            hostmask_pat = re.compile("(?!(%s))" % hostnegmask)
+        else:
+            hostmask_pat = re.compile(".")
+        # --------- gupidmask (-g, -G) ---------------
+        if gupidmask is not None:
+            try:
+                gupidmask_pat = re.compile(gupidmask)
+            except Exception,e:
+                Es("gxpc: invalid gupidmask '%s' %s\n" % (gupidmask, e.args))
+                return (None,None)
+        elif gupidnegmask is not None:
+            try:
+                gupidnegmask_pat = re.compile(gupidnegmask)
+            except Exception,e:
+                Es("gxpc: invalid gupidnegmask '%s' %s\n" % (gupidnegmask, e.args))
+                return (None,None)
+            gupidmask_pat = re.compile("(?!(%s))" % gupidnegmask)
+        else:
+            gupidmask_pat = re.compile(".")
+
+        # 2. really filter nodes
+        ex_,t_ = self.mk_selected_exec_tree_rec2(t, hostmask_pat, gupidmask_pat)
+        if t_ is not None:
+            ex__,_ = self.set_exec_idx_rec(t_, 0, 0, ex_)
+            assert (ex__ == ex_), (ex__, ex_)
+        self.last_exec_tree = t_
+        self.last_term_status = {}
+        return (ex_,t_)
+
+    def mk_selected_exec_tree_rec2(self, tgt, hostmask_pat, gupidmask_pat):
+        """
+        like mk_selected_exec_tree_rec, but select nodes whose names match pat
+        """
+        if tgt is None or tgt.name is None:
+            return (0, None)
+        elif tgt.children is None:
+            # tgt.children means allchildren, treated specially
+            return (1, tgt)
+        else:
+            T = []
+            C = 0
+            for child in tgt.children:
+                c,t = self.mk_selected_exec_tree_rec2(child, hostmask_pat, 
+                                                      gupidmask_pat)
+                if t is not None:
+                    T.append(t)
+                    C = C + c
+            if tgt.eflag and hostmask_pat.match(tgt.hostname) \
+                    and gupidmask_pat.match(tgt.name):
+                ef = 1
+                C = C + 1
+            else:
+                ef = 0
+            if C > 0:
+                return (C, gxpm.target_tree(tgt.name, tgt.hostname, ef, None,
+                                            tgt.eenv, T))
+            else:
+                return (0, None)
+
+    def mk_selected_exec_tree_rec(self, tgt, sign, status):
+        """
+        tgt    : instance of gxpm.target_tree.
+        sign   : 1 or 0
+        status : dictionary gupid -> exit status (int)
+
+        return a pair (0, None) or (c, tree), where tree
+        is an instance of gxpm.target_tree. c is the number of nodes
+        in tree whose status (i.e., status[n.tgt_name]) match sign.
+        (if sign is 1, count nodes whose statuses are zero.
+        if sign is 0, count nodes whose statuses are non-zero).
+
+        tree is the one made by removing some nodes of tgt from
+        leaves.  it removes node N if and only if N contains no nodes
+        under it whose status (obtained by status dictionary) do not
+        match sign.
+        
+        """
+        if tgt is None or tgt.name is None:
+            return (0, None)
+        elif tgt.children is None:
+            # tgt.children means allchildren, treated specially
+            return (1, tgt)
+        else:
+            T = []
+            C = 0
+            for child in tgt.children:
+                c,t = self.mk_selected_exec_tree_rec(child, sign,
+                                                     status)
+                if t is not None:
+                    T.append(t)
+                    C = C + c
+            if tgt.eflag and \
+                   ((sign and status.get(tgt.name, 1) == 0) or \
+                    (sign == 0 and status.get(tgt.name, 1) != 0)):
+                ef = 1
+                C = C + 1
+            else:
+                ef = 0
+            if C > 0:
+                return (C, gxpm.target_tree(tgt.name, tgt.hostname, ef, None,
+                                            tgt.eenv, T))
+            else:
+                return (0, None)
+
+    def mk_whole_exec_tree_rec(self, ptree):
+        """
+        ptree : instance of peer_tree
+        """
+        if ptree is None or ptree.name is None:
+            return (0, None)
+        else:
+            T = []
+            C = 0
+            for child in ptree.children.values():
+                c,t = self.mk_whole_exec_tree_rec(child)
+                if t is not None:
+                    T.append(t)
+                    C = C + c
+            return (C + 1,
+                    gxpm.target_tree(ptree.name, ptree.hostname, 1, None,
+                                     ptree.eenv, T))
+
+    def set_exec_idx_rec(self, tgt, exec_idx, all_idx, num_execs):
+        all_idx = all_idx + 1
+        if tgt.eflag:
+            assert (type(num_execs) is types.IntType), num_execs
+            tgt.num_execs = num_execs
+            tgt.exec_idx = exec_idx
+            exec_idx = exec_idx + 1
+        # tgt.children means allchildren, treated specially
+        if tgt.children is not None:
+            for child in tgt.children:
+                R = self.set_exec_idx_rec(child, exec_idx,
+                                          all_idx, num_execs)
+                exec_idx,all_idx = R
+        return exec_idx,all_idx
+
+    def set_selected_exec_tree(self, sign, push, name):
+        """
+        smask/pushmask:
+        
+        1. make a new exec tree based on last_exec_tree and
+        last_term_status.
+        2. install the new tree as stack_exec_trees[0]
+        smask will overwrite the old stack_exec_trees[0],
+        whereas pushmask will not (push).
+        """
+        tgt = self.last_exec_tree
+        status = self.last_term_status
+        ex,tree = self.mk_selected_exec_tree_rec(tgt, sign, status)
+        if tree is not None:
+            ex_,_ = self.set_exec_idx_rec(tree, 0, 0, ex)
+            assert (ex_ == ex), (ex_, ex)
+        if push:
+            self.stack_exec_trees.insert(0, (ex, tree))
+        else:
+            self.stack_exec_trees[0] = (ex, tree)
+        if name is not None:
+            self.saved_exec_trees[name] = (ex, tree)
+        # update cache of cur_exec_count
+        self.cur_exec_count = ex
+
+    def reset_exec_tree(self):
+        """
+        stack_exec_trees[0] will become the whole peer_tree
+        """
+        ex,tree = self.mk_whole_exec_tree_rec(self.peer_tree)
+        if tree is not None:
+            ex_,all = self.set_exec_idx_rec(tree, 0, 0, ex)
+            assert (ex_ == ex), (ex_, ex)
+        # 2008.7.9 is this what I should do?
+        self.last_exec_tree = tree
+        self.stack_exec_trees[0] = (ex,tree)
+        self.last_ok_count = ex
+        self.cur_exec_count = ex
+        self.peer_tree_count = ex
+
+    def mk_peer_tree(self, events):
+        """
+        analyze the events received as a result of a ping command
+        and create the tree of live nodes
+        """
+        # gupid -> peer_tree_node
+        reached = {}
+        # target_label -> count
+        successful_targets = {}
+
+        # first create an empty node for each live node
+        pongs = []
+        for gupid,tid,ev in events:
+            if isinstance(ev, gxpm.event_info_pong):
+                pongs.append((gupid, ev))
+        for gupid,pong in pongs:
+            reached[gupid] = peer_tree_node()
+
+        # fill their names and children. also find root
+        roots = []
+        for gupid,pong in pongs:
+            assert isinstance(pong, gxpm.event_info_pong), pong
+            # record attributes of the peer_tree_node for gupid
+            target_label = pong.targetlabel
+            t = reached[gupid]
+            t.name = gupid
+            t.hostname = pong.hostname
+            t.target_label = target_label
+            # record how many nodes we got for target_label
+            s = successful_targets.get(target_label, 0)
+            successful_targets[target_label] = s + 1
+            # record children of gupid
+            C = []
+            for cname in pong.children:
+                # add child
+                if reached.has_key(cname):
+                    id = self.gen_random_id()
+                    t.children[id] = reached[cname]
+            # no parent -> it is a root
+            if pong.parent == "": roots.append(t)
+        # obviously the root must be unique
+        if len(roots) != 1:
+            Es("gxpc: broken gxp daemon tree (deamons seem broken)\n")
+            return None,None,None
+        # check if parent and children are consistent
+        for gupid,pong in pongs:
+            # get gupid's parent
+            if pong.parent == "": continue
+            # check if gupid is a child of the parent
+            p = reached[pong.parent]
+            found = 0
+            for c in p.children.values():
+                if c.name == gupid:
+                    found = 1
+                    break
+            assert found == 1
+        return roots[0],reached,successful_targets
+
+    def construct_peer_tree(self, events):
+        R = self.mk_peer_tree(events)
+        peer_tree,reached,successful_targets = R
+        if peer_tree is None: return -1
+        self.peer_tree = peer_tree
+        self.reached = reached
+        self.successful_targets = successful_targets
+        self.reset_exec_tree()
+        return 0
+
+    def list_gupids_rec(self, tgt, gupids):
+        if tgt is None: return gupids
+        assert not gupids.has_key(tgt.name)
+        gupids[tgt.name] = 1
+        if tgt.children is not None:
+            for child in tgt.children:
+                self.list_gupids_rec(child, gupids)
+        return gupids
+
+    def trim_peer_tree_rec(self, peer_tree, reached,
+                           successful_targets, target_gupids):
+        if not target_gupids.has_key(peer_tree.name):
+            return None
+        reached[peer_tree.name] = peer_tree
+        s = successful_targets.get(peer_tree.target_label, 0)
+        successful_targets[peer_tree.target_label] = s + 1
+        for id,child in peer_tree.children.items():
+            if self.trim_peer_tree_rec(child, reached,
+                                       successful_targets,
+                                       target_gupids) is None:
+                del peer_tree.children[id]
+        return peer_tree
+        
+    def trim_peer_tree(self, tgt):
+        target_gupids = self.list_gupids_rec(tgt, {})
+        # trim all nodes that do not appear in targets
+        reached = {}
+        successful_targets = {}
+        peer_tree = self.trim_peer_tree_rec(self.peer_tree,
+                                            reached,
+                                            successful_targets,
+                                            target_gupids)
+        self.peer_tree = peer_tree
+        self.reached = reached
+        self.successful_targets = successful_targets
+        self.reset_exec_tree()
+
+
+    def restore_exec_tree(self, name):
+        if self.saved_exec_trees.has_key(name):
+            ex,tree = self.saved_exec_trees[name]
+            self.stack_exec_trees[0] = (ex,tree)
+            self.cur_exec_count = ex
+            return 0
+        else:
+            return -1
+        
+    def pop_exec_tree(self):
+        if len(self.stack_exec_trees) > 1:
+            self.stack_exec_trees.pop(0)
+            ex,tree = self.stack_exec_trees[0]
+            self.cur_exec_count = ex
+            return 0                    # OK
+        else:
+            return -1                   # NG
+
+    def update_last_ok_count(self):
+        status = 0
+        ok = 0
+        for s in self.last_term_status.values():
+            if s == 0: ok = ok + 1
+            status = max(status, s)
+        self.last_ok_count = ok
+        return status
+
+    def clear_dirty(self):
+        self.dirty = 0
+
+    def set_dirty(self):
+        self.dirty = 1
+
+    def save(self, verbosity):
+        """
+        save session state in a file
+        """
+        if self.created or self.dirty:
+            self.created = 0
+            directory,base = os.path.split(self.filename)
+            # why _?
+            # otherwise it may be found by other processes as
+            # session file and deleted as a garbage
+            rand_base = "_%s-%d-%d" % (base, os.getpid(),
+                                       self.gen_random_id())
+            rand_file = os.path.join(directory, rand_base)
+            fd = os.open(rand_file,
+                         os.O_CREAT|os.O_WRONLY|os.O_TRUNC)
+            wp = os.fdopen(fd, "wb")
+            # wp = open(self.filename, "wb")
+            wp.write("[%s/%s/%s]\n" % \
+                     (self.last_ok_count,
+                      self.cur_exec_count,
+                      self.peer_tree_count))
+            cPickle.dump(self, wp)
+            wp.close()
+            os.chmod(rand_file, 0600)
+            os.rename(rand_file, self.filename)
+            if self.peer_tree is None:
+                Es("gxpc: suggest gxpc ping\n")
+        else:
+            if verbosity >= 2:
+                Es("gxpc: clean session not saved\n")
+
+
+class e_cmd_opts(opt.cmd_opts):
+    def __init__(self):
+        #             (type, default)
+        # types supported
+        #   s : string
+        #   i : int
+        #   f : float
+        #   l : list of strings
+        #   None : flag
+	opt.cmd_opts.__init__(self)
+        self.pty      = (None, 0)
+        self.up       = ("s*", [])
+        self.down     = ("s*", [])
+        self.updown   = ("s*", [])
+        self.master   = ("s", None)
+        # ------ global options that can also be given as e options.
+        # default values are in interpreter_opts
+        self.withmask = ("s", None)
+        self.withhostmask = ("s", None)
+        self.withhostnegmask = ("s", None)
+        self.withgupidmask = ("s", None)
+        self.withgupidnegmask = ("s", None)
+        self.timeout = ("f", None)
+        self.notify_proc_exit = ("i", None)
+        self.persist = ("i", None)
+        self.keep_connection = ("i", None)
+        self.tid = ("s", None)
+        self.rid = ("s", None)
+        self.dir = ("s", None)
+        self.export = ("s*", [])
+        # ------
+        # self.join = (None, 0)
+        # short options
+        self.m = "withmask"
+        self.h = "withhostmask"
+        self.H = "withhostnegmask"
+        self.g = "withgupidmask"
+        self.G = "withgupidnegmask"
+
+    def postcheck_up_or_down(self, arg, F, opt):
+        fields = string.split(arg, ":", 1)
+        if len(fields) == 1:
+            # [ fd ] --> [ fd, fd ]
+            fields.append(fields[0])
+        [ fd0,fd1 ] = map(lambda x: self.safe_atoi(x, None), fields)
+        if fd0 is None or fd1 is None:
+            Es(("invalid argument for --%s (%s)."
+                " It must be int or int:int (e.g., 3, 3:4)\n" 
+                % (opt, arg)))
+            return None
+        if F.get(fd0) is None:
+            F[fd0] = ("--up %s" % arg)
+        else:
+            Es("gxpc: %s and --up %s is incompatible\n" \
+               % (F[fd0], arg))
+            return None
+        return (fd0, fd1)
+
+    def postcheck_updown(self, arg, F):
+        fields = string.split(arg, ":", 2)
+        if len(fields) == 1:
+            Es(("invalid argument for --updown (%s)."
+                " It must be int:int or int:int:cmd "
+                "(e.g., 3:4, or '3:4:grep hoge')\n" % arg))
+            return None
+        elif len(fields) == 2:
+            fds = fields
+            cmd = None
+        else:
+            fds = fields[:2]
+            [ cmd ] = fields[2:]
+        [ fd0,fd1 ] = map(lambda x: self.safe_atoi(x, None), fds)
+        if fd0 is None or fd1 is None:
+            Es(("invalid argument for --updown (%s)."
+                " It must be int:int or int:int:cmd "
+                "(e.g., 3:4, '3:4:grep hoge')\n" 
+                % arg))
+            return None
+
+        if fd0 == fd1:
+            Es("gxpc: --updown %s is invalid\n" % arg)
+            return None
+        for fd in [ fd0, fd1 ]:
+            if F.get(fd) is None:
+                F[fd] = ("--updown %s" % arg)
+            else:
+                Es("gxpc: %s and --updown %s is incompatible\n" \
+                   % (F[fd], arg))
+                return None
+        return (fd0, fd1, cmd)
+        
+    def parse_export(self, export):
+        """
+        export : list of "var=val"
+        """
+        env = {}
+        for varval in export:
+            var_val = string.split(varval, "=", 1)
+            if len(var_val) == 1:
+                Es(("gxpc: invalid arg to --export (%s). "
+                    "It should be var=val\n" % varval))
+                return None
+            [ var, val ] = var_val
+            env[var] = val
+        return env
+
+    def postcheck(self):
+        # check if updown is a list of int:int
+        up = []
+        down = []
+        updown = []
+        if self.pty:
+            F = { 0 : "--pty", 1 : "--pty", 2 : "--pty" }
+        else:
+            F = { 0 : None, 1 : None, 2 : None }
+        
+        # parse --up
+        for arg in self.up:
+            x = self.postcheck_up_or_down(arg, F, "up")
+            if x is None: return -1
+            up.append(x)
+        # parse --down
+        for arg in self.down:
+            x = self.postcheck_up_or_down(arg, F, "down")
+            if x is None: return -1
+            down.append(x)
+        # parse --updown
+        for arg in self.updown:
+            x = self.postcheck_updown(arg, F)
+            if x is None: return -1
+            updown.append(x)
+
+        if F[0] is None: down.insert(0, (0, 0))
+        if F[2] is None: up.insert(0, (2, 2))
+        if F[1] is None: up.insert(0, (1, 1))
+
+        self.up = up
+        self.down = down
+        self.updown = updown
+        # if --withmask is given, use it
+        if self.withmask is not None:
+            self.withmask = self.safe_atoi(self.withmask,
+                                           self.withmask)
+
+        self.export = self.parse_export(self.export)
+        if self.export is None: return -1
+            
+        return 0
+
+class hosts_parser_base:
+    def __init__(self):
+        self.filename = ""
+        self.cmd = ""
+        self.line_count = 0
+        
+    def safe_atoi(self, x, defa):
+        try:
+            return string.atoi(x)
+        except ValueError,e:
+            return defa
+
+    def parse_error(self):
+        Es("%s:%d: parse error in line `%s'\n" % \
+           (self.filename, self.line_count, self.line))
+        return -1
+
+    def parse_fp(self, fp, filename, cmd, flag):
+        hosts = self.hosts.copy()
+        self.filename = filename
+        self.cmd = cmd
+        self.line_count = 0
+        eof = 0
+        while 1:
+            line = fp.readline()
+            if line == "":
+                eof = 1
+                break
+            self.line = line
+            self.line_count = self.line_count + 1
+            if line[0] == "#": continue
+            r = self.process_line(line, hosts, flag)
+            if r == 1: eof = 1
+            if r != 0: break
+        r = fp.close()
+        if eof == 0: return -1          # parse error (NG)
+        if r is not None and r != 0:
+            Es("command %s exited abnormally (output ignored)\n" \
+               % self.cmd)
+            return -1
+        self.hosts = hosts
+        return 0                    # OK
+
+    def parse_file(self, filename, flag, signal_error):
+        fp = None
+        try:
+            fp = open(filename, "rb")
+        except IOError,e:
+            if signal_error:
+                Es("gxpc: %s: %s\n" % (filename, e.args))
+        if fp is not None:
+            self.parse_fp(fp, filename, None, flag)
+
+    def parse_pipe(self, cmd, flag):
+        fp = os.popen(cmd)
+        self.parse_fp(fp, None, cmd, flag)
+    
+    def parse_args(self, args):
+        self.filename = "[cmdarg]"
+        self.line_count = 0
+        self.line = string.join(args, " ")
+        self.process_list(args, self.hosts, 1)
+
+    def parse(self, files, alias_files, cmds, args):
+        self.hosts = {}
+        for filename in files:
+            self.parse_file(filename, 1, 1)
+        for filename in alias_files:
+            self.parse_file(filename, 0, 0)
+        for cmd in cmds:
+            self.parse_pipe(cmd, 1)
+        self.parse_args(args)
+        return self.hosts
+
+class etc_hosts_parser(hosts_parser_base):
+    def process_line(self, line, hosts, flag):
+        """
+        line is like:
+        
+           123.456.78.9    hoge.bar.com   hoge
+
+        """
+        aliases = []
+        for field in string.split(line):
+            if field[0] == "#": break
+            aliases.append(field)
+        return self.process_list(aliases, hosts, flag)
+
+    def process_list(self, args, hosts, flag):
+        L = []
+        for a in args:
+            for b in hosts.get(a, []):
+                if b not in L: L.append(b)
+        for a in args:
+            if a not in L: L.append(a)
+        for a in L:
+            if flag or hosts.has_key(a):
+                hosts[a] = L
+        return 0
+
+class targets_parser(hosts_parser_base):
+    def process_line(self, line, hosts, flag):
+        """
+        parse a single line like: "istbs010 2"
+        """
+        line = string.strip(line)
+        if line == "": return 1
+        fields = string.split(line, None, 1)
+        return self.process_list(fields, hosts, flag)
+        
+    def expand_number_notation_1(self, host):
+        # look for istbs[[xxxx]]
+        m = re.match("(?P<prefix>.*)\[\[(?P<set>.*)\]\](?P<suffix>.*)", host)
+        if m is None: return [ host ]
+        prefix = m.group("prefix")
+        suffix = m.group("suffix")
+        fields = re.split("(,|;|:)",  m.group("set"))
+        S = {}
+        sign = 1
+        for f in fields:
+            if f == ",":
+                sign = 1
+            elif f == ";" or f == ":":
+                sign = -1
+            else:
+                # "10-20" or "10"
+                m = re.match("(?P<a>\d+)(-(?P<b>\d+))?", f)
+                if m is None:
+                    return None         # parse error
+                else:
+                    # "10-20" -> a = 10, b = 20
+                    # "10"    -> a = 10, b = 10
+                    a_str = m.group("a")
+                    b_str = m.group("b")
+                    if b_str is None: b_str = a_str
+                    a = string.atoi(a_str)
+                    b = string.atoi(b_str)
+                    # a-b represents [a,b]. 
+                    for x in range(a, b + 1):
+                        x_str = "%d" % x
+                        if b_str is not None and len(a_str) == len(b_str):
+                            x_str = string.zfill(x_str, len(b_str))
+                        if sign == 1:
+                            S[x_str] = 1
+                        else:
+                            if S.has_key(x_str):
+                                del S[x_str]
+        H = []
+        for x_str in S.keys():
+            for y in self.expand_number_notation_1("%s%s%s" % (prefix, x_str, suffix)):
+                H.append(y)
+        return H
+
+    def expand_number_notation(self, host):
+        H = self.expand_number_notation_1(host)
+        H.sort()
+        return H
+
+    def add_target_host(self, hosts, host, n):
+        # hosts : dictionary hostname -> n
+        # host : a hostname regexp that may contain number expansion notation.
+        #        e.g., istbs[000-100] -> istbs000 istbs001 ... istbs100
+        #        e.g., istbs[[000-100,100-200]] -> istbs000 istbs001 ... istbs100
+        for h in self.expand_number_notation(host):
+            hosts[h] = n
+
+    def process_list(self, args, hosts, flag):
+        """
+        args : fields in a line e.g., [ "istbs000", "istbs010", "2" ]
+        """
+        cur_host = None
+        for a in args:
+            # is this a number?
+            n = self.safe_atoi(a, None)
+            if n is None:
+                # no -> hostname
+                if cur_host is not None:
+                    self.add_target_host(hosts, cur_host, 1)
+                    # hosts[cur_host] = 1
+                cur_host = a
+            else:
+                # yes -> multiply the previous host by n
+                if cur_host is None:
+                    return self.parse_error()
+                self.add_target_host(hosts, cur_host, n)
+                # hosts[cur_host] = n
+                cur_host = None
+        if cur_host is not None:
+            self.add_target_host(hosts, cur_host, 1)
+            # hosts[cur_host] = 1
+        return 0
+        
+    
+class explore_cmd_opts(opt.cmd_opts):
+    """
+    gxpc explore
+    --hostfile /etc/hosts
+    --hostcmd 'ypcat hosts'
+    --targetfile file
+    --targetcmd 'hogehoge'
+    args ...
+    """
+
+    def __init__(self):
+        #             (type, default)
+        # types supported
+        #   s : string
+        #   i : int
+        #   f : float
+        #   l : list of strings
+        #   None : flag
+        opt.cmd_opts.__init__(self)
+        self.dry = (None, 0)
+        self.default_hostfile = ("s", "/etc/hosts")
+        self.aliasfile = ("s*", [ "/etc/hosts" ])
+        self.hostfile = ("s*", [])
+        self.hostcmd = ("s*", [])
+        self.targetfile = ("s*", [])
+        self.targetcmd = ("s*", [])
+
+        self.verbosity = ("i", None) # default leave it to inst_local.py
+        self.timeout = ("f", None)   # ditto
+        self.install_timeout = ("f", None) # ditto
+        self.children_soft_limit = ("i", 10)
+        self.children_hard_limit = ("i", 40)
+        self.min_wait = ("i", 5)
+        self.wait_factor = ("f", 0.2)
+        self.reset_default = (None, 0)
+        self.set_default = (None, 0)
+        self.show_settings = (None, 0)
+
+        self.h = "hostfile"
+        self.t = "targetfile"
+
+    def postcheck(self):
+        if self.children_soft_limit < 2:
+            Es("gxpc: children_soft_limit must be >= 2\n")
+            return -1
+        if self.children_hard_limit < 2:
+            Es("gxpc: children_hard_limit must be >= 2\n")
+            return -1
+        return 0
+
+    def import_defaults(self, default_opts):
+        for x in self.__dict__.keys():
+            if x == "specified_fields": continue
+            if x == "reset_default": continue
+            if x == "set_default": continue
+            if x == "dry": continue
+            if x == "args":
+                if len(self.args) == 0 and default_opts is not None:
+                    self.args = default_opts.args
+            elif not self.specified_fields.has_key(x) and default_opts is not None:
+                setattr(self, x, getattr(default_opts, x))
+        
+class use_cmd_opts(opt.cmd_opts):
+    """
+    use --delete number
+    use --delete method from [to]
+    use method from [to]
+
+    """
+
+    def __init__(self):
+        #             (type, default)
+        # types supported
+        #   s : string
+        #   i : int
+        #   f : float
+        #   l : list of strings
+        #   None : flag
+        opt.cmd_opts.__init__(self)
+        self.delete = (None, 0)         # delete flag
+        self.as = ("s", "")             # --as
+        self.d = "delete"
+
+class rsh_cmd_opts(opt.cmd_opts):
+    """
+    rsh [--full] [--real/--prepare] [name]
+
+    """
+    def __init__(self):
+        #             (type, default)
+        # types supported
+        #   s : string
+        #   i : int
+        #   f : float
+        #   l : list of strings
+        #   None : flag
+        opt.cmd_opts.__init__(self)
+        self.full = (None, 0)           # full flag
+        self.real = (None, 0)           # real flag
+        self.prepare = (None, 0)        # prepare flag
+
+    def postcheck(self):
+        if self.real == 0 and self.prepare == 0:
+            self.real = 1
+            self.prepare = 1
+
+class interpreter_opts(opt.cmd_opts):
+    def __init__(self):
+        #             (type, default)
+        # types supported
+        #   s : string
+        #   i : int
+        #   f : float
+        #   l : list of strings
+        #   None : flag
+        opt.cmd_opts.__init__(self)
+        self.verbosity = ("i", 1)
+        self.create_session = ("i", 0)
+        self.session = ("s", None)
+        self.create_daemon = ("i", 0)
+        self.daemon = ("s", None)
+        
+        self.profile = ("s", None)
+        self.buffer = (None, 0)
+        self.atomicity = ("s", "line")
+        self.withmask = ("s", "0")
+        self.withhostmask = ("s", None)  # matches everything
+        self.withhostnegmask = ("s", None)  # matches everything
+        self.withgupidmask = ("s", None)  # matches everything
+        self.withgupidnegmask = ("s", None)  # matches everything
+        self.timeout = ("f", None)
+        self.notify_proc_exit = ("i", -1)
+        self.persist = ("i", 0)
+        # 0 : never, 1 : until exit, 2 : forever
+        self.keep_connection = ("i", gxpm.keep_connection_until_fin)
+        self.save_session = ("i", 1)
+        self.tid = ("s", None)
+        # short options
+        self.m = "withmask"
+        self.h = "withhostmask"
+        self.H = "withhostnegmask"
+        self.g = "withgupidmask"
+        self.G = "withgupidnegmask"
+
+    def postcheck(self):
+        self.withmask = self.safe_atoi(self.withmask, self.withmask)
+        return 0
+
+class texinfo_formatter:
+    def begin_format(self, m):
+        self.block = "format"
+        # return "@sp 1\n@b{%s}\n@format" % m.group()
+        return "@vskip 5mm\n@b{%s}\n@format\n" % m.group()
+
+    def begin_example(self, m):
+        self.block = "example"
+        # return "@sp 1\n@b{%s}\n@example" % m.group()
+        return "@vskip 5mm\n@b{%s}\n@example\n" % m.group()
+
+    def begin_table(self, m):
+        self.block = "table"
+        # return "@sp 1\n@b{%s}\n@table @code" % m.group()
+        return "@vskip 5mm\n@b{%s}\n@table @code\n" % m.group()
+
+    def begin_paragraph(self, m):
+        # return "@sp 1\n@b{%s}" % m.group()
+        return "@vskip 5mm\n@b{%s}\n\n" % m.group()
+
+    def mk_command_name(self, m):
+        x = m.group(2)
+        y = "@t{%s}" % x
+        return re.sub(x, y, m.group())
+
+    def mk_var_name(self, m):
+        x = m.group(2)
+        y = "@var{%s}" % x
+        return re.sub(x, y, m.group())
+
+    def format(self, helps):
+        self.block = None
+        replace_table = [
+            ("Examples:",       self.begin_example),
+            ("Usage:",          self.begin_example),
+            ("See Also:",       self.begin_example),
+            ("Options:",        self.begin_table),
+            ("Bugs:",           self.begin_paragraph),
+            ("Description:",    self.begin_paragraph),
+            ("/etc/hosts",      self.mk_command_name),
+            ("gxpc",            self.mk_command_name),
+            ("rsh",             self.mk_command_name),
+            ("show_cmd",        self.mk_command_name),
+            ("parameters",      self.mk_command_name),
+            ("--[A-Za-z_]+",    self.mk_command_name),
+            ("-[hmt]",          self.mk_command_name),
+            # ("-",               self.mk_command_name),
+            ("[A-Z][A-Z0-9_]*", self.mk_var_name)
+            ]
+        for group,help in helps:
+            for cmd in group:
+                item = (cmd, self.mk_command_name)
+                replace_table.append(item)
+        table = []
+        for pat,repl in replace_table:
+            p = ("(\s|\[|\(|=|`|:|;|,|\.|^)"
+                 "(%s)"
+                 "(\s|\]|\)|=|'|:|;|,|\.|$)") % pat
+            table.append((re.compile(p), repl))
+
+        for group,help in helps:
+            Ws("@section %s\n" % string.join(group, ", "))
+            for line in string.split(help, "\n"):
+                for pat,repl in table:
+                    while pat.search(line):
+                        line = pat.sub(repl, line)
+                if self.block == "example?":
+                    if line[0:2] == "  ":
+                        self.block = "example"
+                        # Ws("@sp 1\n")
+                        Ws("@vskip 5mm\n@example\n\n")
+                    elif line[0:2] == "- ":
+                        self.block = "itemize"
+                        # Ws("@sp 1\n")
+                        Ws("@vskip 5mm\n@itemize\n\n")
+                    else:
+                        self.block = None
+                elif string.strip(line) == "":
+                    if self.block is None:
+                        self.block = "example?"
+                    else:
+                        Ws("\n@end %s\n@vskip 5mm\n" % self.block)
+                        # Ws("@sp 1\n")
+                        self.block = None
+                if self.block == "table" and re.match("  @t{--", line):
+                    Ws("@item ")
+                    Ws(line)
+                elif self.block == "itemize" and re.match("-", line):
+                    Ws("@item ")
+                    Ws(line[1:])
+                else:
+                    Ws(line)
+                Ws("\n")
+        if self.block is not None and self.block != "example?":
+            Ws("\n@end %s\n" % self.block)
+
+class gxpc_environment:
+    """
+    Environment variables set for gxp daemons and inherited
+    to subprocesses
+    """
+    def __init__(self, dict):
+        self.dict = dict
+        for k,v in dict.items():
+            setattr(self, k, v)
+
+class explore_logger:
+    def __init__(self, filename):
+        self.start_t = time.time()
+        self.wp = open(filename, "wb")
+    def log(self, msg):
+        t = time.time() - self.start_t
+        self.wp.write("%.3f : %s\n" % (t, msg))
+    def close(self):
+        self.wp.close()
+
+class cmd_interpreter:
+    RET_NOT_RUN = -1
+    RET_SIGINT = -2
+
+    RECV_CONTINUE = 0
+    RECV_QUIT = 1
+    RECV_INTERRUPTED = 2
+    RECV_TIMEOUT = 3
+    
+    def __init__(self):
+        self.init_level = 0
+        self.gupid = None
+        self.daemon_addr = None
+        self.session_file = None
+        self.session = None
+        self.master_pids = []
+
+    def init1(self):
+        # defer heavier initializations until really needed
+        # (see real_init)
+        if self.init_level >= 1: return 0
+        self.init_level = 1
+
+        # determine session and daemon
+        if self.find_or_create_session() == -1:
+            return -1
+        assert self.gupid is not None
+        assert self.daemon_addr is not None
+        assert self.session_file is not None
+        return 0
+
+    def init2(self):
+        if self.init_level >= 2: return 0
+        if self.init1() == -1: return -1
+        self.init_level = 2
+        # extend environment (is this the right place?)
+        env = self.get_gxpc_environment()
+        if env is not None:
+            os.environ.update(env.dict)
+        # load or make session
+        if os.path.exists(self.session_file):
+            if self.opts.verbosity>=2:
+                Es("gxpc: session file %s found\n" % self.session_file)
+            # there appears to be a previously saved session.
+            # load it
+            self.session = self.load_session(self.session_file, 1)
+            if self.session is None:
+                Es("gxpc: broken session file %s, "
+                   "creating a new session\n" \
+                   % (self.session_file))
+                # self.cleanup_session_file()
+                # self.safe_remove(self.session_file)
+            else:
+                return 0 # OK
+        else:
+            if self.opts.verbosity>=2:
+                Es(("gxpc: session file %s not found, creating a new session\n" 
+                    % self.session_file))
+        # no previous session. create one.
+        self.session = session_state(self.session_file)
+        if self.do_ping_cmd(["--quiet"]) == -1:
+            return -1                   # NG
+        else:
+            return 0                    # OK
+
+    def init3(self):
+        if self.init_level >= 3: return 0
+        if self.init2() == -1: return -1
+        self.init_level = 3
+        # constants
+        self.h_temp = "HEADER len %20d prio %20d HEADER_END"
+        self.h_len  = len(self.h_temp % (0,0))
+        self.h_pat  = re.compile("HEADER len +(\d+) prio +(\d+) HEADER_END")
+        self.t_temp = "TRAIL len %20d prio %20d sum %20d TRAIL_END"
+        self.t_len  = len(self.t_temp % (0,0,0))
+        self.t_pat  = re.compile("TRAIL len +(\d+) prio +(\d+) sum +(\d+) TRAIL_END")
+        # socket and its lock
+        self.so = None
+        self.so_lock = threading.Lock()
+        # clean up session file whose gxpd no longer exists
+        # self.cleanup_old_session_file(self.opts.verbosity)
+
+        # state of this particular run
+        # termination status of child procs
+        # self.term_status = {}
+        self.exploring = {}             # hosts being explored
+        self.failed_to_explore = []
+        self.events = []                # list of upward events
+        # specify which output should go which fp
+        self.outmap = {}
+        # specify which input should go which fd
+        self.inmap = {}
+        # setup default pipes 0 -> 0, 1 -> 1, 2 -> 2, etc.
+        self.setup_default_pipes(self.opts)
+        self.notify_proc_exit_fp = None
+        
+        return 0
+        
+    def load_session(self, filename, full):
+        """
+        format of session file
+        s e r<newline>
+        dump of session object
+        """
+        try:
+            fp = open(filename, "rb")
+        except OSError,e:
+            Es("%s\n" % (e.args,))
+            return None
+        m = re.search("(\d+)/(\d+)/(\d+)", fp.readline())
+        if m is None: return None
+        (ok,exe,all) = map(lambda x: self.safe_atoi(x, None), m.group(1,2,3))
+        if ok is None or exe is None or all is None:
+            return None
+        session = None
+        if full:
+            try:
+                session = cPickle.load(fp)
+            except cPickle.UnpicklingError,e:
+                Es("%s\n", (e.args,))
+                fp.close()
+                return None
+            except AttributeError,e:
+                Es("%s\n", (e.args,))
+                fp.close()
+                return None
+            # to play safe, we assume it is alway dirty and clear
+            # this only when it is worth doing so (do_count_cmd)
+            session.set_dirty()
+            session.init_random_generator()
+        fp.close()
+        return session
+
+    def reload_session(self, filename, full):
+        session = self.load_session(filename, full)
+        session.last_term_status = self.session.last_term_status
+        session.last_exec_tree = self.session.last_exec_tree
+        session.cur_exec_count = self.session.cur_exec_count
+        session.update_last_ok_count()
+        return session
+
+    def ensure_connect_locked(self):
+        """
+        ensure connection to gxpd.
+        """
+        if self.so is None:
+            # so = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            for i in range(2):
+                try:
+                    so = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                    so.connect(self.daemon_addr)
+                    break
+                except socket.error,e:
+                    Es(("gxpc: warning failed to connect to gxpd, retry %s\n"
+                        % (e.args,)))
+                    so.close()
+                    time.sleep(1.0)
+            if i > 0:
+                Es("gxpc: OK, connected to gxpd\n")
+            self.so = so
+
+    def ensure_connect(self):
+        self.so_lock.acquire()
+        try:
+            self.ensure_connect_locked()
+        finally:
+            self.so_lock.release()
+
+    def disconnect_locked(self):
+        if self.so is not None:
+            self.so.close()
+            self.so = None
+
+    def disconnect(self):
+        self.so_lock.acquire()
+        try:
+            self.disconnect_locked()
+        finally:
+            self.so_lock.release()
+            
+
+    # ---------- find_gxpd and helpers ----------
+
+    def get_user_name(self):
+        return os.environ.get("USER", "unknown")
+
+    def get_gxp_tmp(self):
+        suffix = os.environ.get("GXP_TMP_SUFFIX", "default")
+        u = self.get_user_name()
+        return os.path.join("/tmp", ("gxp-%s-%s" % (u, suffix)))
+
+    def proc_running(self, pid):
+        """
+        1 if pid is running
+        """
+        try:
+            os.kill(pid, 0)
+            return 1
+        except OSError,e:
+            return 0
+
+    def safe_stat(self, file):
+        try:
+            return os.stat(file)
+        except OSError,e:
+            if e.args[0] == errno.ENOENT:
+                return None
+            else:
+                raise
+
+    def safe_remove(self, filename):
+        if os.path.exists(filename):
+            try:
+                os.remove(filename)
+            except OSError,e:
+                Es("gxpc: %s %s\n" % (filename, e.args,))
+        
+    def safe_remove_if_empty(self, filename):
+        if os.path.exists(filename) and os.path.getsize(filename) == 0:
+            self.safe_remove(filename)
+        
+    def is_mine(self, file):
+        uid = os.getuid()
+        st = self.safe_stat(file)
+        if st is None: return 0
+        owner_uid = st[stat.ST_UID]
+        if uid == owner_uid:
+            return 1
+        else:
+            return 0
+
+    def is_my_file(self, file):
+        """
+        1 if file is socket and the owner is the user
+        """
+        if self.is_mine(file) == 0: return 0
+        st = self.safe_stat(file)
+        if st is None: return 0
+        mode = st[stat.ST_MODE]
+        if stat.S_ISREG(mode):
+            return 1
+        else:
+            return 0
+
+    def is_my_socket(self, file):
+        """
+        1 if file is socket and the owner is the user
+        """
+        if self.is_mine(file) == 0: return 0
+        st = self.safe_stat(file)
+        mode = st[stat.ST_MODE]
+        if stat.S_ISSOCK(mode):
+            return 1
+        else:
+            return 0
+
+    def get_gxp_dir(self):
+        # ugly: copied from gxpd.py
+        # gxp_dir = os.environ.get("GXP_DIR", "")
+        # if gxp_dir != "": return gxp_dir
+        full_path_gxpd_py = gxpd.get_this_file()
+        if full_path_gxpd_py is None: return None
+        # full_path_gxpd_py should be like a/gxp3/gxpd.py
+        a,b = os.path.split(full_path_gxpd_py)
+        if b != "gxpd.py":
+            Es("%s : could not derive GXP_DIR from %s\n" \
+               % (self.gupid, full_path_gxpd_py))
+            return None
+        return a
+
+    def push_path(self, orig, val):
+        if orig == "":
+            return val
+        else:
+            return "%s:%s" % (val, orig)
+
+    def get_gxpc_environment(self):
+        gxp_dir = self.get_gxp_dir()
+        if gxp_dir is None: return None
+        gxpbin_dir = os.path.join(gxp_dir, "gxpbin")
+        path = os.environ.get("PATH", "")
+        path = self.push_path(path, gxp_dir)
+        path = self.push_path(path, gxpbin_dir)
+        pypath = os.environ.get("PYTHONPATH", "")
+        pypath = self.push_path(pypath, gxp_dir)
+        pypath = self.push_path(pypath, gxpbin_dir)
+        return gxpc_environment({ "GXP_DIR"      : gxp_dir,
+                                  "GXP_GUPID"    : self.gupid,
+                                  "PATH"         : path,
+                                  "PYTHONPATH"   : pypath })
+
+    def find_or_create_session(self):
+        """
+        Find or create a session to attach to.
+        It is determined by several factors.
+        (1) command line option (--session) specifying it
+        (2) environment variable (GXP_SESSION) specifying it
+        (3) command line option (--create_session and
+            --create_daemon) specifying when to create a new session.
+              -1 : never create
+               0 : create in some cases (see below)
+               1 : always create
+        If create_session is not 1, first searches for file
+                /tmp/gxp-$USER/gxpsession-*
+        If create_session is 1, it behaves below as if no
+        such files are found. 
+        For each file, it checks if the name matches the pattern
+        given by --session or GXP_SESSION.
+        If mulitple files match -> error.
+        If exactly one file matches -> OK, return it.
+        If none matches -> it creates a new session only if
+        neither --session nor GXP_SESSION are given. If one is given,
+        it immediately reports an error saying found no matching
+        session.
+
+        To create a new session, we first try to find a running
+        daemon according to the specified pattern (--daemon or
+        GXP_DAEMON). If not found, whether or not we create a
+        new daemon is determined by other factors (--create_daemon,
+        GXP_DAEMON, --create_daemon).
+                  
+        """
+        opts = self.opts
+        if opts.verbosity >= 2:
+            Es("gxpc: find or create session\n")
+        if opts.create_daemon > 0 or opts.create_session > 0:
+            # pretend that no session files are found
+            sessions = []
+        else:
+            # look for specified /tmp/gxp-$USER/gxpsession-* files
+            sessions = self.find_sessions()
+        if sessions is None:
+            # regexp error
+            return -1
+        elif len(sessions) > 1:
+            # multiple session found --> always an error
+            if opts.session is None:
+                Es("gxpc: there are multiple sessions. "
+                   "use environment variable GXP_SESSION or "
+                   "option --session to specify one\n")
+            else:
+                Es("gxpc: there are multiple sessions that "
+                   "matched the requested pattern (%s). "
+                   "use environment variable GXP_SESSION or "
+                   "option --session to specify one\n" \
+                   % opts.session)
+            # show all sessions that matched
+            for gupid,daemon_addr,session_file in sessions:
+                Es("%s\n" % session_file)
+            return -1
+        elif len(sessions) == 1:
+            # happy case. we found exactly one. 
+            gupid,daemon_addr,session_file = sessions[0]
+            self.gupid = gupid
+            self.daemon_addr = daemon_addr
+            self.session_file = session_file
+            if opts.verbosity >= 2:
+                Es("gxpc: OK, session found (%s)\n" \
+                   % self.session_file)
+            return 0
+        else:
+            # not found. determine if we should create one
+            ses = opts.session
+            if ses is None: ses = os.environ.get("GXP_SESSION")
+            if ses is None or ses == "":
+                # neither --session nor GXP_SESSION specified,
+                if opts.create_session >= 0:
+                    # and --create_session doesn't say don't create
+                    # --> create
+                    if opts.verbosity >= 2:
+                        Es("gxpc: no session found, "
+                           "try to create one\n")
+                    if self.find_or_create_daemon() == -1:
+                        return -1
+                    assert self.gupid is not None
+                    assert self.daemon_addr is not None
+                    if opts.verbosity >= 2:
+                        Es("gxpc: daemon found (%s), create session"
+                           " for it\n" % self.gupid)
+                    f = self.create_session_filename(self.gupid)
+                    self.session_file = f
+                    if opts.verbosity >= 2:
+                        Es("gxpc: new session %s\n" \
+                           % self.session_file)
+                    return 0
+                else:
+                    # session not found, and command says dont create
+                    Es("gxpc: no session\n")
+                    return -1
+            else:
+                # session explicitly specified and not found
+                Es("gxpc: no session matching the requested "
+                   "pattern (%s)\n" % ses)
+                return -1
+
+    def create_session_filename(self, gupid):
+        id = random.randint(0, 99999999)
+        if self.opts.create_session > 0 or self.opts.create_daemon > 0:
+            # avoid confusing implicitly created session
+            template = "Gxpsession-%s-%08d"
+        else:
+            template = "gxpsession-%s-%08d"
+        return os.path.join(self.get_gxp_tmp(),
+                            template % (gupid, id))
+    
+    def session_files_of_gupid(self, gupid):
+        glob_pat = os.path.join(self.get_gxp_tmp(),
+                                ("?xpsession-%s-*" % gupid))
+        return glob.glob(glob_pat)
+
+    def find_sessions(self):
+        """
+        Find session files matching the requested pattern.
+        session file name is
+
+          gxpsession-hostname-user-yyyy-mm-dd-hh-mm-ss-pid-random
+
+        Along the way, we make sure the daemon is actually running
+        by checking pid and its socket file. Always return a session
+        whose daemon seems really alive.
+
+        """
+        opts = self.opts
+        gxp_tmp = self.get_gxp_tmp()
+        glob_pat = os.path.join(gxp_tmp, "?xpsession-*")
+        # pattern to extract pid
+        pat = ".xpsession-(.+-.+-\d+-\d+-\d+-\d+-\d+-\d+-(\d+))-\d+"
+        regexp = re.compile(os.path.join(gxp_tmp, pat))
+        # user-specified pattern
+        # 1. command line (--session)
+        # 2. environment variable (GXP_SESSION)
+        # 3. default is match always (.*)
+        session_pat = opts.session
+        if session_pat is None:
+            session_pat = os.environ.get("GXP_SESSION")
+        if session_pat is None or session_pat == "":
+            # when session is not specified, ignore Gxpsession-...
+            session_pat = "gxpsession-.*"
+        # compile user specified pattern
+        try:
+            u_regexp = re.compile(session_pat)
+        except ValueError,e:
+            Es("gxpc: %s %s\n" % (session, e.args))
+            return None
+        # now search for files
+        sessions = []
+        for session in glob.glob(glob_pat):
+            # match against the user-specified pattern
+            m = u_regexp.search(session)
+            if m is None: continue
+            # match against the common pattern and get gupid/pid part
+            m = regexp.match(session)
+            if m is None: continue
+            gupid = m.group(1)
+            pid = int(m.group(2))
+            # check if daemon is really alive
+            live,daemon_addr = self.daemon_running(gupid, pid)
+            if live == 0:
+                # session exists, but the process seems gone.
+                # cleanup garbages
+                self.cleanup_daemon_files(gupid)
+                self.cleanup_session_file(session)
+                # Es("gxpc : cleanup session file %s\n" % session)
+            elif daemon_addr is not None:
+                sessions.append((gupid, daemon_addr, session))
+        return sessions
+            
+    def daemon_running(self, gupid, pid):
+        """
+        check if daemon gupid is really running.
+        - process pid exists
+        - its socket file (/tmp/gxp-$USER/gxpd-*) exists
+        """
+        opts = self.opts
+        if opts.verbosity >= 2:
+            Es("gxpc: checking if daemon %s is alive "
+               "and interesting\n" % gupid)
+        if self.proc_running(pid) == 0:
+            if opts.verbosity >= 2:
+                Es("gxpc: no, process %d not alive\n" % pid)
+            return 0,None
+        gxp_tmp = self.get_gxp_tmp()
+        socket_file = os.path.join(gxp_tmp, ("gxpd-%s" % gupid))
+        Socket_file = os.path.join(gxp_tmp, ("Gxpd-%s" % gupid))
+        if not self.is_my_socket(socket_file):
+            socket_file = Socket_file
+        if self.is_my_socket(socket_file):
+            pat = opts.daemon
+            if pat is None: pat = os.environ.get("GXP_DAEMON")
+            if pat is None or pat == "": pat = ".*"
+            try:
+                regexp = re.compile(pat)
+            except ValueError,e:
+                Es("gxpc: no, wrong pattern %s %s\n" % (pat, e.args))
+                return 1,None
+            if regexp.search(socket_file):
+                if opts.verbosity >= 2:
+                    Es("gxpc: yes, daemon %s alive and "
+                       "interesting\n" % gupid)
+                return 1,socket_file
+            else:
+                if opts.verbosity >= 2:
+                    Es("gxpc: no, daemon %s alive but "
+                       "uninteresting\n" % gupid)
+                return 1,None           # alive, but uninteresting
+        if opts.verbosity >= 2:
+            Es("gxpc: no, socket %s does not exist\n" % socket_file)
+        return 0,None
+
+    def cleanup_daemon_files(self, gupid):
+        """
+        cleanup files of apparantly dead daemons.
+        - gxpd-[gupid] socket file
+        - gxpout-[gupid] stdout
+        - gxperr-[gupid] stderr
+        """
+        if self.opts.verbosity >= 2:
+            Es("gxpc: clean up daemon files for %s\n" % gupid)
+        gxp_tmp = self.get_gxp_tmp()
+        socket_file = os.path.join(gxp_tmp, ("gxpd-%s" % gupid))
+        out_file = os.path.join(gxp_tmp, ("gxpout-%s" % gupid))
+        err_file = os.path.join(gxp_tmp, ("gxperr-%s" % gupid))
+        Socket_file = os.path.join(gxp_tmp, ("Gxpd-%s" % gupid))
+        Out_file = os.path.join(gxp_tmp, ("Gxpout-%s" % gupid))
+        Err_file = os.path.join(gxp_tmp, ("Gxperr-%s" % gupid))
+        self.safe_remove(socket_file)
+        self.safe_remove_if_empty(out_file)
+        self.safe_remove_if_empty(err_file)
+        self.safe_remove(Socket_file)
+        self.safe_remove_if_empty(Out_file)
+        self.safe_remove_if_empty(Err_file)
+
+    def cleanup_session_file(self, session_file):
+        if self.opts.verbosity >= 2:
+            Es("gxpc: clean up session file %s\n" % session_file)
+        self.safe_remove(session_file)
+
+    def find_or_create_daemon(self):
+        """
+        Find or create a session to attach to.
+        It is determined by several factors.
+        (1) command line option (--daemon) specifying it
+        (2) environment variable (GXP_DAEMON) specifying it
+        (3) command line option (--create_daemon) specifying
+        when to create a new daemon.
+              -1 : never create
+               0 : create in some cases (see below)
+               1 : always create
+        If create_daemon is not 1, first searches for file
+                /tmp/gxp-$USER/gxpd-*
+        If create_daemon is 1, it behaves below as if no
+        such files are found. 
+        For each file, it checks if the name matches the pattern
+        given by --daemon or GXP_DAEMON.
+        If mulitple files match -> error.
+        If exactly one file matches -> OK, return it.
+        If none matches -> it creates a new daemon only if
+        neither --daemon nor GXP_DAEMON are given. If one is given,
+        it immediately reports an error saying found no matching
+        daemon.
+
+        Upon success, we set gupid, daemon_addr fields.
+
+        """
+        opts = self.opts
+        if opts.verbosity >= 2:
+            Es("gxpc: find or create daemon\n")
+        if opts.create_daemon > 0:
+            # pretend as if no socket files are found
+            addrs = []
+        else:
+            # search for specified /tmp/gxp-$USER/gxpd-* files
+            addrs = self.find_daemon_addrs(None)
+        if addrs is None:
+            # regexp error
+            return -1
+        elif len(addrs) > 1:
+            # multiple files found -> error
+            Es("gxpc: there are multiple daemons that "
+               "matched the requested pattern (%s). "
+               "use environment variable GXP_DAEMON or "
+               "option --daemon to specify one\n"
+               % opts.daemon)
+            return -1
+        elif len(addrs) == 1:
+            # exactly one found -> OK
+            gupid,daemon_addr = addrs[0]
+            self.gupid = gupid
+            self.daemon_addr = daemon_addr
+            if opts.verbosity >= 2:
+                Es("gxpc: OK, daemon found (%s)\n" % self.gupid)
+            return 0
+        else:
+            # none found -> determine if we should create one
+            dmn = opts.daemon
+            if dmn is None: dmn = os.environ.get("GXP_DAEMON")
+            if dmn is None or dmn == "":
+                # neither --daemon nor GXP_DAEMON specified,
+                if opts.create_daemon >= 0:
+                    # and --create_daemon doesn't say don't create
+                    # -> create one
+                    if opts.verbosity >= 1:
+                        Es("gxpc: no daemon found, create one\n")
+                    pid = self.create_daemon(opts.create_daemon)
+                    # time.sleep(0.5)
+                    if opts.verbosity >= 2:
+                        Es("gxpc: created, check it again\n")
+                    # search socket files with specified pid
+                    addrs = self.find_daemon_addrs2(pid, 5.0)
+                    if len(addrs) == 1:
+                        gupid,daemon_addr = addrs[0]
+                        self.gupid = gupid
+                        self.daemon_addr = daemon_addr
+                        if opts.verbosity >= 2:
+                            Es("gxpc: daemon successfully brought "
+                               "up (%s)\n" % self.gupid)
+                        return 0
+                    else:
+                        assert len(addrs) == 0, addrs
+                        Es("gxpc: failed to bring up daemon\n")
+                        return -1
+                else:
+                    Es("gxpc: no daemon\n")
+                    return -1
+            else:
+                Es("gxpc: no daemon matching the requested "
+                   "pattern (%s)\n" % dmn)
+                return -1
+
+    def find_daemon_addrs(self, pid_to_find):
+        opts = self.opts
+        gxp_tmp = self.get_gxp_tmp()
+        # daemon file name:
+        # gxpd-hostname-user-yyyy-mm-dd-hh-mm-ss-pid-random
+        glob_pat = os.path.join(gxp_tmp, "?xpd-*")
+        pat = ".xpd-(.+-.+-\d+-\d+-\d+-\d+-\d+-\d+-(\d+))"
+        regexp = re.compile(os.path.join(gxp_tmp, pat))
+        if pid_to_find is None:
+            daemon_pat = opts.daemon
+            if daemon_pat is None:
+                daemon_pat = os.environ.get("GXP_DAEMON")
+            if daemon_pat is None or daemon_pat == "":
+                # if daemon name is implicit, ignore Gxpd-...
+                daemon_pat = "gxpd-.*"
+        else:
+            daemon_pat = ("gxpd-.+-.+-\d+-\d+-\d+-\d+-\d+-\d+-%d" \
+                          % pid_to_find)
+        try:
+            u_regexp = re.compile(daemon_pat)
+        except ValueError,e:
+            Es("gxpc: %s %s\n" % (daemon_pat, e.args))
+            return None
+        addrs = []
+        # daemon is actually a name of a unix-domain socket file
+        for addr in glob.glob(glob_pat):
+            m = u_regexp.search(addr)
+            if m is None: continue
+            m = regexp.match(addr)
+            if m is None: continue
+            gupid = m.group(1)
+            pid = self.safe_atoi(m.group(2), None)
+            assert pid is not None
+            live,daemon_addr = self.daemon_running(gupid, pid)
+            if live == 0:
+                # deamon seems gone.
+                self.cleanup_daemon_files(gupid)
+            elif daemon_addr is not None:
+                addrs.append((gupid, daemon_addr))
+        return addrs
+        
+    def find_daemon_addrs2(self, pid_to_find, wait_time):
+        opts = self.opts
+        gxp_tmp = self.get_gxp_tmp()
+        # daemon file name:
+        # gxpd-hostname-user-yyyy-mm-dd-hh-mm-ss-pid-random
+        glob_pat = os.path.join(gxp_tmp, "?xpd-*")
+        pat = ".xpd-(.+-.+-\d+-\d+-\d+-\d+-\d+-\d+-(\d+))"
+        regexp = re.compile(os.path.join(gxp_tmp, pat))
+        if pid_to_find is None:
+            daemon_pat = opts.daemon
+            if daemon_pat is None:
+                daemon_pat = os.environ.get("GXP_DAEMON")
+            if daemon_pat is None or daemon_pat == "":
+                # daemon name implicit, ignore Gxpd-
+                daemon_pat = "gxpd-.*"
+        else:
+            daemon_pat = (".xpd-.+-.+-\d+-\d+-\d+-\d+-\d+-\d+-%d" \
+                          % pid_to_find)
+        try:
+            u_regexp = re.compile(daemon_pat)
+        except ValueError,e:
+            Es("gxpc: %s %s\n" % (daemon_pat, e.args))
+            return None
+        start_t = time.time()
+        while time.time() < start_t + wait_time:
+            addrs = []
+            # daemon is actually a name of a unix-domain socket file
+            for addr in glob.glob(glob_pat):
+                m = u_regexp.search(addr)
+                if m is None: continue
+                m = regexp.match(addr)
+                if m is None: continue
+                gupid = m.group(1)
+                pid = self.safe_atoi(m.group(2), None)
+                assert pid is not None
+                live,daemon_addr = self.daemon_running(gupid, pid)
+                if live == 0:
+                    # deamon seems gone.
+                    self.cleanup_daemon_files(gupid)
+                elif daemon_addr is not None:
+                    addrs.append((gupid, daemon_addr))
+            if len(addrs) > 0: return addrs
+            time.sleep(0.01)
+        return []
+        
+    def create_daemon(self, create_daemon_explicit):
+        pid = os.fork()
+        if pid == 0:
+            gxpd_py = gxpd.get_this_file()
+            os.setpgrp()
+            os.close(0)
+            os.execvp(gxpd_py,
+                      [ gxpd_py,
+                        "--created_explicitly", 
+                        ("%d" % create_daemon_explicit),
+                        "--no_stdin",
+                        "--redirect_stdout",
+                        "--redirect_stderr" ])
+        else:
+            return pid
+        
+
+    # ------------- handle events from gxpd -------------
+
+    def safe_write(self, fp, s):
+        try:
+            fp.write(s)
+            if self.opts.buffer == 0: fp.flush()
+        except IOError,e:
+            if e.args[0] == errno.EPIPE:
+                return -1
+            else:
+                raise
+        return 0
+
+    def safe_close(self, fp):
+        try:
+            # since python insists keeping stdout/err open
+            if fp is not sys.stdout and fp is not sys.stderr:
+                fp.close()
+                # the following does not work and get a strange msg
+                # close failed: [Errno 9] Bad file descriptor LATER
+                # (not immediately). perhaps it is a msg from
+                # python finalizer?
+                # os.close(fp.fileno())
+        except IOError,e:
+            if e.args[0] == errno.EPIPE:
+                return -1
+            else:
+                raise
+        return 0
+
+    def handle_event_info(self, gupid, tid, ev):
+        # ask where info should go
+        if self.opts.verbosity>=2:
+            Es("gxpc: handle_event_info(%s, %s, ev.msg=%s)\n" \
+               % (gupid, tid, ev.msg))
+        fp,_ = self.outmap.get("info")
+        if fp is None: return 0
+        if ev.msg != "":
+            if self.safe_write(fp, ev.msg) == -1:
+                return -1
+        return 0
+
+    def handle_event_info_pong(self, gupid, tid, ev):
+        return self.handle_event_info(gupid, tid, ev)
+
+    def handle_event_io(self, gupid, tid, ev):
+        if self.opts.verbosity>=2:
+            Es("gxpc: handle_event_io(%s,%s,ev.fd=%s,ev.kind=%s,ev.payload=%s)\n" \
+               % (gupid, tid, ev.fd, ev.kind, ev.payload))
+        # this must match constants in ioman.ch_event
+        OK = 0                              # got OK data
+        IO_ERROR = -1                       # got IO error
+        TIMEOUT = -2                        # got timeout
+        EOF = -3                            # got EOF
+        if ev.fd is None:
+            Es("gxpc: handle_event_io(%s,%s,ev.src=%s,ev.fd=%s,ev.kind=%s,ev.payload=%s,err_msg=%s)\n" \
+               % (gupid, tid, ev.src, ev.fd, ev.kind, ev.payload, ev.err_msg))
+        # fp,co = self.outmap[ev.fd]
+        fp,co = self.outmap.get(ev.fd, (None, None))
+        if ev.payload != "":
+            if ev.src == "proc":
+                # self.event_log.append((time.time(), ev.payload))
+                # if fp is None: Es("what?\n")
+                if fp is not None and \
+                       self.safe_write(fp, ev.payload) == -1:
+                    # Es("got epipe!\n")
+                    self.outmap[ev.fd] = None,None
+                    tgt = self.session.last_exec_tree
+                    rid = None          # all
+                    self.send_action(tgt, tid, gxpm.action_close(rid, ev.fd),
+                                     0, 0)
+                    return -1
+            else:                       # peer
+                h = self.session.reached[gupid]
+                if h.children.has_key(ev.rid):
+                    tgt = h.children[ev.rid].target_label
+                else:
+                    tgt = ev.rid
+                msg = ("%s heard from %s : %s" % (gupid, tgt,
+                                                  ev.payload))
+                if fp is not None and \
+                   self.safe_write(fp, msg) == -1:
+                    self.outmap[ev.fd] = None,None
+                    return -1
+        if ev.kind == EOF or ev.kind == IO_ERROR:
+            if co and co.decrement() == 1 and self.opts.persist == 0:
+                self.outmap[ev.fd] = None,None
+                if fp is not None and self.safe_close(fp) == -1:
+                    return -1
+        return 0
+
+    def handle_event_die(self, gupid, tid, ev):
+        if self.opts.verbosity>=2:
+            Es("gxpc: handle_event_die(%s, %s, ev.payload=%s)\n" \
+               % (gupid, tid, ev.status))
+        # Ws("shindayo\n")
+        self.session.last_term_status[gupid] = int(ev.status)
+        if self.notify_proc_exit_fp:
+            # self.opts.notify_proc_exit > 0
+            self.safe_write(self.notify_proc_exit_fp,
+                            ("%s %s %s %s %s %s\n"
+                             % (gupid, tid, ev.src, ev.rid, ev.pid, ev.status)))
+
+    def handle_event_peerstatus(self, gupid, tid, ev):
+        if self.opts.verbosity>=2:
+            Ws(("handle_event_peerstatus(%s,%s,%s,%s,"
+                "ev.parent_name=%s,ev.rid=%s)\n" % 
+                (ev.peername, ev.target_label, ev.hostname, 
+                 ev.status, ev.parent_name, ev.rid)))
+        session = self.session
+        reached = session.reached
+        successful_targets = session.successful_targets
+        t = reached[ev.parent_name]
+        if not t.children.has_key(ev.rid):
+            Es("gxpc: warning: ignore late status from %s "
+               "(status=%s, parent=%s)\n" % \
+               (ev.peername, ev.status, ev.parent_name))
+            return
+        c = t.children[ev.rid]
+        target_label = c.target_label
+        # Ws("del %s\n" % c)
+        del self.exploring[c]
+        fp,_ = self.outmap.get("explore")
+        assert fp is not None
+        if ev.status == "OK":
+            c.name = ev.peername
+            c.hostname = ev.hostname
+            assert c.target_label == ev.target_label, \
+                (c.target_label == ev.target_label)
+            reached[ev.peername] = c
+            s = successful_targets.get(target_label, 0)
+            successful_targets[target_label] = s + 1
+            self.safe_write(fp, ("reached : %s (%s)\n" % 
+                                 (target_label, ev.hostname)))
+        else:
+            self.safe_write(fp, ("failed  : %s (%s) <- %s\n" % 
+                                 (target_label, ev.hostname, ev.parent_name)))
+            assert ev.status == "NG", result
+            del t.children[ev.rid]
+            self.failed_to_explore.append(target_label)
+
+    def handle_event_fin(self, gupid, tid, ev):
+        pass
+
+    def get_num_execs(self, exec_tree):
+        if exec_tree.num_execs != None:
+            return exec_tree.num_execs
+        else:
+            for child in exec_tree.children:
+                num_execs = self.get_num_execs(child)
+                if num_execs != None:
+                    return num_execs
+            return None
+
+    def handle_event_invalidate_view(self, gupid, tid, ev):
+        if self.opts.verbosity >= 2:
+            Es("gxpc: received invalidate view\n")
+        self.session.invalid = 1
+
+    # ---------- send and recv stuff ----------
+
+    def asend_locked(self, str):
+        """
+        assume connectin is established.
+        send str to gxpd.
+        """
+        # Ws("send : %s\n" % str)
+        so = self.so
+        if so is None: return -1
+        so.send(self.h_temp % (len(str), 0))
+        so.send(str)
+        so.send(self.t_temp % (len(str), 0, 0))
+        return 0
+
+    def asend(self, str):
+        self.so_lock.acquire()
+        try:
+            self.asend_locked(str)
+        except socket.error,e:
+            self.so_lock.release()
+            if e.args[0] == errno.EPIPE \
+               or e.args[0] == errno.ECONNRESET \
+               or e.args[0] == errno.EBADF: # closed just before
+                # Es("gxpc: warning: processes quit before receiving some msgs\n")
+                return -1
+            else:
+                raise
+        self.so_lock.release()
+        return 0
+
+    def time_limit_to_out(self, time_limit):
+        if time_limit is None: return None
+        to = time_limit - time.time()
+        # we never set timeout to be less than 0.5.
+        # this means if we keep receiving something in <0.5sec interval,
+        # we never quit
+        if to < 0.0: return 0.5
+        return to
+        
+    def timeout_to_limit(self, timeout):
+        if timeout is None: return None
+        return timeout + time.time()
+        
+    def recv_once(self, time_limit):
+        """
+        receive a single msg. return None on EOF
+        """
+        so = self.so
+        to = self.time_limit_to_out(time_limit)
+        try:
+            if to is not None:
+                R,_,_ = select.select([so], [], [], to)
+                if len(R) == 0.0:
+                    Es("gxpc: timeout\n")
+                    return None
+            if 0: Es("so.recv\n")
+            hd = so.recv(self.h_len)
+            if 0: Es("so.recv done\n")
+        except socket.error,e:
+            # 2007 1 14
+            # recv seems to get ECONNRESET in come cases.
+            # my hypethesis is that it happens if:
+            # 1. remote processes terminated, so gxpd closes connection
+            # 2. almost at the same time, the forwarder thread sends
+            #    something, and send successfully returned
+            # 3. and then we reach here
+            if e.args[0] == errno.ECONNRESET:
+                return None
+            else:
+                raise
+        if hd == "":
+            return None
+        m = self.h_pat.match(hd)
+        assert m is not None, hd
+        sz = int(m.group(1))
+        assert sz > 0, sz
+        remain_sz = sz
+        bodies = []
+        while remain_sz > 0:
+            body = so.recv(remain_sz)
+            if body == "":
+                Es("premature EOF\n")
+                return None
+            bodies.append(body)
+            remain_sz = remain_sz - len(body)
+        tr = so.recv(self.t_len)
+        if len(tr) < self.t_len:
+            Es("expected %d bytes, only got [%s]\n" % \
+               (self.t_len, len(tr)))
+            return None
+        return string.join(bodies, "")
+
+    def recv_loop(self, n_break_exploring, time_limit):
+        """
+        repeat receiving a msg and pass it to one of handle_xxx
+        methods, depending on the type of events
+        (info/io/die/peerstatus/fin).
+
+        return either if the connection is closed by the gxpd,
+        or we are exploring and the number of targets being
+        explored drops to the specified n_break_exploring.
+        
+        """
+        while 1:
+            if 0: Es("recv_once\n")
+            body = self.recv_once(time_limit)
+            if 0: Es("recv_once done\n")
+            if body is None:
+                # gxpd closed the connection to me. quit
+                self.disconnect()
+                # return and say we should quit
+                return cmd_interpreter.RECV_QUIT
+            # parse msg to build a structure
+            m = gxpm.parse(body)
+            assert (isinstance(m, gxpm.up) or isinstance(m, gxpm.syn)), m
+            # record it if interesting
+            if self.events is not None:
+                self.events.append((m.gupid, m.tid, m.event))
+            # event type
+            h = "handle_%s" % m.event.__class__.__name__
+            method = getattr(self, h)
+            # call one of handle_xxx methods
+            method(m.gupid, m.tid, m.event)
+            if len(self.exploring) <= n_break_exploring:
+                # return, but say "we should continue"
+                return cmd_interpreter.RECV_CONTINUE
+
+    def recv_loop_noex(self, n_break_exploring, time_limit):
+        """
+        Repeat receiving (see above). If interrupted (by
+        ctrl-C), return -1. Otherwise return whatever
+        recv_loop returns. 
+        """
+        try:
+            return self.recv_loop(n_break_exploring, time_limit)
+        except KeyboardInterrupt,e:
+            return cmd_interpreter.RECV_INTERRUPTED
+        
+    def send_action(self, tgt, tid, act, persist, keep_connection):
+        """
+        do action (act) on some nodes.
+        
+        return (term_status,out_list):
+
+         term_status : dictionary of termination status
+         out_list    : output list
+        
+        """
+        clauses = [ gxpm.clause(".*", [ act ]) ]
+        gcmds = [ clauses ]
+        peer_tree = self.session.peer_tree
+
+        if tgt is None: return None
+        if tid is None:
+            tid = "t%s" % self.session.gen_random_id()
+        self.ensure_connect()
+        m = gxpm.down(tgt, tid, persist, keep_connection, gcmds)
+        msg = gxpm.unparse(m)
+        if self.asend(msg) == -1:
+            return None
+        else:
+            return tid
+
+    # 
+    # ---------- helper functions for showing help ----------
+    #
+
+    def generic_help(self, cmd):
+        Es("Try `gxpc help %s' for more information.\n" % cmd)
+        
+    #
+    # help
+    #
+    def show_help_summary(self):
+        p = re.compile("do_(.*)_cmd")
+        cmds = []
+        for a in dir(self):
+            m = p.match(a)
+            if m is not None:
+                cmds.append(m.group(1))
+        cmds.sort()
+        Es((r"""Usage:
+  gxpc [global_options] COMMAND options ...
+COMMAND is one of:
+  %s
+
+Try
+  gxpc help COMMAND
+to get more help on a specific command.
+""" % string.join(cmds, ",")))
+
+    def show_help_command(self, cmd):
+        cname = "do_%s_cmd" % cmd
+        usage_name = "usage_%s_cmd" % cmd
+        if hasattr(self, cname) and hasattr(self, usage_name):
+            method = getattr(self, usage_name)
+            Es(method())
+        elif hasattr(self, cname):
+            Es("gxpc: %s: command has no help\n" % cmd)
+        else:
+            Es("gxpc: %s: no such command\n" % cmd)
+            self.show_help_summary()
+
+    def search_cmd_group(self, cmd, groups):
+        for group in groups:
+            if cmd in group:
+                return group
+        return [ cmd ]
+        
+    def show_help_all_commands(self):
+        p = re.compile("do_(.*)_cmd")
+        command_groups = [
+            [ "smask", "savemask", "pushmask" ],
+            [ "e", "mw" ],
+            [ "use", "edges" ],
+            [ "prof_start", "prof_stop" ],
+            [ "log_level", "log_base_time" ],
+            ]
+        cmds = []
+        dirs = dir(self)
+        dirs.sort()
+        helps = []
+        marked = {}
+        for a in dirs:
+            m = p.match(a)
+            if m is not None:
+                cmd = m.group(1)
+                if marked.has_key(cmd): continue
+                groups = self.search_cmd_group(cmd, command_groups)
+                for c in groups: marked[c] = 1
+                method = getattr(self, ("usage_%s_cmd" % cmd))
+                helps.append((groups, method()))
+        texinfo_formatter().format(helps)
+
+    # 
+    # ---------- commands (do_xxxx_cmd and usage_xxxx_cmd ) ----------
+    #
+
+    #
+    # help
+    #
+    def usage_help_cmd(self):
+        return (r"""Usage:
+  gxpc help
+  gxpc help COMMAND
+
+Description:
+  Show summary of gxpc commands or a help on a specific COMMAND.
+""")
+
+    def do_help_cmd(self, args):
+        if len(args) == 0:
+            self.show_help_summary()
+        else:
+            self.show_help_command(args[0])
+        return 0
+                
+    #
+    # makeman
+    #
+    def usage_makeman_cmd(self):
+        return (r"""Usage:
+  gxpc makeman
+""")
+
+    def do_makeman_cmd(self, args):
+        self.show_help_all_commands()
+        return 0
+
+    #
+    # stat
+    #
+    def usage_stat_cmd(self):
+        return (r"""Usage:
+  gxpc stat
+
+Description:
+  Show all live gxp daemons in tree format.
+""")
+                    
+    def do_stat_cmd(self, args):
+        """
+        stat
+        show tree of peers
+        """
+        level = 1
+        if len(args) > 0:
+            level = self.safe_atoi(args[0], level)
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+
+        self.session.clear_dirty()
+        if 1:
+            self.session.show(level)
+        else:
+            Ws("%s\n" % self.session_file)
+        # Ws("%s\n" % self.gupid)
+            if level >= 1:
+                self.session.peer_tree.show()
+        return 0
+                    
+    #
+    # edges
+    #
+    def usage_use_cmd(self):
+        return (r"""Usage:
+  gxpc use          [--as USER] RSH_NAME SRC [TARGET]
+  gxpc use --delete [--as USER] RSH_NAME SRC [TARGET]
+  gxpc use
+  gxpc use --delete [idx]
+
+Description:
+
+  Configure rsh-like commands used to login targets matching a
+particular pattern from hosts matching a particular pattern. The
+typical usage is `gxpc use RSH_NAME SRC TARGET', which says gxp can
+use an rsh-like command RSH_NAME for SRC to login TARGET. gxpc
+remembers these facts to decide which hosts should issue which
+commands to login which hosts, when explore command is issued. See the
+section of explore command and the tutorial section of the manual.
+
+Examples:
+  gxpc use           ssh abc000.def.com pqr.xyz.ac.jp
+  gxpc use           ssh abc000 pqr
+  gxpc use           ssh abc
+  gxpc use           rsh abc
+  gxpc use --as taue ssh abc000 pqr
+  gxpc use qrsh      abc
+  gxpc use qrsh_host abc
+  gxpc use sge       abc
+  gxpc use torque    abc
+
+The first line says that, if gxpc is told to login pqr.xyz.ac.jp by
+explore command, hosts named abc000.def.com can use `ssh' method to do
+so.  How it translates into the actual ssh command line can be shown
+by `show_explore' command (try `gxpc help show_explore') and can be
+configured by `rsh' command (try `gxpc help rsh').
+
+SRC and TARGET are actually regular expressions, so the line like the
+first one can often be written like the second one.  The first line
+is equivalent to the second line as long as there is only one host
+begining with abc000 and there is only one target beginning with pqr.
+In general, the specification:
+
+  gxpc use RSH_NAME SRC TARGET
+
+is read: if gxpc is told to login a target matching regular
+expession TARGET, a host matching regular expression SRC can use
+RSH_NAME to do so.
+
+Note that the effect of use command is NOT to specify which target
+gxpc should login, but to specify HOW it can do so, if it is told
+to. It is the role of explore command to specify which target hosts it
+should login
+
+If the TARGET argument is omitted as in the third line, it is
+treated as if TARGET expression is SRC. That is, the third line
+is equivalent to:
+
+  gxpc use ssh abc abc
+
+This is often useful to express that ssh login is possible
+between hosts within a single cluster, which typically have a
+common prefix in their host names. If the traditional rsh command
+is allowed within a single cluster, the fourth line may be useful
+too.
+
+If --as user option is given, login is issued using an explicit user
+name. The fifth line says when gxp attempts to login pqr from abc000,
+the explicit user name `taue' should be given. You do not need this as
+long as the underlying rsh-like command will complement it by a
+configuration file. e.g., ssh will read ~/.ssh/config to complement
+user name used to login a particular host.
+
+qrsh_host uses command qrsh, with an explicit hostname argument
+to login a particular host (i.e., qrsh -l hostname=...).  This is
+useful in environments where direct ssh is discouraged or
+disallowed and qrsh is preferred.
+
+qrsh also uses qrsh, but without an explicit hostname. The host
+is selected by the scheduler. Therefore it does not make sense to
+try to speficify a particular hostname as TARGET.  Thus, the
+effect of the line
+
+  gxpc use qrsh abc
+
+is if targets beginning with abc is given (upon explore command),
+a host beginning with abc will issue qrsh, and get whichever host
+is allocated by the scheduler.
+
+See Also:
+  explore conf_explore
+""")
+
+    def do_use_cmd(self, args):
+        """
+        use (see below)
+        """
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        session = self.session
+        session.clear_dirty()
+        opts = use_cmd_opts()
+        if opts.parse(args) == -1:
+            return cmd_interpreter.RET_NOT_RUN
+        
+        if len(opts.args) == 0:
+            if opts.delete:
+                # use --delete --> delete all edges
+                Es("gxpc : deleting all use clauses\n")
+                del session.edges[:]
+                session.set_dirty()
+            else:
+                # use --> show all edges
+                idx = 0
+                for m,u,s,t in session.edges:
+                    if u == "":
+                        Ws("%s : use %s %s %s\n" % (idx, m,s,t))
+                    else:
+                        Ws("%s : use --as %s %s %s %s\n" % (idx, u,m,s,t))
+                    idx = idx + 1
+        elif len(opts.args) == 1:
+            if opts.delete:
+                # "use --delete xxx". xxx must be a number
+                idx = opts.safe_atoi(opts.args[0], None)
+                if idx is None:
+                    return cmd_interpreter.RET_NOT_RUN
+                elif not 0 <= idx < len(session.edges):
+                    Es("gxpc use: --delete idx (%d) out of range (try 'gxpc use')\n" \
+                       % idx)
+                    return cmd_interpreter.RET_NOT_RUN
+                else:
+                    del session.edges[idx]
+                    session.set_dirty()
+            else:
+                return cmd_interpreter.RET_NOT_RUN
+        else:
+            if len(opts.args) == 2:
+                [ method, src ] = opts.args
+                target = src
+            elif len(opts.args) == 3:
+                [ method, src, target ] = opts.args
+            else:
+                return cmd_interpreter.RET_NOT_RUN
+            if opts.as != "": method = ("%s_as" % method)
+            if opts.delete:
+                item = (method, opts.as, src, target)
+                if item in session.edges:
+                    session.edges.remove(item)
+                    session.set_dirty()
+                else:
+                    Es("gxpc use: no such use clause '%s'\n" \
+                       % string.join(item, " "))
+                    return cmd_interpreter.RET_NOT_RUN
+            else:
+                if self.session.login_methods.has_key(method):
+                    item = (method, opts.as, src, target)
+                    if item in session.edges:
+                        if opts.as == "":
+                            edge_str = "use %s %s %s" % (method,src,target)
+                        else:
+                            edge_str = "use --as %s %s %s %s\n" % (method,opts.as, src,target)
+
+                        Es("gxpc use: ignore duplicated use clause: %s\n" \
+                           % edge_str)
+                    else:
+                        session.edges.insert(0, (method, opts.as, src, target))
+                        session.set_dirty()
+                else:
+                    Es("gxpc use: no rsh-like method called '%s.' "
+                       "try 'gxpc rsh' to see available methods\n" % method)
+                    return cmd_interpreter.RET_NOT_RUN
+        return 0
+
+    def usage_edges_cmd(self):
+        return ("Note: edges command is deprecated.\n"
+                "Use `use' command instead.\n\n"
+                "%s" % self.usage_use_cmd())
+    
+    def do_edges_cmd(self, args):
+        Es("note: edges command is deprecated. use 'use' command instead\n")
+        return self.do_use_cmd(args)
+
+    #
+    # showmasks
+    #
+    def show_target_tree_rec(self, tree, indent, sio):
+        if tree is None:
+            return
+        else:
+            if tree.eflag:
+                sio.write("%4d: " % tree.exec_idx)
+            else:
+                sio.write("%4s: " % "-")
+            sio.write(" " * indent)
+            sio.write(tree.name)
+            if tree.children is None: sio.write(" *")
+            sio.write("\n")
+            for ch in tree.children:
+                self.show_target_tree_rec(ch, indent + 1, sio)
+
+    def show_target_tree(self, tree):
+        sio = cStringIO.StringIO()
+        sio.write(" idx: name (gupid)\n")
+        self.show_target_tree_rec(tree, 0, sio)
+        r = sio.getvalue()
+        sio.close()
+        return r
+
+    def usage_showmasks_cmd(self):
+        return (r"""Usage:
+  gxpc showmasks [--level 0/1] [NAME]
+
+Description:
+  Show summary (--level 0) or detail (--level 1) of all execution
+masks (if `name' is omitted) or a specified excution mask named
+`name.' The name of the current default execution mask is `0'.
+
+Examples:
+  gxpc showmasks
+  gxpc showmasks --level 0     # show summary of all exec masks
+  gxpc showmasks --level 0 0   # show summary of the current mask
+  gxpc showmasks --level 1 0   # show detail of current exec mask
+  gxpc showmasks --level 1 all # show detail of exec mask named `all'
+
+Without any argument as in the first line, a summary like the
+following is shown.
+
+   0 : 1
+   1 : 66
+   six : 6
+   ten : 8
+   half : 27
+
+This says there are three execution masks, called `0', `1',
+`six', `ten', and `half.' The right column indicates the number
+of nodes that will execute a command when the mask is selected by
+a --withmask (-m) option. `0' is the current, default execution
+mask, used when --withmask (-m) option is not given. These
+masks are created by savemask or pushmask command.
+
+When option --level 1 is given, details about the execution mask
+will be shown, like the following.
+
+  six : 6
+   idx: name (gupid)
+     -: hongo-lucy-tau-2006-12-31-22-40-24-31387
+     -:  hongo002-tau-2006-12-31-13-39-17-338
+     0:   hongo010-tau-2006-12-31-22-25-58-20559
+     -:  hongo006-tau-2006-12-31-22-27-19-11951
+     1:   hongo020-tau-2006-12-31-22-34-06-11026
+     -:  hongo001-tau-2006-12-31-22-34-38-15517
+     2:   hongo030-tau-2006-12-31-22-44-07-4931
+     -:  hongo007-tau-2006-12-31-22-30-54-21738
+     3:   hongo040-tau-2006-12-31-22-47-55-32666
+     -:  hongo004-tau-2008-12-31-22-42-33-31254
+     4:   hongo060-tau-2006-12-31-22-42-59-3899
+     -:  hongo005-tau-2006-12-31-22-38-30-1150
+     5:   hongo050-tau-2006-12-31-22-40-55-18088
+
+This is a subtree of the whole tree of gxp daemons.  Nodes that will
+actually execute commands will have an index number (0, 1, ..., 5) on
+the first column. Nodes marked with `-' will not execute the
+command, but are part of the minimum subtree containing those six
+nodes.
+
+See Also:
+  smask rmask savemask restoremask pushmask popmask
+""")
+
+    def do_showmasks_cmd(self, args):
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        level = 0
+        arg = None
+        i = 0
+        while i < len(args):
+            if args[i] == "--level" and i + 1 < len(args):
+                level = self.safe_atoi(args[i + 1], 0)
+                i = i + 1
+            else:
+                arg = args[i]
+            i = i + 1
+            
+        trees = []
+        if arg is None:
+            # show all masks
+            for i in range(len(self.session.stack_exec_trees)):
+                ex,tree = self.session.stack_exec_trees[i]
+                trees.append((i, ex, tree))
+            for i in self.session.saved_exec_trees.keys():
+                ex,tree = self.session.saved_exec_trees[i]
+                trees.append((i, ex, tree))
+        else:
+            # look for the specified mask and show it
+            i = self.safe_atoi(arg, arg)
+            if i == arg:                # string
+                if self.session.saved_exec_trees.has_key(i):
+                    ex,tree = self.session.saved_exec_trees[i]
+                    trees.append((i, ex, tree))
+                else:
+                    Es("gxpc: No such exec mask %s\n" % i)
+                    return cmd_interpreter.RET_NOT_RUN
+            else:                       # int
+                if 0 <= i < len(self.session.stack_exec_trees):
+                    ex,tree = self.session.stack_exec_trees[i]
+                    trees.append((i, ex, tree))
+                else:
+                    Es("gxpc: No such exec mask %s\n" % i)
+                    return cmd_interpreter.RET_NOT_RUN
+            
+        for i,ex,tree in trees:
+            Ws("%s : %s\n" % (i, ex))
+            if level > 0:
+                Ws(self.show_target_tree(tree))
+        return 0
+        
+    #
+    # smask or pushmask
+    #
+    def smask_like_cmd(self, cmd_name, args):
+        """
+        smask [-]
+        pushmask [-]
+        savemask [-] name
+
+        smask/pushmask:
+        
+        1. make a new exec tree based on last_exec_tree and
+        last_term_status.
+        2. install the new tree as stack_exec_trees[0]
+        smask will overwrite the old stack_exec_trees[0],
+        whereas pushmask will not (push).
+
+        """
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        sign = 1
+        name = None
+        for arg in args:
+            if arg == "-":
+                sign = 0
+            else:
+                name = arg
+        if cmd_name == "smask" or cmd_name == "savemask":
+            push = 0
+        else:
+            assert cmd_name == "pushmask", cmd_name
+            push = 1
+        self.session.set_selected_exec_tree(sign, push, name)
+        return 0
+
+    def usage_smask_like(self):
+        return (r"""Usage:
+  gxpc smask    [-]
+  gxpc savemask [-] NAME
+  gxpc pushmask [-]
+
+Description:
+  All three commands have a common effect. That is to modify the
+set of nodes that will execute subsequent commands.  When `-'
+argument is not given, nodes that executed the last command and
+succeeded are selected. With argument `-', nodes that executed
+the last command and failed are set. The definition of sucess or
+failure depends on commands, but in the case of `e' command, a
+node is considered to succeed if the command exits with status
+zero.
+
+These commands can be used to efficiently choose the nodes
+to execute subsequent commands by various criterion.
+
+Here are some examples.
+
+1.
+
+  gxpc  e  'uname | grep Linux'
+  gxpc  smask
+
+This will set the execution mask of Linux nodes.
+
+2.
+
+  gxpc  e  'which apt-get'
+  gxpc  smask  -
+  gxpc  e  hostname
+
+This will set the execution mask of nodes that do not have apt-get
+command, and the last command will show their hostnames.
+
+To see the effect of these commands, it is advised to include the
+gxp3 directory in your PATH, and add something like the following
+in your shell (bash) prompt, which will show the number of nodes
+that succeeded the last command, the number of nodes that is
+currently selected, and the number all nodes.
+
+  export PS1='\h:\W`which gxp_prompt 1> /dev/null && gxp_prompt`% '
+
+With this, you can see the effect of these commands in shell
+prompt.
+
+  [66/66/66]% e 'uname | grep Linux'
+  Linux
+  Linux
+  Linux
+  Linux
+  Linux
+  Linux
+  Linux
+  Linux
+  Linux
+  Linux
+  [10/66/66]% gxpc smask
+  [10/10/66]% 
+
+In addition to setting the execution mask, savemask saves the set
+of selected nodes with the specified name. Sets of nodes hereby
+saved can be later used for execution by giving --withmask (-m)
+option. This is useful when your work needs several, typical set
+of nodes to execute commands on. For example, you may save a
+small number of nodes for test, all gateway nodes to compile
+programs, all nodes within a particular cluster, and really all
+nodes.
+
+Command pushmask is similar to savemask, but the set is saved
+onto a stack. The newly selected set of nodes are on the top of
+the stack and named `0'.  Previously selected nodes are named by
+the distance from the top.
+
+See Also:
+  showmasks rmask restoremask popmask
+""")
+
+    #
+    # smask
+    #
+    def usage_smask_cmd(self):
+        return self.usage_smask_like()
+        
+    def do_smask_cmd(self, args):
+        """
+        smask [-]
+        """
+        return self.smask_like_cmd("smask", args)
+
+    #
+    # pushmask
+    #
+    def usage_pushmask_cmd(self):
+        return self.usage_smask_like()
+
+    def do_pushmask_cmd(self, args):
+        """
+        pushmask
+        """
+        return self.smask_like_cmd("pushmask", args)
+
+    #
+    # savemask
+    #
+    def usage_savemask_cmd(self):
+        return self.usage_smask_like()
+
+    def do_savemask_cmd(self, args):
+        """
+        savemask
+        """
+        return self.smask_like_cmd("savemask", args)
+
+    #
+    # popmask
+    #
+    def usage_popmask_cmd(self):
+        return (r"""Usage:
+  gxpc popmask
+
+Description:
+  Pop the set of nodes on the top of the stack. The next entry
+that is used to be referred to by name `1' will now be the top
+of the stack, and thus become the default set of nodes selected
+for execution.
+
+See Also:
+  pushmask
+""")
+
+    def do_popmask_cmd(self, args):
+        """
+        popmask
+        """
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        if self.session.pop_exec_tree() == 0:
+            return 0
+        else:
+            return 1
+
+    #
+    # restoremask
+    #
+    def usage_restoremask_cmd(self):
+        return (r"""Usage:
+  gxpc restoremask NAME
+""")
+
+    def do_restoremask_cmd(self, args):
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        if len(args) != 1:
+            return cmd_interpreter.RET_NOT_RUN
+        elif self.session.restore_exec_tree(args[0]) == 0:
+            return 0
+        else:
+            return 1
+
+    #
+    # rmask
+    #
+    def usage_rmask_cmd(self):
+        return (r"""Usage:
+  gxpc rmask
+
+Description:
+  Reset execution mask. Let all nodes execute subsequent commands.
+
+See Also:
+  showmasks smask savemask restoremask pushmask popmask
+""")
+
+    def do_rmask_cmd(self, args):
+        """
+        rmask
+        rmask/explore:
+        1. stack_exec_trees[0] will become the whole peer_tree
+        2. update peer_tree_count
+        """
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        self.session.reset_exec_tree()
+        return 0
+
+
+    #
+    # quit
+    #
+    def usage_quit_cmd(self):
+        return (r"""Usage:
+  gxpc quit [--session_only]
+
+Description:
+  Quit gxp session. By default, all daemons will exit.
+If --session_only is given, daemons keep running and only the 
+session will cease.
+""")
+        
+    def do_quit_cmd(self, args):
+        """
+        quit 
+        """
+        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
+        self.cleanup_session_file(self.session_file)
+        if len(args) == 0 or args[0] != "--session_only":
+            # tgt = gxpm.target_tree(".*", ".*", 1, 0, None, None)
+            tgt = gxpm.target_tree(".*", ".*", 1, 0, gxpm.exec_env(), None)
+            tid = self.send_action(tgt, None, gxpm.action_quit(),
+                                   self.opts.persist,
+                                   self.opts.keep_connection)
+            assert tid is not None
+            self.cleanup_daemon_files(self.gupid)
+            session_files = self.session_files_of_gupid(self.gupid)
+            if 1:
+                for session_file in session_files:
+                    self.cleanup_session_file(session_file)
+        return 0
+        
+    #
+    # ping and helper
+    #
+    #
+    # ping-like commands (ping, cd, export, prof_start, prof_stop, loglevel)
+    #
+
+    def ping_like_cmd(self, action, quiet, trimmed):
+        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
+        # --------- ugly warning begin
+        if quiet: self.outmap["info"] = (None, None)
+        # --------- ugly warning end
+        ex,tgt = self.session.select_exec_tree(self.opts.withmask,
+                                               self.opts.withhostmask,
+                                               self.opts.withhostnegmask,
+                                               self.opts.withgupidmask,
+                                               self.opts.withgupidnegmask)
+        if ex == -1: return cmd_interpreter.RET_NOT_RUN
+        if trimmed and isinstance(tgt, gxpm.target_tree):
+            tgt.set_eflag(1)
+        got_sigint = 0
+        if tgt is not None:             # some nodes to send
+            tid = self.send_action(tgt, None, action, self.opts.persist,
+                                   self.opts.keep_connection)
+            assert tid is not None
+            time_limit = self.timeout_to_limit(self.opts.timeout)
+            res = self.recv_loop_noex(None, time_limit)
+            assert res != cmd_interpreter.RECV_CONTINUE
+            if res == cmd_interpreter.RECV_INTERRUPTED:
+                got_sigint = 1
+        for gupid,tid,ev in self.events:
+            if isinstance(ev, gxpm.event_info) \
+                   and ev.status is not None:
+                self.session.last_term_status[gupid] = ev.status
+        if self.session.peer_tree is None:
+            if self.opts.verbosity>=2:
+                Es("gxpc: construct peer tree\n")
+            if self.session.construct_peer_tree(self.events) == -1:
+                return -1
+        elif trimmed:
+            self.session.trim_peer_tree(tgt)
+        status = self.session.update_last_ok_count()
+        # --------- ugly warning begin
+        if quiet: self.outmap["info"] = (sys.stdout, None)
+        # --------- ugly warning end
+        if got_sigint:
+            return cmd_interpreter.RET_SIGINT
+        else:
+            return status
+
+    def usage_ping_cmd(self):
+        return (r"""Usage:
+  gxpc ping [LEVEL]
+
+Description:
+  Send a small message to the selected nodes and show some
+information. The parameter LEVEL is 0 or 1. Default is 0.
+This is useful to know the name and basic information about
+all or some nodes. It is also useful to check the status (liveness)
+of nodes and trim non-responding nodes.
+
+See Also:
+  trim smask
+""")
+
+    def safe_atoi(self, x, defa):
+        try:
+            return string.atoi(x)
+        except ValueError,e:
+            return defa
+
+    def do_ping_cmd(self, args):
+        """
+        ping
+        """
+        quiet = 0
+        level = 0
+        for a in args:
+            if a == "--quiet":
+                quiet = 1
+            else:
+                level = self.safe_atoi(a, level)
+        act = gxpm.action_ping(level)
+        return self.ping_like_cmd(act, quiet, 0)
+
+    #
+    # cd
+    #
+    def xxx_usage_daemon_cd_cmd(self):
+        return (r"""Usage:
+  gxpc  daemon_cd  DIRECTORY
+
+Description:
+  Set current directory of the gxp daemon on the selected nodes.
+
+""")
+
+    def xxx_do_daemon_cd_cmd(self, args):
+        if len(args) == 0:
+            dir = "$HOME"
+        elif len(args) == 1:
+            dir = args[0]
+        else:
+            return cmd_interpreter.RET_NOT_RUN
+        act = gxpm.action_chdir(dir)
+        return self.ping_like_cmd(act, 0, 0)
+
+    #
+    # export
+    #
+    def xxx_usage_daemon_export_cmd(self):
+        return (r"""Usage:
+  gxpc  daemon_export  VAR=VAL
+
+Description:
+  Set environment variable VAR of the gxp daemon process to
+VAL on the selected nodes.
+
+""")
+
+    def xxx_do_daemon_export_cmd(self, args):
+        if len(args) != 1:
+            return cmd_interpreter.RET_NOT_RUN
+        else:
+            var_val = string.split(args, "=", 1)
+            if len(var_val) != 2:
+                return cmd_interpreter.RET_NOT_RUN
+            [ var, val ] = var_val
+            act = gxpm.action_export(var, val)
+            return self.ping_like_cmd(act, 0, 0)
+
+    #
+    # trim
+    #
+    def usage_trim_cmd(self):
+        return (r"""Usage:
+  gxpc trim
+
+Description:
+  Trim (release) some subtrees of gxp daemons. This is typically
+used after a ping cmd followed by smask, to prune non-responding
+(dead) daemons.  Specifically, trim command will be executed on
+the selected nodes, and each such node will throw away a children
+C if no nodes under the subtree rooted at C are selected for
+execution of this trim command. This effectively prunes (trims)
+the subtree from the tree of gxp daemons. For example,
+
+  gxpc ping
+  # If there are some non-responding daemons, this command will hang.
+  # type <Ctrl-C> to quit.
+  gxpc smask
+  gxpc trim
+""")
+
+    def do_trim_cmd(self, args):
+        act = gxpm.action_trim()
+        return self.ping_like_cmd(act, 0, 1) # trim = 1
+
+    def usage_set_max_buf_len_cmd(self):
+        return (r"""Usage:
+  gxpc set_max_buf_len N
+
+Description:
+  Set maximum internal buffer size of gxp daemons in bytes.
+  default is 10KB and any value below the default is ignored. If no argument
+  is given, use the default value.
+""")
+
+    def do_set_max_buf_len_cmd(self, args):
+        max_buf_len = 10000
+        if len(args) > 0:
+            max_buf_len = self.safe_atoi(args[0], None)
+            if max_buf_len is None:
+                return cmd_interpreter.RET_NOT_RUN
+            if max_buf_len < 10000: max_buf_len = 10000
+        act = gxpm.action_set_max_buf_len(max_buf_len)
+        return self.ping_like_cmd(act, 0, 0)
+
+    #
+    #
+    #
+    def usage_prof_start_stop(self):
+        return (r"""Usage:
+  gxpc prof_start FILENAME
+  gxpc prof_stop
+
+Description:
+  Start/stop profiling of the selected nodes. Stats are saved to
+the FILENAME.
+""")
+
+    def usage_prof_start_cmd(self):
+        return self.usage_prof_start_stop()
+
+    def do_prof_start_cmd(self, args):
+        """
+        prof_start
+        """
+        if len(args) != 1:
+            return cmd_interpreter.RET_NOT_RUN
+        else:
+            act = gxpm.action_prof_start(args[0])
+            return self.ping_like_cmd(act, 0, 0)
+
+    #
+    #
+    #
+    def usage_prof_stop_cmd(self):
+        return self.usage_prof_start_stop()
+
+    def do_prof_stop_cmd(self, args):
+        """
+        prof_stop
+        """
+        act = gxpm.action_prof_stop()
+        return self.ping_like_cmd(act, 0, 0)
+
+    #
+    #
+    #
+    def usage_log_like(self):
+        return (r"""Usage:
+  gxpc log_level LEVEL
+  gxpc log_base_time
+
+Description:
+  Command log_level will set the log level of the selected nodes
+to the specified LEVEL.  0 will write no logs. 2 will write many.
+Command log_base_time will reset the time of the selected nodes
+to zero.  Subsequent log entries will record the time relative to
+this time.
+""")
+
+    def usage_log_level_cmd(self):
+        return self.usage_log_like()
+
+    def do_log_level_cmd(self, args):
+        """
+        log_level
+        """
+        level = 0
+        if len(args) > 0:
+            level = self.safe_atoi(args[0], level)
+        act = gxpm.action_set_log_level(level)
+        return self.ping_like_cmd(act, 0, 0)
+
+    #
+    #
+    #
+    def usage_log_base_time_cmd(self):
+        return self.usage_log_like()
+
+    def do_log_base_time_cmd(self, args):
+        """
+        log_base_time
+        """
+        act = gxpm.action_set_log_base_time()
+        return self.ping_like_cmd(act, 0, 0)
+
+    #
+    #
+    #
+    def usage_reclaim_cmd(self):
+        return (r"""Usage:
+  gxpc reclaim tid
+
+Description:
+  Command reclaim will reclaim task tid unconditionally.
+""")
+        
+
+    def do_reclaim_cmd(self, args):
+        """
+        log_base_time
+        """
+        act = gxpm.action_reclaim_task(args)
+        return self.ping_like_cmd(act, 0, 0)
+
+    #
+    # the 'e' command and helper
+    #
+
+    def forwarder(self, tgt, tid):
+        max_read_gran = 1024 * 8       # 8KB
+        buffers = {}                    #  fd -> buffer
+        while len(self.inmap) > 0:
+            fds = self.inmap.keys()
+            # Es("<select %s>\n" % fds)
+            if len(buffers) > 0:
+                timeout = 0.02
+            else:
+                timeout = None
+            try:
+                rfd,_,_ = select.select(fds, [], [], timeout)
+            except select.error,e:
+                if e.args[0] == errno.EINTR:
+                    # Es("oh my\n")
+                    break
+                raise
+            assert (timeout is not None) or (len(rfd) > 0)
+            if len(rfd) == 0:
+                assert timeout is not None
+                assert len(buffers) > 0
+                if self.flush_buffers(tgt, tid, buffers) == -1:
+                    # Es("gaaan\n")
+                    return
+                buffers = {}
+            else:
+                for fd in rfd:
+                    # Es("<read %s>\n" % fd)
+                    target_fd = self.inmap[fd]
+                    # message from main thread
+                    if target_fd == "sync":
+                        hd = os.read(fd, self.h_len)
+                        if hd == "":
+                            raise RuntimeError, 'Pipe with main thread may be broken.'
+                        m = self.h_pat.match(hd)
+                        assert m is not None, hd
+                        sz = int(m.group(1))
+                        assert sz > 0, sz
+                        new_exec_tree_count,new_exec_tree = gxpm.parse(os.read(fd, sz))
+                        assert isinstance(new_exec_tree, gxpm.target_tree), \
+                            type(new_exec_tree)
+                        tgt = gxpm.merge_target_tree(new_exec_tree, tgt)
+                        continue
+                    payload = os.read(fd, max_read_gran)
+                    if payload == "":
+                        # Es("del self.inmap[%s]\n" % fd)
+                        del self.inmap[fd]
+                    # Es("<read got [%s]>\n" % payload)
+                    # put payload in buffers
+                    if target_fd is not None:
+                        if not buffers.has_key(target_fd): buffers[target_fd] = []
+                        buffers[target_fd].append(payload)
+                        # self.event_log.append((time.time(), "<read %d>\n" % len(payload)))
+        self.flush_buffers(tgt, tid, buffers)
+        buffers = {}
+
+    def flush_buffers(self, tgt, tid, buffers):
+        for target_fd,buf in buffers.items():
+            rid = None                  # all
+            msg = string.join(buf, "")
+            acts = [ gxpm.action_feed(rid, target_fd, msg) ]
+            if msg != "" and buf[-1] == "":
+                # send EOF separately
+                acts.append(gxpm.action_feed(rid, target_fd, ""))
+
+            # self.event_log.append((time.time(), "<send_action>\n"))
+            for act in acts:
+                x = self.send_action(tgt, tid, act, 0, 0)
+                if x is None: return -1
+                # self.event_log.append((time.time(), "<send_action OK>\n"))
+        return 0
+    
+    def usage_e_and_mw(self):
+        return (r"""Usage:
+  gxpc e  [OPTION ...] CMD
+  gxpc mw [OPTION ...] CMD
+  gxpc ep [OPTION ...] file
+
+Description:
+  Execute the command on the selected nodes.
+
+Option (for mw only):
+  --master 'command'
+    equivalent to e --updown '3:4:command' ...
+  if --master is not given, it is equivalent to e --updown 3:4 ...
+
+Options (for e, mw, and ep):
+  --withmask,-m MASK
+    execute on a set of nodes saved by savemask or pushmask
+  --withhostmask,-h HOSTMASK
+    execute on a set of nodes whose names match regexp HOSTMASK
+  --withhostnegmask,-H HOSTMASK
+    execute on a set of nodes whose names do not match regexp HOSTMASK
+  --up FD0[:FD1]
+    collect output from FD0 of CMD, and output them to FD1 of gxpc.
+    if :FD1 is omitted, it is treated as if FD1 == FD0
+  --down FD0[:FD1]
+    broadcast input to FD0 of gxpc to FD1 of CMD.
+    if :FD1 is omitted, it is treated as if FD1 == FD0
+  --updown FD1:FD2[:MASTER]
+    if :MASTER is omitted, collect output from FD1 of CMD,
+    and broadcast them to FD2 of CMD.
+    if :MASTER is given, run MASTER on the local host, collect
+    output from FD1 of CMD, feed them to stdin of the MASTER.
+    broadcast stdout of the MASTER to FD1 of CMD.
+  --pty
+    assign pseudo tty for stdin/stdout/stderr of CMD
+
+By default,
+
+- stdin of gxpc are broadcast to stdin of CMD
+- stdout of CMD are output to stdout of gxpc
+- stderr of CMD are output to stderr of gxpc
+
+This is as if `--down 0 --up 1 --up 2' are specified.  In this
+case, stdout/stderr are block-buffered by default.  You may need
+to do setbuf in your program or flush stdout/err, to display
+CMD's output without delay.  --pty overwrites this and turn them
+to line-buffered (by default).  both stdout/err of CMD now goto
+stdout of gxpc (they are merged).  CMD's stdout/err should appear
+as soon as they are newlined.
+
+See Also:
+  smask savemask pushmask rmask restoremask popmask
+""")
+        
+    def add_pty_pipes(self, atomicity, pipes, open_count):
+        pipes.append(("pty",
+                      [ ("w", 0, atomicity), ("r", 1, atomicity) ],
+                      [ ("r", 0), ("w", 1), ("w", 2) ]))
+        if open_count == "":
+            co = None
+        else:
+            co = counter(open_count)
+        self.outmap[1] = (sys.stdout, co)
+        self.inmap[0] = 0
+
+    def add_up_pipe(self, from_fd, to_fd,
+                    atomicity, pipes, open_count):
+        # pipes.append((fd, "w", atomicity))
+        if self.check_fd_writable(to_fd) == 0:
+            Es("gxpc: file descriptor %s is not open for write. "
+               "perhaps missing '%s> file'\n" % (to_fd, to_fd))
+            return -1
+        fp = self.fdopen(to_fd, "wb", -1) # -1 = default buffer
+        pipes.append(("pipe", # "sockpair",
+                      [("r", from_fd, atomicity)], [("w", from_fd)]))
+        if open_count == "":
+            co = None
+        else:
+            co = counter(open_count)
+        # assert not self.outmap.has_key(from_fd)
+        self.outmap[from_fd] = (fp, co)
+        return 0
+
+    def add_down_pipe(self, from_fd, to_fd, pipes):
+        """
+        make an entry which says if this process gets
+        something from 'from_fd', it should go to 'to_fd'
+        of all running procs
+        """
+        pipes.append(("pipe", [("w", to_fd, None)], [("r", to_fd)]))
+        # check if from_fd is readable
+        if self.check_fd_readable(from_fd) == 0:
+            Es("gxpc: file descriptor %s is not open for read. "
+               "perhaps missing '%s< file'\n" % (from_fd, from_fd))
+            return -1
+        else:
+            # assert not self.inmap.has_key(from_fd)
+            self.inmap[from_fd] = to_fd
+        return 0
+
+    def setup_default_pipes(self, opts):
+        self.outmap["info"] = (sys.stdout, None)
+        self.outmap["explore"] = (sys.stdout, None)
+
+    def check_fd_readable(self, fd):
+        try:
+            select.select([ fd ], [], [], 0.0)
+        except select.error,e:
+            if e.args[0] == errno.EBADF:
+                return 0
+            else:
+                raise
+        return 1
+
+    def check_fd_writable(self, fd):
+        try:
+            select.select([], [ fd ], [], 0.0)
+        except select.error,e:
+            if e.args[0] == errno.EBADF:
+                return 0
+            else:
+                raise
+        return 1
+
+    def fdopen(self, fd, mode, bufsz):
+        if fd == 1:
+            return sys.stdout
+        elif fd == 2:
+            return sys.stderr
+        elif bufsz is None:
+            return os.fdopen(fd, mode)
+        else:
+            return os.fdopen(fd, mode, bufsz)
+        assert 0
+
+    def fork_master(self, cmd):
+        r0,w0 = os.pipe()
+        r1,w1 = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            # child
+            os.dup2(r0, 0)
+            os.dup2(w1, 1)
+            for fd in [ r0, w0, r1, w1 ]: os.close(fd)
+            os.execvp("/bin/sh", [ "/bin/sh", "-c", cmd ])
+        else:
+            os.close(r0)
+            os.close(w1)
+        return r1,w0,pid
+
+    def setup_pipes(self, atom, pty, up, down, updown, nexecs):
+        """
+        n_execs : the number of processes that will be invoked
+        """
+        pipes = []
+        if pty:
+            self.add_pty_pipes(atom, pipes, nexecs)
+
+        for fd0,fd1 in up:
+            # option: --up fd
+            # this entry says child proc's output from fd should
+            # go to my fd
+            if self.add_up_pipe(fd0, fd1, atom, pipes, nexecs) == -1:
+                return None
+        for fd0,fd1 in down:
+            # option: --down fd
+            # this says my input from fd should go to
+            # child proc's fd
+            if self.add_down_pipe(fd0, fd1, pipes) == -1:
+                return None
+        for fd0,fd1,cmd in updown:
+            # option: --updown fd0:fd1
+            # this says child proc's output from fd0 should
+            # go back to child proc's fd1
+            # output from fd0 of the child will arrive here as
+            # a msg. arrange thing so that the main thread that 
+            # got it will write its payload to one end of pipe
+            # (w below) and the helper thread will get the payload
+            # from the other end (r below) and write it back to fd1
+            if cmd is None:
+                r,w = os.pipe()
+            else:
+                r,w,pid = self.fork_master(cmd)
+                self.master_pids.append(pid)
+            if self.add_up_pipe(fd0, w, atom, pipes, nexecs) == -1:
+                return None
+            # the helper thread will obtain it from r
+            # and will generate a packet to feed child proc's fd1
+            if self.add_down_pipe(r, fd1, pipes) == -1:
+                return None
+        pipes.sort()
+        return pipes
+        
+    def safe_wait(self):
+        try:
+            os.wait()
+            return 0
+        except KeyboardInterrupt,e:
+            return -1
+
+    def die_with_sigint(self):
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        os.kill(os.getpid(), signal.SIGINT)
+
+    def set_fcntl_constants(self):
+        ok = 0
+        if fcntl.__dict__.has_key("F_SETFL"):
+            self.F_GETFL = fcntl.F_GETFL
+            self.F_SETFL = fcntl.F_SETFL
+            self.F_GETFD = fcntl.F_GETFD
+            self.F_SETFD = fcntl.F_SETFD
+            self.FD_CLOEXEC = fcntl.FD_CLOEXEC
+            ok = 1
+        else:
+            try:
+                import FCNTL
+                self.F_GETFL = FCNTL.F_GETFL
+                self.F_SETFL = FCNTL.F_SETFL
+                self.F_GETFD = FCNTL.F_GETFD
+                self.F_SETFD = FCNTL.F_SETFD
+                self.FD_CLOEXEC = FCNTL.FD_CLOEXEC
+                ok = 1
+            except ImportError:
+                pass
+        if ok == 0:
+            LOG("This platform provides no ways to make "
+                "fd non-blocking. abort\n")
+            os._exit(1)
+
+    def set_close_on_exec_fd(self, fd, close_on_exec):
+        """
+        make fd non blocking
+        """
+        self.set_fcntl_constants()
+        if close_on_exec:
+            fcntl.fcntl(fd, self.F_SETFD, self.FD_CLOEXEC)
+        else:
+            fcntl.fcntl(fd, self.F_SETFD, 0)
+
+    def do_e_like(self, cname, args, transformer,
+                  default_stdout, accum_events):
+        """
+        e hostname ...
+        """
+        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
+        # say we are not interested in accumulating events
+        # since they may be potentially big
+        if accum_events == 0: self.events = None
+        # build shell command from args
+        opts = e_cmd_opts()
+        if opts.parse(args) == -1:
+            return cmd_interpreter.RET_NOT_RUN
+        if opts.withmask is not None:
+            self.opts.withmask = opts.withmask
+        if opts.withhostmask is not None:
+            self.opts.withhostmask = opts.withhostmask
+        if opts.withhostnegmask is not None:
+            self.opts.withhostnegmask = opts.withhostnegmask
+        if opts.withgupidmask is not None:
+            self.opts.withgupidmask = opts.withgupidmask
+        if opts.withgupidnegmask is not None:
+            self.opts.withgupidnegmask = opts.withgupidnegmask
+        if opts.timeout is not None:
+            self.opts.timeout = opts.timeout
+        if opts.notify_proc_exit is not None:
+            self.opts.notify_proc_exit = opts.notify_proc_exit
+        if opts.persist is not None:
+            self.opts.persist = opts.persist
+        if opts.keep_connection is not None:
+            self.opts.keep_connection = opts.keep_connection
+        if opts.tid is not None:
+            self.opts.tid = opts.tid
+
+        if opts.notify_proc_exit > 0:
+            self.notify_proc_exit_fp = os.fdopen(opts.notify_proc_exit, "wb")
+            # self.set_close_on_exec_fd(opts.notify_proc_exit, 1)
+
+        if cname == "ep":
+            if opts.master is None:
+                if len(opts.args) == 0:
+                    tasks = "tasks"
+                else:
+                    tasks = opts.args[0]
+                opts.master = "gxp_sched %s" % tasks
+                opts.args = [ "gxp_mom" ]
+        if cname == "mw" or cname == "ep":
+            if opts.master is None:
+                updown = opts.updown + [ (3, 4, None) ]
+            else:
+                updown = opts.updown + [ (3, 4, opts.master) ]
+        else:
+            if opts.master is None:
+                updown = opts.updown
+            else:
+                return cmd_interpreter.RET_NOT_RUN
+        # send this action to the currently selected nodes
+        mask = self.opts.withmask
+        hostmask = self.opts.withhostmask
+        hostnegmask = self.opts.withhostnegmask
+        gupidmask = self.opts.withgupidmask
+        gupidnegmask = self.opts.withgupidnegmask
+        ex,tgt = self.session.select_exec_tree(mask, hostmask, hostnegmask,
+                                               gupidmask, gupidnegmask)
+        if ex == -1: return cmd_interpreter.RET_NOT_RUN
+
+        got_sigint = 0
+        if tgt is not None:
+            # Es("tgt = %s\n" % tgt.show())
+            pipes = self.setup_pipes(self.opts.atomicity, opts.pty,
+                                     opts.up, opts.down, updown, ex)
+            if pipes is None: return cmd_interpreter.RET_NOT_RUN
+
+            # -------------- ugly
+            if default_stdout == 0:
+                stdout,co = self.outmap[1]
+                self.outmap[1] = (None, co)
+            # -------------- ugly
+            
+            shcmd = string.join(opts.args, " ")
+            if transformer is not None:
+                shcmd = transformer(shcmd)
+            act = gxpm.action_createproc(opts.rid, opts.dir, opts.export, shcmd, pipes)
+            tid = self.send_action(tgt, self.opts.tid, act,
+                                   self.opts.persist,
+                                   self.opts.keep_connection)
+            assert tid is not None, (self.opts.withmask, tgt)
+            # pipes for talking with forwarder
+            r, w = os.pipe()
+            self.inmap[r] = "sync"
+            self.outmap["sync"] = w
+            th = threading.Thread(target=self.forwarder,
+                                  args=(tgt, tid, ))
+            th.setDaemon(1)
+            th.start()
+            time_limit = self.timeout_to_limit(self.opts.timeout)
+            res = self.recv_loop_noex(None, time_limit)
+            assert res != cmd_interpreter.RECV_CONTINUE
+            if res == cmd_interpreter.RECV_INTERRUPTED:
+                got_sigint = 1
+                # tgt = gxpm.target_tree(".*", ".*", 1, 0, None, None)
+                tgt = gxpm.target_tree(".*", ".*", 1, 0, gxpm.exec_env(), None)
+                rid = None          # all
+                self.send_action(tgt, tid,
+                                 gxpm.action_sig(rid, "INT"),
+                                 self.opts.persist,
+                                 self.opts.keep_connection)
+                # Es("sent sig\n")
+                # self.recv_loop_noex(None)
+            # Es("th.join\n")
+            # th.join()
+            # Es("th.joined\n")
+            for i in range(len(self.master_pids)):
+                if self.safe_wait() == -1: break
+        status = self.session.update_last_ok_count()
+        if got_sigint:
+            return cmd_interpreter.RET_SIGINT
+        else:
+            return status
+
+    def usage_e_cmd(self):
+        return self.usage_e_and_mw()
+
+    def do_e_cmd(self, args):
+        return self.do_e_like("e", args, None, 1, 0)
+
+    def usage_mw_cmd(self):
+        return self.usage_e_and_mw()
+
+    def do_mw_cmd(self, args):
+        return self.do_e_like("mw", args, None, 1, 0)
+
+    def usage_ep_cmd(self):
+        return self.usage_e_and_mw()
+
+    def do_ep_cmd(self, args):
+        return self.do_e_like("ep", args, None, 1, 0)
+
+    #
+    # cd
+    #
+    def set_cwd_rec(self, tree, new_dirs):
+        """
+        tree is target tree
+        """
+        if tree is not None:
+            if new_dirs.has_key(tree.name):
+                nwd = new_dirs[tree.name]
+                # Ws("%s : %s -> %s\n" % (tree.name, tree.eenv.cwd, nwd))
+                tree.eenv.cwd = nwd
+            for ch in tree.children:
+                self.set_cwd_rec(ch, new_dirs)
+
+    def usage_cd_cmd(self):
+        return (r"""Usage:
+  gxpc cd [OPTIONS ...] DIRECTORY
+
+Description:
+  Set current directory of the selected nodes to DIRECTORY.
+Subsequent commands will start at the specified directory.
+Options are the same as those of `e' command.
+
+""")
+
+    def transform_to_cd(self, shcmd):
+        return "cd %s > /dev/null && echo $PWD" % shcmd
+
+    def do_cd_cmd(self, args):
+        r = self.do_e_like("cd", args, self.transform_to_cd, 0, 1)
+        outputs = {}
+        for gupid,tid,ev in self.events:
+            if isinstance(ev, gxpm.event_io) and ev.fd == 1:
+                if not outputs.has_key(gupid):
+                    outputs[gupid] = []
+                outputs[gupid].append(ev.payload)
+        # calc new dirs
+        new_dirs = {}
+        for gupid,out in outputs.items():
+            if self.session.last_term_status.get(gupid, -1) == 0:
+                nwd = string.strip(string.join(out, ""))
+                new_dirs[gupid] = nwd
+        # modify exec tree
+        self.set_cwd_rec(self.session.last_exec_tree, new_dirs)
+        return r
+
+    #
+    # export
+    #
+    def set_env_rec(self, tree, new_envs):
+        if tree is not None:
+            if new_envs.has_key(tree.name):
+                var,val = new_envs[tree.name]
+                # Ws("%s : %s := %s\n" % (tree.name, var, val))
+                tree.eenv.env[var] = val
+            for ch in tree.children:
+                self.set_env_rec(ch, new_envs)
+
+    def usage_export_cmd(self):
+        return (r"""Usage:
+  gxpc export VAR=VAL
+
+Description:
+  Set environment variable VAR to VAL on the selected nodes.
+Options are the same as those of `e' command.
+""")
+
+    def transform_to_export(self, shcmd):
+        return "echo %s" % shcmd
+
+    def do_export_cmd(self, args):
+        r = self.do_e_like("export", args, self.transform_to_export, 0, 1)
+        outputs = {}
+        for gupid,tid,ev in self.events:
+            if isinstance(ev, gxpm.event_io) and ev.fd == 1:
+                if not outputs.has_key(gupid):
+                    outputs[gupid] = []
+                outputs[gupid].append(ev.payload)
+        # calc new dirs
+        new_envs = {}
+        for gupid,out in outputs.items():
+            if self.session.last_term_status.get(gupid, -1) == 0:
+                var_val = string.strip(string.join(out, ""))
+                var_val = string.split(var_val, "=", 1)
+                if len(var_val) == 2:
+                    [ var, val ] = var_val
+                    new_envs[gupid] = (var, val)
+        # modify exec tree
+        self.set_env_rec(self.session.last_exec_tree, new_envs)
+        return r
+    
+    #
+    # target and helper
+    #
+    def mk_targets_to_explore(self, target_hosts, aliases):
+        """
+        From hosts listed in session.target_hosts and hosts
+        already reached, make a list of targets to explore
+        """
+        to_explore = []
+        reached = []
+        marked_targets = []
+        requested_counts = {}
+        successful_targets = self.session.successful_targets
+        for host,n in target_hosts:
+            # the entry says we should reach host n times
+            c = requested_counts.get(host, 0)
+            r = 0
+            for h_alias in aliases.get(host, [ host ]):
+                r = r + successful_targets.get(h_alias, 0)
+            a = min(c + n, r) - c
+            s = c + n - r
+            if a > 0:
+                for i in range(a): reached.append(host)
+                marked_targets.append(("R", a, host))
+            if s > 0:
+                for i in range(s): to_explore.append(host)
+                marked_targets.append(("N", s, host))
+            requested_counts[host] = c + n
+        return marked_targets,to_explore,reached
+
+    def extract_target_hosts(self, targets, aliases):
+        T = []
+        aliases = aliases.items()
+        aliases.sort()
+        targets = targets.items()
+        targets.sort()
+        marked = {}
+        for t,n in targets:
+            found = 0
+            for h,h_aliases in aliases:
+                if marked.has_key(h): continue
+                if re.match(t, h):
+                    found = 1
+                    for a in h_aliases: marked[a] = 1
+                    T.append((h, n))
+            if found == 0: T.append((t, n))
+        return T
+        
+    #
+    # configure explore and helpers
+    #
+
+    #
+    # show rsh
+    #
+
+    def usage_show_explore_cmd(self):
+        return (r"""Usage:
+  gxpc show_explore SRC TARGET
+
+Description:
+  Show command used to explore TARGET from SRC.
+""")
+        
+    def do_show_explore_cmd(self, args):
+        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
+        opts = explore_cmd_opts()
+        if opts.parse(args) == -1:
+            return cmd_interpreter.RET_NOT_RUN
+        # ----------- set default values for opts
+        opts.import_defaults(self.session.default_explore_opts)
+
+        # ----------- real work -----------
+        if len(opts.args) < 2:
+            return cmd_interpreter.RET_NOT_RUN
+        
+        nid,tgt,cmd = self.mk_explore_cmd(args[0], args[0], args[1], {}, opts)
+        if cmd is None:
+            Ws((r"""I don't know how to login %s from %s.
+Use use command to specify how (it may be... 'gxpc use ssh %s %s').
+""" \
+                % (args[1], args[0], args[0], args[1])))
+        else:
+            Ws("%s\n" % cmd)
+            Ws(r"""Set environment variables GXP_DIR/GXP_GUPID
+to run the above command. e.g., 
+  export GXP_DIR=%s
+  export GXP_GUPID=gupid
+""" % os.environ["GXP_DIR"])
+        return 0
+        
+
+    #
+    # add_rsh
+    #
+    def usage_rsh_cmd(self):
+        return (r"""Usage:
+  gxpc rsh [OPTIONS]
+  gxpc rsh [OPTIONS] rsh_name
+  gxpc rsh [OPTIONS] rsh_name rsh_like_command_template
+
+Description:
+  Show, add, or modify rsh-like command explore/use will recognize
+  to the repertoire.
+  'gxpc rsh' lists all configured rsh-like commands.
+  'gxpc rsh rsh_name' shows the specified rsh-like command.
+  'gxpc rsh rsh_name rsh_like_command_template' adds or modifies (if exist)
+  the specified rsh-like command to use rsh_like_command_template.
+
+  The rsh_name is used as the first parameter of 'use' command (e.g.,
+  'gxpc use ssh src target' or 'gxpc use rsh <src> <target>').
+
+  By default, the following rsh-like commands are builtin.
+
+  ssh, ssh_as, rsh, rsh_as, sh, sge, torque, and pbs.
+
+Options:
+  --full
+    when invoked as gxpc rsh --full (with no other args),
+    show command lines of all available rsh-like commands.
+  --real, --prepare when --real is set, the command line used to
+    really start gxpd is shown or set. when --prepare is set, the
+    command line used to prepare for starting gxpd is shown or
+    set. when both are omitted, both are shown or set.
+
+Examples:
+  gxpc rsh ssh
+  (output) ssh (prepare): ssh ... -A %target% %cmd%
+           ssh (   real): ssh ... -A %target% %cmd%
+
+  This displays that an rsh-like command named 'ssh' is configured,
+  and gxp understands that, to run a command a host via ssh, it should
+  use a command:
+
+         ssh -o 'StrictHostKeyChecking no' -A %target% %cmd%
+
+  where %target% will be replaced by a target name (normally a
+  hostname) and %cmd% will be replaced by whatever commands it wants
+  to execute on the target.
+     
+  gxpc rsh ssh ssh -i elsewhere/id_dsa -o 'StrictHostKeyChecking no' -A %target% %cmd%
+
+  This instructs gxp to use command line:
+
+     ssh -i elsewhere/id_dsa -o 'StrictHostKeyChecking no' -A %target% %cmd%
+
+  when it uses ssh.  You can arbitrarily name a new rsh-like command. For example,
+  let's say on some hosts, ssh daemons listen on customized ports (say 2000) and
+  you need to connect to that port to login those hosts, while connecting to the
+  regular port to login others. Then you first define a new rsh-like command.
+  
+  gxpc rsh ssh2000 ssh -p 2000 -o 'StrictHostKeyChecking no' -A %target% %cmd%
+
+  And you specicy ssh2000 label to login those hosts, using 'use' command. e.g.,
+
+     use ssh2000 <src> <target>
+
+See Also:
+  use explore
+
+""")
+
+        
+    def do_rsh_cmd(self, args):
+        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
+        opts = rsh_cmd_opts()
+        if opts.parse(args) == -1:
+            return cmd_interpreter.RET_NOT_RUN
+        if len(opts.args) == 0:
+            # gxpc rsh -> show available methods
+            if opts.full:
+                A = self.session.login_methods.items()
+                A.sort()
+                for rsh_name,login_meth in A:
+                    if opts.prepare:
+                        Ws(("%s (prepare): %s\n"
+                            % (rsh_name,
+                               self.show_login_method_cmdline(login_meth.prepare))))
+                    if opts.real:
+                        Ws(("%s (real): %s\n"
+                            % (rsh_name,
+                               self.show_login_method_cmdline(login_meth.real))))
+            else:
+                A = self.session.login_methods.keys()
+                A.sort()
+                Ws("%s\n" % string.join(A, ", "))
+            return 0
+        elif len(opts.args) == 1:
+            # gxpc rsh ssh -> show command lines
+            rsh_name = opts.args[0]
+            if not self.session.login_methods.has_key(rsh_name):
+                Ws("No such rsh-like method %s\n" % rsh_name)
+                return cmd_interpreter.RET_NOT_RUN
+            login_meth = self.session.login_methods[rsh_name]
+            if opts.prepare:
+                Ws(("%s (prepare): %s\n"
+                    % (rsh_name,
+                       self.show_login_method_cmdline(login_meth.prepare))))
+            if opts.real:
+                Ws(("%s    (real): %s\n"
+                    % (rsh_name,
+                       self.show_login_method_cmdline(login_meth.real))))
+            return 0
+        else:
+            # gxpc rsh ssh ssh %target% %cmd%
+            rsh_name = opts.args[0]
+            cmd = opts.args[1:]
+            if not self.session.login_methods.has_key(rsh_name):
+                login_meth = login_method(cmd, cmd)
+                self.session.login_methods[rsh_name] = login_meth
+            else:
+                if opts.prepare:
+                    self.session.login_methods[rsh_name].prepare = cmd
+                if opts.real:
+                    self.session.login_methods[rsh_name].real = cmd
+            return 0
+
+    #
+    # explore and helpers
+    #
+
+    def minimum_subtree(self, ptree, C):
+        """
+        a minimum target tree rooted at t including all keys in C.
+        """
+        children = []
+        for c in ptree.children.values():
+            x = self.minimum_subtree(c, C)
+            if x is not None: children.append(x)
+        if C.has_key(ptree):                # t.name?
+            exec_flag = 1
+        else:
+            exec_flag = 0
+        if len(children) > 0:
+            return gxpm.target_tree(ptree.name, ptree.hostname, exec_flag, 
+                                    0, ptree.eenv, children)
+        elif exec_flag == 1:
+            return gxpm.target_tree(ptree.name, ptree.hostname, exec_flag, 
+                                    0, ptree.eenv, [])
+        else:
+            return None
+
+    def show_login_method_cmdline(self, cmd_and_args):
+        A = []
+        for a in cmd_and_args:
+            if re.search("\s", a):
+                A.append("'%s'" % a)
+            else:
+                A.append(a)
+        return string.join(A, " ")
+                
+
+    def conv_login_method_cmdline(self, cmd_and_args):
+        # cmd_and_args : list of strings
+        replaced_args = []
+        for a in cmd_and_args:
+            a = string.replace(a, "%target%", "%(target)s")
+            a = string.replace(a, "%user%", "%(user)s")
+            a = string.replace(a, "%cmd%", "%%(cmd)s")
+            replaced_args.append(a)
+        return replaced_args
+
+    def mk_installer_cmd(self, method_name, user, target, seq, opts):
+        """
+        return a long command line that logins host as user
+        using rsh-like method method_name
+        """
+        session = self.session
+        if not session.login_methods.has_key(method_name):
+            return None
+        # rsh_args is like a
+        #   [ "ssh", "%(target)s", "%(cmd)s" ]
+        rsh_args = self.conv_login_method_cmdline(session.login_methods[method_name].prepare)
+        rshx_args = self.conv_login_method_cmdline(session.login_methods[method_name].real)
+        
+        # mandatory args
+        mand_args = ("--target_label %s --root_gupid %s --seq %s" 
+                     % (target, self.gupid, seq))
+
+        # optional args, passed if specified
+        opt_args = []
+        if opts.timeout is not None:
+            opt_args.append("--hello_timeout %f" % opts.timeout)
+        if opts.install_timeout is not None:
+            opt_args.append("--install_timeout %f" % opts.install_timeout)
+        if opts.verbosity is not None:
+            opt_args.append("--dbg %d" % opts.verbosity)
+        opt_args = string.join(opt_args, " ")
+
+        # build --rsh xxx --rsh xxx ...
+        dict = { "user" : user, "target" : target }
+        A = []
+        for a in rsh_args:
+            A.append("--rsh '%s'" % (a % dict))
+        rsh_args = string.join(A, " ")
+
+        A = []
+        for a in rshx_args:
+            A.append("--rshx '%s'" % (a % dict))
+        rshx_args = string.join(A, " ")
+        
+        return ("python $GXP_DIR/inst_local.py %s %s %s %s"
+                % (rsh_args, rshx_args, mand_args, opt_args))
+    
+    def replace_tgt_pat(self, m, tgt_pat):
+        # Es("replace_tgt_pat %s\n" % tgt_pat)
+        p = tgt_pat
+        m_groups = m.groups()
+        m_groupdict = m.groupdict()
+        for i in range(len(m_groups)):
+            # replace %1% -> m_group(1)
+            # Es("applying %s -> %s\n" % (("%%%d%%" % i), m_groups[i]))
+            p = string.replace(p, ("%%%d%%" % i), m_groups[i])
+        for k,v in m_groupdict.items():
+            # Es("applying %s -> %s\n" % (("%%%s%%" % k), v))
+            p = string.replace(p, ("%%%s%%" % k), v)
+        # Es("replace_tgt_pat -> %s\n" % p)
+        return p
+        
+    def mk_explore_cmd_cache(self, src_hostname, src_gupid, tgt, aliases, opts, ng_cache):
+        if ng_cache.has_key((src_gupid,tgt)): return None,None,None
+        nid,t,cmd = self.mk_explore_cmd(src_hostname, src_gupid, tgt, aliases, opts)
+        if cmd is None: ng_cache[src_gupid,tgt] = None
+        return nid,t,cmd
+
+    def mk_explore_cmd(self, src_hostname, src_gupid, tgt, aliases, opts):
+        """
+        make an explore command string for src to reach tgt
+        """
+        for method_name,user,src_pat,tgt_pat in self.session.edges:
+            m = re.match(src_pat, src_hostname)
+            if m:
+                found = 0
+                for t in aliases.get(tgt, [ tgt ]):
+                    tgt_pat = self.replace_tgt_pat(m, tgt_pat)
+                    # Es("matching %s to %s\n" % (tgt_pat, t))
+                    if re.match(tgt_pat, t):
+                        found = 1
+                        break
+                if found == 0: continue
+                nid = self.session.gen_random_id()
+                seq = "explore-%03d-%s-%s" % (nid, src_gupid, t)
+                cmd = self.mk_installer_cmd(method_name, user, t, seq, opts)
+                if cmd is not None:
+                    if opts.verbosity >= 1:
+                        Ws("gxpc : %s %s -> %s\n" % (method_name, src_gupid, tgt))
+                    if opts.verbosity >= 3:
+                        Ws("gxpc : %s\n" % cmd)
+                    return nid,t,cmd
+        return None,None,None
+
+    def mk_explore_cmds(self, to_explore, aliases, max_ch, opts, ng_cache):
+        """
+        Make a dictionary of src -> commands, which says
+        src host should issue commands to get new nodes.
+        Each item of commands is a triple
+        (node_id,target_label,command).
+
+        For each target in to_explore, it finds an appropriate
+        src host in peer_tree_node, which (1) is specified
+        by an edges command, and (2) currently has less that
+        max_ch children.
+
+        
+        """
+        if opts.verbosity >= 1:
+            mk_explore_cmds_start = time.time()
+            Ws("gxpc : finding explorable pairs\n")
+        # src (peer_tree_node) -> targets
+        C = {}
+        session = self.session
+        # q = candidate src hosts
+        q = [ session.peer_tree ]
+	# for each node, try to find nodes directly reachable from it
+        n_ok = 0                        # OK pairs
+        n_ng = 0                        # NG pairs
+        n_ng_nodes = 0                  # NG nodes
+        
+        while len(q) > 0 and len(to_explore) > 0:
+            h = q.pop(0)
+            if h.name is None: continue # this guy still in progress
+            # children become candidate srcs
+            for c in h.children.values(): q.append(c)
+            # no hope to reach ANY node from this guy
+            if ng_cache.has_key(h.name):
+                n_ng_nodes = n_ng_nodes + 1
+                continue
+            # okay, now we get some appropriate target nodes for h
+            blocked = []
+            # ensure each node can add at least one child
+            max_ch2 = max(max_ch, len(h.children) + 1)
+            while len(h.children) < max_ch2 and len(to_explore) > 0:
+                # get next target until h's children become too many
+                tgt = to_explore.pop(0)
+                # check if h is allowed to issue cmd to tgt
+                # nid,a_tgt,cmd = self.mk_explore_cmd_cache(h.name, tgt, aliases, opts, ng_cache)
+                nid,a_tgt,cmd = self.mk_explore_cmd_cache(h.hostname, h.name, tgt, aliases, opts, ng_cache)
+                if cmd is None:
+                    # no, h cannot directly reach tgt
+                    n_ng = n_ng + 1
+                    blocked.append(tgt)
+                    continue
+                n_ok = n_ok + 1
+                # record the fact that h should reach tgt
+                # along with node id
+                if not C.has_key(h): C[h] = []
+                C[h].append((nid, a_tgt, cmd))
+
+                # extend peer_tree
+                t = peer_tree_node()
+                t.cmd = cmd
+                t.target_label = a_tgt
+                assert not h.children.has_key(nid)
+                h.children[nid] = t
+                # mark we are currently exploring the target
+                self.exploring[t] = 1
+                # Ws("exploring %s -> %s %s %s\n" % (h.name, tgt, nid, t))
+
+            if len(to_explore) == 0: ng_cache[h.name] = None
+            for x in blocked: to_explore.append(x)
+        if opts.verbosity >= 1:
+            mk_explore_cmds_stop = time.time()
+            Ws(("gxpc : found %d explorable pairs "
+                "(with %d NG pairs %d NG nodes) in %.3f sec\n"
+                % (n_ok, n_ng, n_ng_nodes,
+                   mk_explore_cmds_stop - mk_explore_cmds_start)))
+        return C
+
+    def send_explore_msg(self, tid, pipes, C):
+        """
+        C : src -> list of (node_id,target_label,command_to_reach_it)
+
+        build an explore msg to do things to grab them as new peers
+        """
+        if len(C) == 0: return 0        # nothing to do at all
+        target = self.minimum_subtree(self.session.peer_tree, C)
+        assert target is not None, (self.session.peer_tree, C)
+        # okay we build the msg
+        clauses = []
+        for src,cmds in C.items():
+            # build actions performed by this particular src host
+            actions = []
+            for nid,tgt,cmd in cmds:
+                # cwd/env = None
+                a = gxpm.action_createpeer(nid, None, None, cmd, pipes)
+                actions.append(a)
+            clauses.append(gxpm.clause(src.name, actions))
+        # calc the target of this particular msg (include the src
+        # hosts)
+        gcmds = [ clauses ]
+        m = gxpm.down(target, tid, 0, gxpm.keep_connection_until_fin, gcmds)
+        # really send it
+        self.ensure_connect()
+        self.asend(gxpm.unparse(m))
+        return 1
+
+    def explore_some(self, tid, pipes, to_explore, aliases, max_ch, opts, ng_cache):
+        """
+        build and send a single msg to explore some nodes
+        """
+        C = self.mk_explore_cmds(to_explore, aliases, max_ch, opts, ng_cache)
+        r = self.send_explore_msg(tid, pipes, C)
+        return r
+
+    def usage_explore_cmd(self):
+        return (r"""Usage:
+  gxpc explore [OPTIONS] TARGET TARGET ...
+
+Description:
+  Login target hosts specified by OPTIONS and TARGET.
+
+Options:
+  --dry
+    dryrun. only show target hosts
+  --hostfile,-h HOSTS_FILE
+    give known hosts by file
+  --hostcmd HOSTS_CMD
+    give known hosts by command output
+  --targetfile,-t TARGETS_FILE
+    give target hosts by file
+  --targetcmd TARGETS_CMD
+    give target hosts by command output
+  --timeout SECONDS
+    specify the time to wait for a remote host's response
+    until gxp considers it dead
+  --children_soft_limit N (>= 2)
+    control the shape of the explore tree. if this value is N, gxpc
+    tries to keep the number of children of a single host no more than N,
+    unless it is absolutely necessary to reach requested nodes.
+  --children_hard_limit N
+    control the shape of the explore tree. if this value is N, gxpc
+    keeps the number of children of a single host no more than N, in any event.
+  --verbosity N (0 <= N <= 2)
+    set verbosity level (the larger the more verbose)
+  --set_default
+    if you set this option, options specified in this explore becomes the default.
+    for example, if you say --timeout 20.0 and --set_default, timeout is set to
+    20.0 in subsequent explores, even if you do not specify --timeout.
+  --reset_default
+    reset the default values set by --set_default.
+  --show_settings
+    show effective explore options, considering those given by command line and
+    those specified as default values.
+
+Execution of an explore command will conceptually consist of the
+following three steps.
+
+(1) Known Hosts: Know names of existing hosts, either by
+--hostfile, --hostcmd, or a default rule. These are called
+'known hosts.' -h is an acronym of --hostfile.
+
+(2) Targets: Extract login targets from known hosts. They are
+extracted by regular expressions given either by --targetfile,
+--targetcmd, or directly by command line arguments. -t is
+an acronym of --targetfile.
+
+(3) gxpc will attempt to login these targets according to the
+rules specified by `use' commands.
+
+Known hosts are specified by a file using --hostfile option, or
+by output of a command using --hostcmd. Formats of the two are
+common and very simple. In the simplest format, a single file
+contains a single hostname. For example,
+
+   hongo001
+   hongo002
+   hongo004
+   hongo005
+   hongo006
+   hongo007
+   hongo008
+
+is a valid HOSTS_FILE. If you specify a command that outputs
+a list of files in the above format, the effect is the same
+as giving a file having the list by --hostfile. For example,
+
+  --hostcmd 'for i in `seq 1 8` ; do printf "%03d\n" $i ; done'
+
+has the same effect as giving the above file to --hostfile.
+
+The format of a HOSTS_FILE is actually a so-called /etc/hosts
+format, each line of which may contain several aliases of the
+same host, as well as their IP address. gxpc simply regards them
+as aliases of a single host, wihtout giving any significance to
+which columns they are in. Anything after `#' on each line is a
+comment and ignored. Lines not containning any name, such as
+empty lines, are also ignored.  The above simple format is
+obviously a special case of this.
+
+It is sometimes convenient to specify /etc/hosts as an argument
+to --hostfile or to specify `ypcat hosts' as an argument to
+--hostcmd. As a matter of fact, if you do not specify any of
+--hostfile, --hostcmd, --targetfile, and --targetcmd, it is
+treated as if --hostfile /etc/hosts is given.
+
+Login targets are specified by a file using --targetfile option,
+--targetcmd option, or by directly listing targets in the command
+line. Format of them are common and only slightly different from
+HOSTS_FILE.  The format of the list of targets in the command
+line is as follows.
+
+   TARGET_REGEXP [N] TARGET_REGEXP [N] TARGET_REGEXP [N] ...
+
+where N is an integer and TARGET_REGEXP is any string that cannot
+be parsed as an integer. That is, it is a list of regular
+expressions, each item of which may optionally be followed by an
+integer. The integer indicates how many logins should occur to
+the target matching TARGET_REGEXP. The following is a valid
+command line.
+
+  gxpc explore -h hosts_file hongo00
+
+which says you want to target all hosts beginning with hongo00,
+among all hosts listed in hosts_file.  If, for example, you have
+specified by `use' command that the local host can login these
+hosts by ssh, you will reach hosts whose names begin with
+hongo00.  If you instead say
+
+  gxpc explore -h hosts_file hongo00 2
+
+you will get two processes on each of these hosts.
+
+If you do not give any of --targetfile, --targetcmd, and command
+line targets, it is treated as if a regular expression mathing
+any string is given as the command line target. That is, all
+known hosts are targets.
+
+Format of targets_host is simply a list of lines each of which
+is like the list of arguments just explained above. Thus, the
+following is a valid TARGETS_FILE.
+
+  hongo00 2
+  chiba0
+  istbs
+  sheep
+
+which says you want to get two processes on each host beginning
+with hongo00 and one process on each host beginning with chiba0,
+istbs, or sheep. Just to illustrate the syntax, the same thing
+can be alternatively written with different arrangement into
+lines.
+
+  hongo00 2 chiba0
+  istbs sheep
+
+Similar to hosts_file, you may instead specify a command line
+producing the output conforming to the format of TARGETS_FILE.
+
+We have so far explained that target_regexp is matched against a
+pool of known hosts to generate the actual list of targets.
+There is an exception to this. If TARGET_REGEXP does not match
+any host in the pool of known hosts, it is treated as if the
+TARGET_REGEXP is itself a known host. Thus,
+
+  gxpc explore hongo000 hongo001
+
+will login hongo000 and hongo001, because neither hosts_file nor
+hosts_cmd hosts are given so these expressions obviously won't
+match any known host. Using this rule, you may have a file that
+explicitly lists all hosts and solely use it to specify targets
+without using separate HOSTS_FILE. For example, if you have a
+long TARGETS_FILE called targets like:
+
+  abc000
+  abc001
+    ...
+  abc099
+  def000
+  def001
+    ...
+  def049
+  pqr000
+  pqr001
+    ...
+  pqr149
+
+and say
+
+  gxpc explore -t targets
+
+you say you want to get these 300 targets using whatever methods
+you specified by `use' commands.
+
+Unlike HOSTS_FILE, an empty line in TARGETS_FILE is treated as if
+it is the end of file. By inserting an empty line, you can easily
+let gxpc ignore the rest of the file. This rule is sometimes
+convenient when targeting a small number of hosts within a
+TARGETS_FILE.
+
+Here are some examples.
+
+1.
+
+  gxpc explore -h hosts_file chiba hongo
+
+Hosts beginning with chiba or hongo in hosts_file 
+become the targets.
+
+2.
+
+  gxpc explore -h hosts_file -t targets_file
+
+Hosts matching any regular expression in targets_file become
+the targets.
+
+3.
+
+  gxpc explore -h hosts_file
+
+All hosts in hosts_file become the targets.  Equivalent to `gxpc
+explore -h hosts_file .'  (`.' is a regular expression mathing
+any non-empty string).
+
+4.
+
+  gxpc explore -t targets_file
+
+All hosts in targetfile become the targets. This is simiar to the
+previous case, but the file format is different.  Note that in
+this case, strings in targets_file won't be matched against
+anything, so they should be literal target names.
+     
+5.
+
+  gxpc explore chiba000 chiba001 chiba002 chiba003
+
+chiba000, chiba001, chiba002, and chiba003 become the targets.
+
+6.
+
+  gxpc explore chiba0
+
+Equivalent to `gxpc explore -h /etc/hosts chiba0' which is hosts
+beginning with chiba0 in /etc/hosts become the targets. Useful
+when you use a single cluster and all necessary hosts are listed
+in that file.
+     
+7.
+
+  gxpc explore
+
+Equivalent to `gxpc explore -h /etc/hosts' which is in turn
+equivalent to `gxpc explore -h /etc/hosts .'  That is, all hosts
+in /etc/hosts become the targets.  This will be rarely useful
+because /etc/hosts typically includes hosts you don't want to
+use.
+""")
+        
+    def do_explore_cmd(self, args):
+        """
+        explore [file1 file2 ...]
+        """
+        t0 = time.time()
+        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
+        opts = explore_cmd_opts()
+        if opts.parse(args) == -1:
+            return cmd_interpreter.RET_NOT_RUN
+
+        if opts.reset_default:
+            self.session.default_explore_opts = None
+
+        # ----------- set default values for opts
+        if self.session.default_explore_opts is not None:
+            opts.import_defaults(self.session.default_explore_opts)
+
+        if opts.set_default:
+            self.session.default_explore_opts = opts.copy()
+
+        # ----------- give some default values for hosts and targets
+        if len(opts.hostfile) + len(opts.hostcmd) + \
+           len(opts.targetfile) + len(opts.targetcmd) + \
+           len(opts.args) == 0:
+            # no targets nor hostfiles specified. default is to use /etc/hosts
+            opts.hostfile.append(opts.default_hostfile)
+        elif len(opts.targetfile) + \
+           len(opts.targetcmd) + len(opts.args) == 0:
+            # no targets specified. default is to use everything
+            # in hostfile or hostcmd
+            opts.args.append(".")
+
+        if opts.show_settings:
+            Ws("explore options: %s\n" % opts)
+
+        # obtain candidate hosts
+        hp = etc_hosts_parser()
+        aliases = hp.parse(opts.hostfile, opts.aliasfile,
+                           opts.hostcmd, [])
+        # obtain targets
+        tp = targets_parser()
+        target_spec = tp.parse(opts.targetfile, [],
+                               opts.targetcmd, opts.args)
+        targets = self.extract_target_hosts(target_spec, aliases)
+
+        X = self.mk_targets_to_explore(targets, aliases)
+        marked_targets,to_explore,reached = X
+        n_to_explore = len(to_explore)
+
+        if opts.dry:
+            Ws("%d Reached %d New\n\n" % \
+               (len(reached), len(to_explore)))
+            for m,n,t in marked_targets:
+                Ws("%s %03s %s\n" % (m, n, t))
+            return 0
+        else:
+            # real work begins
+            tid = "explore%s" % self.session.gen_random_id()
+            # , 0
+            pipes = self.setup_pipes(self.opts.atomicity, 0, # pty
+                                     [ (1,1),(2,2) ], [ (0,0) ],
+                                     [], "")
+            got_sigint = 0
+            ch_soft_lim = opts.children_soft_limit
+            ch_hard_lim = opts.children_hard_limit
+            if ch_soft_lim > ch_hard_lim:
+                ch_soft_lim = ch_hard_lim
+            # here we repeat trying to get some new hosts. we have a tree
+            # of hosts we have already reached, and try to get all specified
+            # targets somehow.
+            ng_cache = {}
+            random.shuffle(to_explore)
+            iteration = 0
+            while 1:
+                iteration = iteration + 1
+                while ch_soft_lim <= ch_hard_lim and len(to_explore) > 0:
+                    self.explore_some(tid, pipes, to_explore,
+                                      aliases, ch_soft_lim, opts, ng_cache)
+                    if len(self.exploring) > 0: break
+                    if ch_soft_lim == ch_hard_lim: break
+                    # ch_soft_lim = int(ch_soft_lim * 1.1) + 1
+                    ch_soft_lim = int(ch_soft_lim * 2.0) + 1
+                    ch_soft_lim = min(ch_soft_lim, ch_hard_lim)
+                # we tried twice and still no one exploring -> quit
+                if len(self.exploring) == 0: break
+                n = len(self.exploring)
+                b = max(0, min(n - opts.min_wait, n - int(opts.wait_factor * n)))
+                time_limit = self.timeout_to_limit(self.opts.timeout)
+                if opts.verbosity >= 1:
+                    wait_start = time.time()
+                    Ws(("gxpc : waiting for %d outstanding logins (out of %d) "
+                        "to be resolved (time_limit = %s)\n"
+                        % (len(self.exploring) - b, len(self.exploring),
+                           time_limit)))
+                res = self.recv_loop_noex(b, time_limit)
+                if opts.verbosity >= 1:
+                    wait_stop = time.time()
+                    Ws(("gxpc : waited for %.3f sec\n"
+                        % (wait_stop - wait_start)))
+                # well done or interrupted
+                if res == cmd_interpreter.RECV_CONTINUE: continue
+                if res == cmd_interpreter.RECV_INTERRUPTED:
+                    got_sigint = 1
+                break
+            if len(to_explore) > 0:
+                Es("%d unreachable targets:\n" % len(to_explore))
+                Es(" Use `use' command to specify how.\n")
+                if ch_soft_lim >= ch_hard_lim:
+                    Es(" Or, consider specifying --children_hard_limit N to increase"
+                       " the maximum number of children of a single host."
+                       " e.g., explore --children_hard_limit 50 .... \n")
+                for u in to_explore:
+                    Es(" %s\n" % u)
+            if len(self.failed_to_explore) > 0:
+                failed = self.failed_to_explore[:]
+                failed.sort()
+                Es("%d failed logins:\n" % len(failed))
+                for f in failed:
+                    Es(" %s\n" % f)
+            t1 = time.time()
+            Ws(("gxpc : took %.3f sec to explore %d hosts\n" %
+                (t1 - t0, n_to_explore)))
+            self.session.reset_exec_tree()
+            if got_sigint:
+                return cmd_interpreter.RET_SIGINT
+            else:
+                return 0
+    #
+
+    def do_make_cmd(self, args):
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        gxp_dir = os.environ["GXP_DIR"]
+        make = os.path.join(gxp_dir, os.path.join("gxpbin", "xmake"))
+        os.execvp(make, [ make ] + args)
+
+    # ---------- dispatcher ----------
+
+    def dispatch(self):
+        argv = self.opts.args
+        # argv is like [ "e", "hostname" ]
+        if len(argv) == 0: argv = [ "stat", "0" ]
+        cname = argv[0]
+        c = "do_%s_cmd" % cname
+        if hasattr(self, c):
+            start_t = time.time()
+            method = getattr(self, c)
+            r = method(argv[1:])
+            if r == cmd_interpreter.RET_NOT_RUN:
+                self.show_help_command(cname)
+                return r
+            # ugly, but necessary to avoid saving
+            # session file just deleted in do_quit_cmd
+            if cname == "quit": return r
+            if self.session is not None:
+                assert self.init_level >= 2
+                if self.opts.save_session:
+                    if self.session.invalid:
+                        self.session = self.reload_session(self.session_file, 1)
+                    self.session.save(self.opts.verbosity)
+                else:
+                    if self.opts.verbosity >= 2:
+                        Es("gxpc: do not save session\n")
+            else:
+                assert self.init_level == 1
+            if r == cmd_interpreter.RET_SIGINT:
+                self.die_with_sigint()
+            else:
+                return r
+        else:
+            Es("gxpc: %s: no such command\n" % argv[0])
+            return cmd_interpreter.RET_NOT_RUN
+
+    def init_and_dispatch(self):
+        if self.init1() == -1: return cmd_interpreter.RET_NOT_RUN
+        return self.dispatch()
+
+    def profile_run(self, f, file):
+        import hotshot, hotshot.stats
+        prof = hotshot.Profile(file)
+        r = prof.runcall(f)
+        prof.close()
+
+        stats = hotshot.stats.load(file)
+        stats.strip_dirs()
+        stats.sort_stats('time', 'calls')
+        stats.print_stats()
+        return r
+
+    def main(self, argv):
+        # parse command line args
+        opts = interpreter_opts()
+        self.opts = opts
+        if opts.parse(argv[1:]) == -1: return -1
+        
+        if opts.profile is None:
+            return self.init_and_dispatch()
+        else:
+            return self.profile_run(self.init_and_dispatch,
+                                    opts.profile)
+
+if __name__ == "__main__":
+    sys.exit(cmd_interpreter().main(sys.argv))
+    
