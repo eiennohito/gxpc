@@ -1,0 +1,15 @@
+#!/bin/bash
+
+VERSION=02
+DIR=gxp-3.${VERSION}
+
+mkdir -p releases
+cd releases
+cvs -d :ext:ttaauu@gxp.cvs.sourceforge.net:/cvsroot/gxp export -r HEAD gxp3
+mv gxp3 ${DIR}
+tar cvf ${DIR}.tar ${DIR}
+bzip2 ${DIR}.tar
+rsync -avP -e ssh ${DIR}.tar.bz2 ttaauu@frs.sourceforge.net:uploads/
+cd ..
+
+ls releases
