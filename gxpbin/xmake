@@ -281,7 +281,7 @@ class shot_stage(Shot):
         self.start_time = cur_time
         # build gxpc command line
         cmdx = [self.server.opts.gxpc, "--save_session", "0",
-                "e", "-h", self.run.man.name, 
+                "e", "-g", self.run.man.name, 
                 "--dir", self.run.work.cwd ]
         for var_val in self.run.work.envs:
             cmdx.append("--export")
@@ -353,7 +353,7 @@ class shot_rexec(Shot):
         self.start_time = cur_time
         # build gxpc command line
         cmdx = [self.server.opts.gxpc, "--save_session", "0",
-                "e", "-h", self.run.man.name, "--tid", self.server.tid,
+                "e", "-g", self.run.man.name, "--tid", self.server.tid,
                 "--rid", self.id, "--keep_connection", "0",
                 "--dir", self.run.work.cwd ]
         for var_val in self.run.work.envs:
@@ -993,7 +993,7 @@ class xmake_server:
         dispatch a single work, assuming there is a free worker
         and a work to execute.
 
-        gxpc e -h <worker> --tid <tid> --keep_connection 0 '<cmd>'
+        gxpc e -g <worker> --tid <tid> --keep_connection 0 '<cmd>'
 
         """
         matches = self.find_matches()
