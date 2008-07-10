@@ -164,7 +164,6 @@ class inst_options(opt.cmd_opts):
         self.seq = ("s", None)
         # list of rsh-like programs to run commands remotely
         self.rsh = ("s*", [])
-        self.rshx = ("s*", [])
 
         # ---------------- 
         # optional arguments that can be omitted and have 
@@ -410,7 +409,7 @@ class installer(expectd.expectd):
             script = self.expand(O.first_script, None)
             args = self.expands(O.first_args_template, O.__dict__)
             cmd = "%s %s %s" % (python, script, string.join(args, " "))
-            sub = self.subst_cmd3(cmd, O.rshx)
+            sub = self.subst_cmd3(cmd, O.rsh)
 
             if dbg>=2: self.Em("First bring up %s\n" % sub)
             self.spawn(sub)
@@ -485,7 +484,7 @@ class installer(expectd.expectd):
         # finally we are ready to run IT on the remote node
         args = self.expands(O.second_args_template, O.__dict__)
         cmd = "%s %s %s" % (python, script, string.join(args, " "))
-        sub = self.subst_cmd3(cmd, O.rshx)
+        sub = self.subst_cmd3(cmd, O.rsh)
         if dbg>=2: self.Em("Bring up again %s\n" % sub)
         self.spawn(sub)
         s,g = self.expect_hello(O.hello, O.hello_timeout, 1)
@@ -539,7 +538,7 @@ class installer(expectd.expectd):
         code = "INSTALL%09d" % random.randint(0, 999999999)
         stub_sz,prog = self.mk_program2(O, code)
         python_cmd = self.mk_python_cmdline(O.pythons, stub_sz)
-        sub = self.subst_cmd3(python_cmd, O.rshx)
+        sub = self.subst_cmd3(python_cmd, O.rsh)
         if dbg>=2: self.Em("Install and exec %s\n" % sub)
         self.spawn(sub)
         self.send(prog)
