@@ -50,6 +50,7 @@ class qsub_wrap_server_cmd_opts(opt.cmd_opts):
         # self.qsub_stdin = ("i", 0)      # 1 if qsub takes stdin
         # self.script     = ("s", None)
         # self.sync       = (None, 0)
+        self.x       = "qarg"
 
 class torque_system_option:
     """
