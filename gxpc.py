@@ -86,32 +86,37 @@ class peer_tree_node:
 
 class login_method_configs:
     def __init__(self):
-        self.ssh         = ("ssh:-o:StrictHostKeyChecking no"
+        # syntax of the following.
+        # if the first character is non alphabetical, use
+        # it as the separator (see ssh below, which uses :)
+        # otherwise it uses whitespaces as the separator
+        self.ssh         = (":ssh:-o:StrictHostKeyChecking no"
                             ":-o:PreferredAuthentications hostbased,publickey"
                             ":-A:%target%:%cmd%")
-        self.ssh_as      = ("ssh:-o:StrictHostKeyChecking no"
+        self.ssh_as      = (":ssh:-o:StrictHostKeyChecking no"
                             ":-o:PreferredAuthentications hostbased,publickey"
                             ":-A:-l:%user%:%target%:%cmd%")
-        self.rsh         = "rsh:%target%:%cmd%"
-        self.rsh_as      = "rsh:-l:%user%:%target%:%cmd%"
-        self.sh          = "sh:-c:%cmd%"
-        self.qrsh        = "qrsh:%cmd%"
-        self.qrsh_host   = "qrsh:-l:hostname=%target%:%cmd%"
 
-        self.sge         = "qsub_wrap:--sys:sge:%cmd%"
-        self.sge_host    = "qsub_wrap:--qarg:-l:--qarg:hostname=%target%:%cmd%"
+        self.rsh         = "rsh %target% %cmd%"
+        self.rsh_as      = "rsh -l %user% %target% %cmd%"
+        self.sh          = "sh -c %cmd%"
+        self.qrsh        = "qrsh %cmd%"
+        self.qrsh_host   = "qrsh -l hostname=%target% %cmd%"
+
+        self.sge         = "qsub_wrap --sys sge %cmd%"
+        self.sge_host    = "qsub_wrap --sys sge %cmd% -- -l hostname=%target%"
         
-        self.torque      = "qsub_wrap:--sys:torque:%cmd%"
-        self.torque_host = "qsub_wrap:--qarg:-l:--qarg:nodes=%target%:%cmd%"
+        self.torque      = "qsub_wrap --sys torque %cmd%"
+        self.torque_host = "qsub_wrap --sys torque %cmd% -- -l nodes=%target%"
 
-        self.nqs_hitachi = "qsub_wrap:--sys:nqs_hitachi:%cmd%"
-        self.nqs_fujitsu = "qsub_wrap:--sys:nqs_fujitsu:%cmd%"
+        self.nqs_hitachi = "qsub_wrap --sys nqs_hitachi %cmd%"
+        self.nqs_fujitsu = "qsub_wrap --sys nqs_fujitsu %cmd%"
         # aliases
-        self.hitachi     = "qsub_wrap:--sys:nqs_hitachi:%cmd%"
-        self.fujitsu     = "qsub_wrap:--sys:nqs_fujitsu:%cmd%"
+        self.hitachi     = "qsub_wrap --sys nqs_hitachi %cmd%"
+        self.fujitsu     = "qsub_wrap --sys nqs_fujitsu %cmd%"
 
-        self.n1ge        = "qsub_wrap:--sys:n1ge:%cmd%"
-        self.n1ge_host   = "qsub_wrap:--qarg:-l:--qarg:host=%target%:%cmd%"
+        self.n1ge        = "qsub_wrap --sys n1ge %cmd%"
+        self.n1ge_host   = "qsub_wrap --sys n1ge %cmd% -l host=%target%"
 
 class session_state:
     """
@@ -189,7 +194,11 @@ class session_state:
         # default login methods
         lm = login_method_configs()
         for name,cmdline in lm.__dict__.items():
-            cmd = string.split(cmdline, ":")
+            c = cmdline[0]
+            if c not in string.letters:
+                cmd = string.split(cmdline[1:], c)
+            else:
+                cmd = string.split(cmdline)
             self.login_methods[name] = cmd
 
     def show(self, level):
@@ -989,6 +998,7 @@ class explore_cmd_opts(opt.cmd_opts):
         self.hostcmd = ("s*", [])
         self.targetfile = ("s*", [])
         self.targetcmd = ("s*", [])
+        self.subst_arg = ("s*", [])
 
         self.verbosity = ("i", None) # default leave it to inst_local.py
         self.timeout = ("f", None)   # ditto
@@ -1001,6 +1011,7 @@ class explore_cmd_opts(opt.cmd_opts):
         self.set_default = (None, 0)
         self.show_settings = (None, 0)
 
+        self.a = "subst_arg"
         self.h = "hostfile"
         self.t = "targetfile"
 
@@ -1011,6 +1022,15 @@ class explore_cmd_opts(opt.cmd_opts):
         if self.children_hard_limit < 2:
             Es("gxpc: children_hard_limit must be >= 2\n")
             return -1
+        S = []
+        for a in self.subst_arg:
+            var_val = string.split(a, "=", 1)
+            if len(var_val) != 2:
+                Es("gxpc: bad arg to --subst_arg/-a (%s). use --subst_arg X=Y or -a X=Y\n")
+                return -1
+            [ var, val ] = var_val
+            S.append((string.strip(var), string.strip(val)))
+        self.subst_arg = S
         return 0
 
     def import_defaults(self, default_opts):
@@ -3956,12 +3976,12 @@ Description:
         if len(opts.args) < 2:
             return cmd_interpreter.RET_NOT_RUN
         
-        nid,tgt,cmd = self.mk_explore_cmd(args[0], args[0], args[1], {}, opts)
+        nid,tgt,cmd = self.mk_explore_cmd(opts.args[0], opts.args[0], opts.args[1], {}, opts)
         if cmd is None:
             Ws((r"""I don't know how to login %s from %s.
-Use use command to specify how (it may be... 'gxpc use ssh %s %s').
+Use use command to specify how (e.g., 'gxpc use ssh %s %s').
 """ \
-                % (args[1], args[0], args[0], args[1])))
+                % (opts.args[1], opts.args[0], opts.args[0], opts.args[1])))
         else:
             Ws("%s\n" % cmd)
             Ws(r"""Set environment variables GXP_DIR/GXP_GUPID
@@ -4118,9 +4138,8 @@ See Also:
         # cmd_and_args : list of strings
         replaced_args = []
         for a in cmd_and_args:
-            a = string.replace(a, "%target%", "%(target)s")
-            a = string.replace(a, "%user%", "%(user)s")
-            a = string.replace(a, "%cmd%", "%%(cmd)s")
+            a = re.sub("%(.*)%", r"%(\1)s", a)
+            a = string.replace(a, "%(cmd)s", "%%(cmd)s")
             replaced_args.append(a)
         return replaced_args
 
@@ -4151,9 +4170,20 @@ See Also:
 
         # build --rsh xxx --rsh xxx ...
         dict = { "user" : user, "target" : target }
+        for var,val in opts.subst_arg:
+            dict[var] = val
+            
         A = []
         for a in rsh_args:
-            A.append("--rsh '%s'" % (a % dict))
+            try:
+                subst_a = (a % dict)
+            except KeyError,e:
+                p = e.args[0]
+                Es(("gxpc: parameter '%s' specified in rsh (try 'gxpc rsh %s') missing\n"
+                    "in explore command line (give it by 'gxpc explore -a %s=X ...')\n"
+                    % (p, method_name, p)))
+                return None
+            A.append("--rsh '%s'" % subst_a)
         rsh_args = string.join(A, " ")
         
         return ("python $GXP_DIR/inst_local.py %s %s %s"

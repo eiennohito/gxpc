@@ -50,7 +50,7 @@ class qsub_wrap_server_cmd_opts(opt.cmd_opts):
         # self.qsub_stdin = ("i", 0)      # 1 if qsub takes stdin
         # self.script     = ("s", None)
         # self.sync       = (None, 0)
-        self.x       = "qarg"
+        # self.x       = "qarg"
 
 class torque_system_option:
     """
@@ -248,7 +248,15 @@ qsub_wrap hostname
         self.READ_SZ = 1024 * 1024
         self.cmd = os.path.realpath(argv[0])
         self.opt = qsub_wrap_server_cmd_opts()
-        if self.opt.parse(argv[1:]) == -1:
+        qsub_wrap_args = []
+        qsub_args = []
+        args = [ qsub_wrap_args, qsub_args ]
+        for a in argv[1:]:
+            if a == "--":
+                args = [ args[1], args[0] ]
+            else:
+                args[0].append(a)
+        if self.opt.parse(qsub_wrap_args) == -1:
             self.usage()
             return -1
         if len(self.opt.args) != 1:
@@ -257,6 +265,7 @@ qsub_wrap hostname
         if self.set_system_options(self.opt) == -1:
             self.usage()
             return -1
+        self.opt.qarg = self.opt.qarg + qsub_args
         self.hostname = socket.gethostname()
         if self.set_connect_addr(self.opt.hostname, self.opt.addr) == -1:
             return -1
