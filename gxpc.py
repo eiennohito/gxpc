@@ -41,7 +41,7 @@ if len(sys.argv) == 2 and sys.argv[1] == "prompt":
     os._exit(prompt())
     
 import cPickle,cStringIO,errno,fcntl,glob,random,re
-import select,signal,shlex,socket,stat
+import select,signal,socket,stat # shlex
 import string,time,threading,types,copy
 import opt,gxpm,gxpd
 
@@ -84,39 +84,34 @@ class peer_tree_node:
     def show(self):
         self.show_rec(0)
 
-class login_method:
-    def __init__(self, prepare, real):
-        self.prepare = prepare
-        self.real = real
-
 class login_method_configs:
     def __init__(self):
-        self.ssh      = "ssh -o 'StrictHostKeyChecking no' -o 'PreferredAuthentications hostbased,publickey' -A           %target% %cmd%"
-        self.ssh_as   = "ssh -o 'StrictHostKeyChecking no' -o 'PreferredAuthentications hostbased,publickey' -A -l %user% %target% %cmd%"
-        # self.sshx_as   = "ssh -o 'StrictHostKeyChecking no' -A -l %user% %target% %cmd%"
-        # self.sshx      = "ssh -o 'StrictHostKeyChecking no' -A           %target% %cmd%"
-        self.rsh         = "rsh           %target% %cmd%"
-        self.rsh_as      = "rsh -l %user% %target% %cmd%"
-        self.sh          = "sh -c %cmd%"
-        qrsh_common = ("qrsh -v PATH=%s -v PYTHONPATH=%s " 
-                       % (os.environ["PATH"], os.environ["PYTHONPATH"]))
-        self.qrsh        = "qrsh %cmd%"
-        self.qrsh_host   = "qrsh -l hostname=%target% %cmd%"
+        self.ssh         = ("ssh:-o:StrictHostKeyChecking no"
+                            ":-o:PreferredAuthentications hostbased,publickey"
+                            ":-A:%target%:%cmd%")
+        self.ssh_as      = ("ssh:-o:StrictHostKeyChecking no"
+                            ":-o:PreferredAuthentications hostbased,publickey"
+                            ":-A:-l:%user%:%target%:%cmd%")
+        self.rsh         = "rsh:%target%:%cmd%"
+        self.rsh_as      = "rsh:-l:%user%:%target%:%cmd%"
+        self.sh          = "sh:-c:%cmd%"
+        self.qrsh        = "qrsh:%cmd%"
+        self.qrsh_host   = "qrsh:-l:hostname=%target%:%cmd%"
 
-        self.sge         = "qsub_wrap --sys sge %cmd%"
-        self.sge_host    = "qsub_wrap --qarg -l --qarg hostname=%target% %cmd%"
+        self.sge         = "qsub_wrap:--sys:sge:%cmd%"
+        self.sge_host    = "qsub_wrap:--qarg:-l:--qarg:hostname=%target%:%cmd%"
         
-        self.torque      = "qsub_wrap --sys torque %cmd%"
-        self.torque_host = "qsub_wrap --qarg -l --qarg nodes=%target% %cmd%"
+        self.torque      = "qsub_wrap:--sys:torque:%cmd%"
+        self.torque_host = "qsub_wrap:--qarg:-l:--qarg:nodes=%target%:%cmd%"
 
-        self.nqs_hitachi = "qsub_wrap --sys nqs_hitachi %cmd%"
-        self.nqs_fujitsu = "qsub_wrap --sys nqs_fujitsu %cmd%"
+        self.nqs_hitachi = "qsub_wrap:--sys:nqs_hitachi:%cmd%"
+        self.nqs_fujitsu = "qsub_wrap:--sys:nqs_fujitsu:%cmd%"
         # aliases
-        self.hitachi     = "qsub_wrap --sys nqs_hitachi %cmd%"
-        self.fujitsu     = "qsub_wrap --sys nqs_fujitsu %cmd%"
+        self.hitachi     = "qsub_wrap:--sys:nqs_hitachi:%cmd%"
+        self.fujitsu     = "qsub_wrap:--sys:nqs_fujitsu:%cmd%"
 
-        self.n1ge      = "qsub_wrap --sys n1ge %cmd%"
-        self.n1ge_host = "qsub_wrap --qarg -l --qarg host=%target% %cmd%"
+        self.n1ge        = "qsub_wrap:--sys:n1ge:%cmd%"
+        self.n1ge_host   = "qsub_wrap:--qarg:-l:--qarg:host=%target%:%cmd%"
 
 class session_state:
     """
@@ -194,8 +189,8 @@ class session_state:
         # default login methods
         lm = login_method_configs()
         for name,cmdline in lm.__dict__.items():
-            cmd = shlex.split(cmdline)
-            self.login_methods[name] = login_method(cmd, cmd)
+            cmd = string.split(cmdline, ":")
+            self.login_methods[name] = cmd
 
     def show(self, level):
         Ws("%s\n" % self.filename)
@@ -1053,7 +1048,7 @@ class use_cmd_opts(opt.cmd_opts):
 
 class rsh_cmd_opts(opt.cmd_opts):
     """
-    rsh [--full] [--real/--prepare] [name]
+    rsh [--full] [name]
 
     """
     def __init__(self):
@@ -1066,13 +1061,6 @@ class rsh_cmd_opts(opt.cmd_opts):
         #   None : flag
         opt.cmd_opts.__init__(self)
         self.full = (None, 0)           # full flag
-        self.real = (None, 0)           # real flag
-        self.prepare = (None, 0)        # prepare flag
-
-    def postcheck(self):
-        if self.real == 0 and self.prepare == 0:
-            self.real = 1
-            self.prepare = 1
 
 class interpreter_opts(opt.cmd_opts):
     def __init__(self):
@@ -1084,6 +1072,7 @@ class interpreter_opts(opt.cmd_opts):
         #   l : list of strings
         #   None : flag
         opt.cmd_opts.__init__(self)
+        self.help = (None, 0)
         self.verbosity = ("i", 1)
         self.create_session = ("i", 0)
         self.session = ("s", None)
@@ -1351,11 +1340,11 @@ class cmd_interpreter:
             try:
                 session = cPickle.load(fp)
             except cPickle.UnpicklingError,e:
-                Es("%s\n", (e.args,))
+                Es("%s\n" % (e.args,))
                 fp.close()
                 return None
             except AttributeError,e:
-                Es("%s\n", (e.args,))
+                Es("%s\n" % (e.args,))
                 fp.close()
                 return None
             # to play safe, we assume it is alway dirty and clear
@@ -2315,12 +2304,12 @@ Try
 to get more help on a specific command.
 """ % string.join(cmds, ",")))
 
-    def show_help_command(self, cmd):
+    def show_help_command(self, cmd, full):
         cname = "do_%s_cmd" % cmd
         usage_name = "usage_%s_cmd" % cmd
         if hasattr(self, cname) and hasattr(self, usage_name):
             method = getattr(self, usage_name)
-            Es(method())
+            Es(method(full))
         elif hasattr(self, cname):
             Es("gxpc: %s: command has no help\n" % cmd)
         else:
@@ -2355,7 +2344,7 @@ to get more help on a specific command.
                 groups = self.search_cmd_group(cmd, command_groups)
                 for c in groups: marked[c] = 1
                 method = getattr(self, ("usage_%s_cmd" % cmd))
-                helps.append((groups, method()))
+                helps.append((groups, method(1)))
         texinfo_formatter().format(helps)
 
     # 
@@ -2365,29 +2354,39 @@ to get more help on a specific command.
     #
     # help
     #
-    def usage_help_cmd(self):
-        return (r"""Usage:
+    def usage_help_cmd(self, full):
+        u = r"""Usage:
   gxpc help
   gxpc help COMMAND
+"""
 
+        if full:
+            u = u + r"""
 Description:
   Show summary of gxpc commands or a help on a specific COMMAND.
-""")
+"""
+        return u
 
     def do_help_cmd(self, args):
         if len(args) == 0:
             self.show_help_summary()
         else:
-            self.show_help_command(args[0])
+            self.show_help_command(args[0], 1)
         return 0
                 
     #
     # makeman
     #
-    def usage_makeman_cmd(self):
-        return (r"""Usage:
+    def usage_makeman_cmd(self, full):
+        u = r"""Usage:
   gxpc makeman
-""")
+"""
+        if full:
+            u = u + r"""
+Description:
+  Generate command reference chapter of gxp manual.
+"""
+        return u
 
     def do_makeman_cmd(self, args):
         self.show_help_all_commands()
@@ -2396,13 +2395,17 @@ Description:
     #
     # stat
     #
-    def usage_stat_cmd(self):
-        return (r"""Usage:
-  gxpc stat
-
+    def usage_stat_cmd(self, full):
+        u = r"""Usage:
+  gxpc stat [LEVEL]
+"""
+        if full:
+            u = u + r"""
 Description:
-  Show all live gxp daemons in tree format.
-""")
+  Show all live gxp daemons in tree format. LEVEL is 0, 1, or 2 and
+determines the detail level of the information shown.
+"""
+        return u
                     
     def do_stat_cmd(self, args):
         """
@@ -2427,13 +2430,18 @@ Description:
     #
     # edges
     #
-    def usage_use_cmd(self):
-        return (r"""Usage:
+    def usage_use_cmd(self, full):
+        u = r"""Usage:
   gxpc use          [--as USER] RSH_NAME SRC [TARGET]
   gxpc use --delete [--as USER] RSH_NAME SRC [TARGET]
   gxpc use
   gxpc use --delete [idx]
 
+  e.g.,
+  gxpc use ssh your_hostname compute_node_prefix
+"""
+        if full:
+            u = u + r"""
 Description:
 
   Configure rsh-like commands used to login targets matching a
@@ -2442,7 +2450,7 @@ typical usage is `gxpc use RSH_NAME SRC TARGET', which says gxp can
 use an rsh-like command RSH_NAME for SRC to login TARGET. gxpc
 remembers these facts to decide which hosts should issue which
 commands to login which hosts, when explore command is issued. See the
-section of explore command and the tutorial section of the manual.
+tutorial section of the manual.
 
 Examples:
   gxpc use           ssh abc000.def.com pqr.xyz.ac.jp
@@ -2514,8 +2522,9 @@ a host beginning with abc will issue qrsh, and get whichever host
 is allocated by the scheduler.
 
 See Also:
-  explore conf_explore
-""")
+  explore rsh
+"""
+        return u
 
     def do_use_cmd(self, args):
         """
@@ -2596,12 +2605,12 @@ See Also:
                     return cmd_interpreter.RET_NOT_RUN
         return 0
 
-    def usage_edges_cmd(self):
+    def xxx_usage_edges_cmd(self, full):
         return ("Note: edges command is deprecated.\n"
                 "Use `use' command instead.\n\n"
-                "%s" % self.usage_use_cmd())
+                "%s" % self.usage_use_cmd(full))
     
-    def do_edges_cmd(self, args):
+    def xxx_do_edges_cmd(self, args):
         Es("note: edges command is deprecated. use 'use' command instead\n")
         return self.do_use_cmd(args)
 
@@ -2631,10 +2640,16 @@ See Also:
         sio.close()
         return r
 
-    def usage_showmasks_cmd(self):
-        return (r"""Usage:
+    def usage_showmasks_cmd(self, full):
+        u = r"""Usage:
   gxpc showmasks [--level 0/1] [NAME]
+  e.g.,
+  gxpc showmasks
+  gxpc showmasks --level 1
+"""
 
+        if full:
+            u = u + r"""
 Description:
   Show summary (--level 0) or detail (--level 1) of all execution
 masks (if `name' is omitted) or a specified excution mask named
@@ -2690,7 +2705,8 @@ nodes.
 
 See Also:
   smask rmask savemask restoremask pushmask popmask
-""")
+"""
+        return u
 
     def do_showmasks_cmd(self, args):
         if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
@@ -2772,12 +2788,17 @@ See Also:
         self.session.set_selected_exec_tree(sign, push, name)
         return 0
 
-    def usage_smask_like(self):
-        return (r"""Usage:
+    def usage_smask_like(self, full):
+        u = r"""Usage:
   gxpc smask    [-]
   gxpc savemask [-] NAME
   gxpc pushmask [-]
-
+  e.g.,
+  gxpc  e  'uname | grep Linux'
+  gxpc  smask
+"""
+        if full:
+            u = u + r"""
 Description:
   All three commands have a common effect. That is to modify the
 set of nodes that will execute subsequent commands.  When `-'
@@ -2791,7 +2812,7 @@ zero.
 These commands can be used to efficiently choose the nodes
 to execute subsequent commands by various criterion.
 
-Here are some examples.
+Examples:
 
 1.
 
@@ -2850,13 +2871,15 @@ the distance from the top.
 
 See Also:
   showmasks rmask restoremask popmask
-""")
+"""
+        return u
+            
 
     #
     # smask
     #
-    def usage_smask_cmd(self):
-        return self.usage_smask_like()
+    def usage_smask_cmd(self, full):
+        return self.usage_smask_like(full)
         
     def do_smask_cmd(self, args):
         """
@@ -2867,8 +2890,8 @@ See Also:
     #
     # pushmask
     #
-    def usage_pushmask_cmd(self):
-        return self.usage_smask_like()
+    def usage_pushmask_cmd(self, full):
+        return self.usage_smask_like(full)
 
     def do_pushmask_cmd(self, args):
         """
@@ -2879,8 +2902,8 @@ See Also:
     #
     # savemask
     #
-    def usage_savemask_cmd(self):
-        return self.usage_smask_like()
+    def usage_savemask_cmd(self, full):
+        return self.usage_smask_like(full)
 
     def do_savemask_cmd(self, args):
         """
@@ -2891,10 +2914,12 @@ See Also:
     #
     # popmask
     #
-    def usage_popmask_cmd(self):
-        return (r"""Usage:
+    def usage_popmask_cmd(self, full):
+        u = r"""Usage:
   gxpc popmask
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Pop the set of nodes on the top of the stack. The next entry
 that is used to be referred to by name `1' will now be the top
@@ -2903,7 +2928,8 @@ for execution.
 
 See Also:
   pushmask
-""")
+"""
+        return u
 
     def do_popmask_cmd(self, args):
         """
@@ -2918,10 +2944,10 @@ See Also:
     #
     # restoremask
     #
-    def usage_restoremask_cmd(self):
-        return (r"""Usage:
+    def usage_restoremask_cmd(self, full):
+        return r"""Usage:
   gxpc restoremask NAME
-""")
+"""
 
     def do_restoremask_cmd(self, args):
         if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
@@ -2935,16 +2961,19 @@ See Also:
     #
     # rmask
     #
-    def usage_rmask_cmd(self):
-        return (r"""Usage:
+    def usage_rmask_cmd(self, full):
+        u = r"""Usage:
   gxpc rmask
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Reset execution mask. Let all nodes execute subsequent commands.
 
 See Also:
   showmasks smask savemask restoremask pushmask popmask
-""")
+"""
+        return u
 
     def do_rmask_cmd(self, args):
         """
@@ -2961,15 +2990,18 @@ See Also:
     #
     # quit
     #
-    def usage_quit_cmd(self):
-        return (r"""Usage:
+    def usage_quit_cmd(self, full):
+        u = r"""Usage:
   gxpc quit [--session_only]
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Quit gxp session. By default, all daemons will exit.
 If --session_only is given, daemons keep running and only the 
 session will cease.
-""")
+"""
+        return u
         
     def do_quit_cmd(self, args):
         """
@@ -3041,10 +3073,12 @@ session will cease.
         else:
             return status
 
-    def usage_ping_cmd(self):
-        return (r"""Usage:
+    def usage_ping_cmd(self, full):
+        u = r"""Usage:
   gxpc ping [LEVEL]
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Send a small message to the selected nodes and show some
 information. The parameter LEVEL is 0 or 1. Default is 0.
@@ -3054,7 +3088,8 @@ of nodes and trim non-responding nodes.
 
 See Also:
   trim smask
-""")
+"""
+        return u
 
     def safe_atoi(self, x, defa):
         try:
@@ -3125,10 +3160,12 @@ VAL on the selected nodes.
     #
     # trim
     #
-    def usage_trim_cmd(self):
-        return (r"""Usage:
+    def usage_trim_cmd(self, full):
+        u = r"""Usage:
   gxpc trim
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Trim (release) some subtrees of gxp daemons. This is typically
 used after a ping cmd followed by smask, to prune non-responding
@@ -3143,21 +3180,25 @@ the subtree from the tree of gxp daemons. For example,
   # type <Ctrl-C> to quit.
   gxpc smask
   gxpc trim
-""")
+"""
+        return u
 
     def do_trim_cmd(self, args):
         act = gxpm.action_trim()
         return self.ping_like_cmd(act, 0, 1) # trim = 1
 
-    def usage_set_max_buf_len_cmd(self):
-        return (r"""Usage:
+    def usage_set_max_buf_len_cmd(self, full):
+        u = r"""Usage:
   gxpc set_max_buf_len N
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Set maximum internal buffer size of gxp daemons in bytes.
   default is 10KB and any value below the default is ignored. If no argument
   is given, use the default value.
-""")
+"""
+        return u
 
     def do_set_max_buf_len_cmd(self, args):
         max_buf_len = 10000
@@ -3172,18 +3213,21 @@ Description:
     #
     #
     #
-    def usage_prof_start_stop(self):
-        return (r"""Usage:
+    def usage_prof_start_stop(self, full):
+        u = r"""Usage:
   gxpc prof_start FILENAME
   gxpc prof_stop
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Start/stop profiling of the selected nodes. Stats are saved to
 the FILENAME.
-""")
+"""
+        return u
 
-    def usage_prof_start_cmd(self):
-        return self.usage_prof_start_stop()
+    def usage_prof_start_cmd(self, full):
+        return self.usage_prof_start_stop(full)
 
     def do_prof_start_cmd(self, args):
         """
@@ -3198,8 +3242,8 @@ the FILENAME.
     #
     #
     #
-    def usage_prof_stop_cmd(self):
-        return self.usage_prof_start_stop()
+    def usage_prof_stop_cmd(self, full):
+        return self.usage_prof_start_stop(full)
 
     def do_prof_stop_cmd(self, args):
         """
@@ -3211,18 +3255,21 @@ the FILENAME.
     #
     #
     #
-    def usage_log_like(self):
-        return (r"""Usage:
+    def usage_log_like(self, full):
+        u = r"""Usage:
   gxpc log_level LEVEL
   gxpc log_base_time
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Command log_level will set the log level of the selected nodes
 to the specified LEVEL.  0 will write no logs. 2 will write many.
 Command log_base_time will reset the time of the selected nodes
 to zero.  Subsequent log entries will record the time relative to
 this time.
-""")
+"""
+        return u
 
     def usage_log_level_cmd(self):
         return self.usage_log_like()
@@ -3240,8 +3287,8 @@ this time.
     #
     #
     #
-    def usage_log_base_time_cmd(self):
-        return self.usage_log_like()
+    def usage_log_base_time_cmd(self, full):
+        return self.usage_log_like(full)
 
     def do_log_base_time_cmd(self, args):
         """
@@ -3253,14 +3300,16 @@ this time.
     #
     #
     #
-    def usage_reclaim_cmd(self):
-        return (r"""Usage:
+    def usage_reclaim_cmd(self, full):
+        u = r"""Usage:
   gxpc reclaim tid
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Command reclaim will reclaim task tid unconditionally.
-""")
-        
+"""
+        return u
 
     def do_reclaim_cmd(self, args):
         """
@@ -3345,27 +3394,35 @@ Description:
                 # self.event_log.append((time.time(), "<send_action OK>\n"))
         return 0
     
-    def usage_e_and_mw(self):
-        return (r"""Usage:
+    def usage_e_and_mw(self, full):
+        u = r"""Usage:
   gxpc e  [OPTION ...] CMD
   gxpc mw [OPTION ...] CMD
-  gxpc ep [OPTION ...] file
-
+  gxpc ep [OPTION ...] FILE
+"""
+        if full:
+            u = u + r"""
 Description:
   Execute the command on the selected nodes.
 
-Option (for mw only):
+Options: (for mw only):
   --master 'command'
     equivalent to e --updown '3:4:command' ...
   if --master is not given, it is equivalent to e --updown 3:4 ...
 
-Options (for e, mw, and ep):
+Options: (for e, mw, and ep):
   --withmask,-m MASK
     execute on a set of nodes saved by savemask or pushmask
   --withhostmask,-h HOSTMASK
-    execute on a set of nodes whose names match regexp HOSTMASK
+    execute on a set of nodes whose hostnames match regexp HOSTMASK
   --withhostnegmask,-H HOSTMASK
-    execute on a set of nodes whose names do not match regexp HOSTMASK
+    execute on a set of nodes whose hostnames do not match regexp HOSTMASK
+  --withgupidmask,-g HOSTMASK
+    execute on a set of nodes whose gupid (shown by gxpc stat) 
+    match regexp HOSTMASK
+  --withgupidnegmask,-G HOSTMASK
+    execute on a set of nodes whose gupid (shown by gxpc stat) 
+    do not match regexp HOSTMASK
   --up FD0[:FD1]
     collect output from FD0 of CMD, and output them to FD1 of gxpc.
     if :FD1 is omitted, it is treated as if FD1 == FD0
@@ -3397,7 +3454,8 @@ as soon as they are newlined.
 
 See Also:
   smask savemask pushmask rmask restoremask popmask
-""")
+"""
+        return u
         
     def add_pty_pipes(self, atomicity, pipes, open_count):
         pipes.append(("pty",
@@ -3704,20 +3762,20 @@ See Also:
         else:
             return status
 
-    def usage_e_cmd(self):
-        return self.usage_e_and_mw()
+    def usage_e_cmd(self, full):
+        return self.usage_e_and_mw(full)
 
     def do_e_cmd(self, args):
         return self.do_e_like("e", args, None, 1, 0)
 
-    def usage_mw_cmd(self):
-        return self.usage_e_and_mw()
+    def usage_mw_cmd(self, full):
+        return self.usage_e_and_mw(full)
 
     def do_mw_cmd(self, args):
         return self.do_e_like("mw", args, None, 1, 0)
 
-    def usage_ep_cmd(self):
-        return self.usage_e_and_mw()
+    def usage_ep_cmd(self, full):
+        return self.usage_e_and_mw(full)
 
     def do_ep_cmd(self, args):
         return self.do_e_like("ep", args, None, 1, 0)
@@ -3737,16 +3795,18 @@ See Also:
             for ch in tree.children:
                 self.set_cwd_rec(ch, new_dirs)
 
-    def usage_cd_cmd(self):
-        return (r"""Usage:
+    def usage_cd_cmd(self, full):
+        u = r"""Usage:
   gxpc cd [OPTIONS ...] DIRECTORY
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Set current directory of the selected nodes to DIRECTORY.
 Subsequent commands will start at the specified directory.
 Options are the same as those of `e' command.
-
-""")
+"""
+        return u
 
     def transform_to_cd(self, shcmd):
         return "cd %s > /dev/null && echo $PWD" % shcmd
@@ -3781,14 +3841,17 @@ Options are the same as those of `e' command.
             for ch in tree.children:
                 self.set_env_rec(ch, new_envs)
 
-    def usage_export_cmd(self):
-        return (r"""Usage:
+    def usage_export_cmd(self, full):
+        u = r"""Usage:
   gxpc export VAR=VAL
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Set environment variable VAR to VAL on the selected nodes.
 Options are the same as those of `e' command.
-""")
+"""
+        return u
 
     def transform_to_export(self, shcmd):
         return "echo %s" % shcmd
@@ -3870,13 +3933,16 @@ Options are the same as those of `e' command.
     # show rsh
     #
 
-    def usage_show_explore_cmd(self):
-        return (r"""Usage:
+    def usage_show_explore_cmd(self, full):
+        u = r"""Usage:
   gxpc show_explore SRC TARGET
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Show command used to explore TARGET from SRC.
-""")
+"""
+        return u
         
     def do_show_explore_cmd(self, args):
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
@@ -3909,12 +3975,14 @@ to run the above command. e.g.,
     #
     # add_rsh
     #
-    def usage_rsh_cmd(self):
-        return (r"""Usage:
+    def usage_rsh_cmd(self, full):
+        u = r"""Usage:
   gxpc rsh [OPTIONS]
   gxpc rsh [OPTIONS] rsh_name
   gxpc rsh [OPTIONS] rsh_name rsh_like_command_template
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Show, add, or modify rsh-like command explore/use will recognize
   to the repertoire.
@@ -3934,37 +4002,36 @@ Options:
   --full
     when invoked as gxpc rsh --full (with no other args),
     show command lines of all available rsh-like commands.
-  --real, --prepare when --real is set, the command line used to
-    really start gxpd is shown or set. when --prepare is set, the
-    command line used to prepare for starting gxpd is shown or
-    set. when both are omitted, both are shown or set.
 
 Examples:
+1.
   gxpc rsh ssh
-  (output) ssh (prepare): ssh ... -A %target% %cmd%
-           ssh (   real): ssh ... -A %target% %cmd%
+  (output) ssh : ssh -o 'StrictHostKeyChecking no' ... -A %target% %cmd%
 
   This displays that an rsh-like command named 'ssh' is configured,
   and gxp understands that, to run a command a host via ssh, it should
   use a command:
 
-         ssh -o 'StrictHostKeyChecking no' -A %target% %cmd%
+         ssh -o 'StrictHostKeyChecking no' ... -A %target% %cmd%
 
-  where %target% will be replaced by a target name (normally a
-  hostname) and %cmd% will be replaced by whatever commands it wants
+  with %target% replaced by a target name (normally a
+  hostname) and %cmd% by whatever commands it wants
   to execute on the target.
-     
+  
+2.   
   gxpc rsh ssh ssh -i elsewhere/id_dsa -o 'StrictHostKeyChecking no' -A %target% %cmd%
 
   This instructs gxp to use command line:
 
      ssh -i elsewhere/id_dsa -o 'StrictHostKeyChecking no' -A %target% %cmd%
 
-  when it uses ssh.  You can arbitrarily name a new rsh-like command. For example,
-  let's say on some hosts, ssh daemons listen on customized ports (say 2000) and
-  you need to connect to that port to login those hosts, while connecting to the
-  regular port to login others. Then you first define a new rsh-like command.
+  when it uses ssh.  You can arbitrarily name a new rsh-like command. 
+  For example, let's say on some hosts, ssh daemons listen on customized 
+  ports (say 2000) and you need to connect to that port to login those 
+  hosts, while connecting to the regular port to login others. Then you 
+  first define a new rsh-like command.
   
+3.
   gxpc rsh ssh2000 ssh -p 2000 -o 'StrictHostKeyChecking no' -A %target% %cmd%
 
   And you specicy ssh2000 label to login those hosts, using 'use' command. e.g.,
@@ -3974,8 +4041,8 @@ Examples:
 See Also:
   use explore
 
-""")
-
+"""
+        return u
         
     def do_rsh_cmd(self, args):
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
@@ -3987,15 +4054,9 @@ See Also:
             if opts.full:
                 A = self.session.login_methods.items()
                 A.sort()
-                for rsh_name,login_meth in A:
-                    if opts.prepare:
-                        Ws(("%s (prepare): %s\n"
-                            % (rsh_name,
-                               self.show_login_method_cmdline(login_meth.prepare))))
-                    if opts.real:
-                        Ws(("%s (real): %s\n"
-                            % (rsh_name,
-                               self.show_login_method_cmdline(login_meth.real))))
+                for rsh_name,cmd in A:
+                    Ws(("%s : %s\n"
+                        % (rsh_name, self.show_login_method_cmdline(cmd))))
             else:
                 A = self.session.login_methods.keys()
                 A.sort()
@@ -4007,28 +4068,15 @@ See Also:
             if not self.session.login_methods.has_key(rsh_name):
                 Ws("No such rsh-like method %s\n" % rsh_name)
                 return cmd_interpreter.RET_NOT_RUN
-            login_meth = self.session.login_methods[rsh_name]
-            if opts.prepare:
-                Ws(("%s (prepare): %s\n"
-                    % (rsh_name,
-                       self.show_login_method_cmdline(login_meth.prepare))))
-            if opts.real:
-                Ws(("%s    (real): %s\n"
-                    % (rsh_name,
-                       self.show_login_method_cmdline(login_meth.real))))
+            cmd = self.session.login_methods[rsh_name]
+            Ws(("%s : %s\n"
+                % (rsh_name, self.show_login_method_cmdline(cmd))))
             return 0
         else:
             # gxpc rsh ssh ssh %target% %cmd%
             rsh_name = opts.args[0]
             cmd = opts.args[1:]
-            if not self.session.login_methods.has_key(rsh_name):
-                login_meth = login_method(cmd, cmd)
-                self.session.login_methods[rsh_name] = login_meth
-            else:
-                if opts.prepare:
-                    self.session.login_methods[rsh_name].prepare = cmd
-                if opts.real:
-                    self.session.login_methods[rsh_name].real = cmd
+            self.session.login_methods[rsh_name] = cmd
             return 0
 
     #
@@ -4086,9 +4134,7 @@ See Also:
             return None
         # rsh_args is like a
         #   [ "ssh", "%(target)s", "%(cmd)s" ]
-        rsh_args = self.conv_login_method_cmdline(session.login_methods[method_name].prepare)
-        rshx_args = self.conv_login_method_cmdline(session.login_methods[method_name].real)
-        
+        rsh_args = self.conv_login_method_cmdline(session.login_methods[method_name])
         # mandatory args
         mand_args = ("--target_label %s --root_gupid %s --seq %s" 
                      % (target, self.gupid, seq))
@@ -4109,14 +4155,9 @@ See Also:
         for a in rsh_args:
             A.append("--rsh '%s'" % (a % dict))
         rsh_args = string.join(A, " ")
-
-        A = []
-        for a in rshx_args:
-            A.append("--rshx '%s'" % (a % dict))
-        rshx_args = string.join(A, " ")
         
-        return ("python $GXP_DIR/inst_local.py %s %s %s %s"
-                % (rsh_args, rshx_args, mand_args, opt_args))
+        return ("python $GXP_DIR/inst_local.py %s %s %s"
+                % (rsh_args, mand_args, opt_args))
     
     def replace_tgt_pat(self, m, tgt_pat):
         # Es("replace_tgt_pat %s\n" % tgt_pat)
@@ -4278,10 +4319,12 @@ See Also:
         r = self.send_explore_msg(tid, pipes, C)
         return r
 
-    def usage_explore_cmd(self):
-        return (r"""Usage:
+    def usage_explore_cmd(self, full):
+        u = r"""Usage:
   gxpc explore [OPTIONS] TARGET TARGET ...
-
+"""
+        if full:
+            u = u + r"""
 Description:
   Login target hosts specified by OPTIONS and TARGET.
 
@@ -4520,7 +4563,8 @@ equivalent to `gxpc explore -h /etc/hosts .'  That is, all hosts
 in /etc/hosts become the targets.  This will be rarely useful
 because /etc/hosts typically includes hosts you don't want to
 use.
-""")
+"""
+        return u
         
     def do_explore_cmd(self, args):
         """
@@ -4650,6 +4694,18 @@ use.
             else:
                 return 0
     #
+    def usage_make_cmd(self, full):
+        u = r"""Usage:
+  gxpc make GNU-MAKE-ARGS [ -- GXPC-MAKE-ARGS ]
+"""
+        if full:
+            u = u + r"""
+Description:
+  parallel and distributed make.
+
+Options:
+"""
+        return u
 
     def do_make_cmd(self, args):
         if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
@@ -4670,7 +4726,7 @@ use.
             method = getattr(self, c)
             r = method(argv[1:])
             if r == cmd_interpreter.RET_NOT_RUN:
-                self.show_help_command(cname)
+                self.show_help_command(cname, 0) # full == 0
                 return r
             # ugly, but necessary to avoid saving
             # session file just deleted in do_quit_cmd
@@ -4715,6 +4771,8 @@ use.
         opts = interpreter_opts()
         self.opts = opts
         if opts.parse(argv[1:]) == -1: return -1
+        if opts.help:
+            return self.do_help_cmd([])
         
         if opts.profile is None:
             return self.init_and_dispatch()

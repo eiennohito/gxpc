@@ -58,7 +58,7 @@ In order to play with GXP, you need
 @item Python interpreter
 @end itemize
 To do anything interesting with GXP, you should be able to remote
-login (e.g., via SSH, RSH, QRSH, etc.) computers you want to use.
+login (e.g., via SSH, RSH, QSUB, etc.) computers you want to use.
 
 GXP has been developed on Linux and tested on Linux and FreeBSD.  It
 has been tested with Python 1.5.2, 2.2.2, 2.3.4, and 2.4.2.  There are
@@ -71,21 +71,21 @@ are already satisfied in your platform.
 
 @section Installation
 
-You can obtain the latest version (tarball) from:
+You can obtain the latest version (tarball) from sourceforge:
 @example
-    http://www.logos.t.u-tokyo.ac.jp/gxp
+    http://sourceforge.net/projects/gxp/
 @end example
 and then unpack the tarball by something like:
 @example
-    tar zxvf gxp3.xx-yyyymmdd.tar.gz 
+    tar zxvf gxp3.xx.tar.bz2
 @end example
 The exact file name (and the directory name) depends on the current
 version of GXP. Perhaps you want to make a symlink @t{gxp3} to the
 directory you obtained, or directly rename the directory to @t{gxp3}.
 
-If you have cvs, it is recommended to use it for download.
+If you have cvs, you can use it to obtain the latest copy under development.
 @example
-cvs -d :pserver:anonymous@@www.logos.ic.i.u-tokyo.ac.jp:/var/lib/cvs co gxp3
+cvs -d :pserver:anonymous@@gxp.cvs.sourceforge.net:/cvsroot/gxp co gxp3
 @end example
 
 Either way, you will have directory called @t{gxp3}. Since GXP and
@@ -215,13 +215,18 @@ you are originally on host @t{hongo000} and you have another host,
 @t{hongo001}, which you can remote-login from @t{hongo000} via
 SSH. Furthermore, we assume you can do so without typing password
 every time you login @t{hongo001}. 
-??? SSH setup for GXP, if you are not familiar with necessary
+@xref{Introduction to SSH for GXP Users}, if you are not familiar with necessary
 SSH setup to do so. For those who already know it, 
 you need to have public/private
-key pairs and either (1) do not set the encryption passphrase of the private
-key, or (2) use @t{ssh-agent} and @t{ssh-add} (@t{eval
+key pairs and either (1) use @t{ssh-agent} and @t{ssh-add} (@t{eval
 `ssh-agent` && ssh-add}) and input the phassphrase to @t{ssh-add}, 
-so SSH does not ask you it again.
+so SSH does not ask you it again (recommended), or
+(2) set the encryption passphrase of the private key empty.
+Though the method (2) uses secure public-key protocol for
+authentication, when your account on the host storing the private key
+is compromised, the intruder may be able to access other hosts
+via the private key.
+
 Either way, you should have an environment
 where something like the following silently succeeds without
 your password/passphrase being asked by SSH client.

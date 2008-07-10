@@ -1,8 +1,26 @@
+#
+# Makefile for generating documents
+# 
+# gxpman.pdf
+# gxpman.info
+# gxpman.html
+#
+# distribution contains them so you normally have to run this.
+#
+# to generate them, you need
+# (1) makeinfo (install texinfo package).
+# (2) texinfo.tex in this directory (install texinfo package and then
+#     copy texinfo.tex here).
+# (3) dvipdfm (for gxpman.pdf)
+#
+
+
+
 M = gxpman
 
-all : $(M).dvi $(M).info $(M).html 
+all : $(M).pdf $(M).info $(M).html 
 
-cmdref.tex : ../gxpc
+cmdref.tex : ../gxpc ../gxpc.py
 	../gxpc makeman > cmdref.tex
 
 $(M).tex : $(M)_src.tex cmdref.tex
@@ -14,6 +32,9 @@ $(M).info : $(M).tex
 
 $(M).dvi : $(M).tex
 	tex $(M).tex
+
+$(M).pdf : $(M).dvi
+	dvipdfm $(M).dvi
 
 $(M).html : $(M).tex
 	makeinfo --no-split --force --html --fill-column=70 --output tmp.html $< ; python postprocess_html.py tmp.html $@

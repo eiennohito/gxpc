@@ -67,18 +67,19 @@ Command Reference
 
 * cd::                          
 * e::                           
-* use::                         
 * ep::                          
 * explore::                     
 * export::                      
 * help::                        
 * log_level::                   
+* make::                        
 * makeman::                     
 * ping::                        
 * popmask::                     
 * prof_start::                  
 * smask::                       
 * quit::                        
+* reclaim::                     
 * restoremask::                 
 * rmask::                       
 * rsh::                         
@@ -87,6 +88,7 @@ Command Reference
 * showmasks::                   
 * stat::                        
 * trim::                        
+* use::                         
 
 Key Stroke Reference
 
@@ -126,7 +128,7 @@ In order to play with GXP, you need
 @item Python interpreter
 @end itemize
 To do anything interesting with GXP, you should be able to remote
-login (e.g., via SSH, RSH, QRSH, etc.) computers you want to use.
+login (e.g., via SSH, RSH, QSUB, etc.) computers you want to use.
 
 GXP has been developed on Linux and tested on Linux and FreeBSD.  It
 has been tested with Python 1.5.2, 2.2.2, 2.3.4, and 2.4.2.  There are
@@ -140,21 +142,21 @@ are already satisfied in your platform.
 @node Installation,  , Prerequisites, Getting Started
 @section Installation
 
-You can obtain the latest version (tarball) from:
+You can obtain the latest version (tarball) from sourceforge:
 @example
-    http://www.logos.t.u-tokyo.ac.jp/gxp
+    http://sourceforge.net/projects/gxp/
 @end example
 and then unpack the tarball by something like:
 @example
-    tar zxvf gxp3.xx-yyyymmdd.tar.gz 
+    tar zxvf gxp3.xx.tar.bz2
 @end example
 The exact file name (and the directory name) depends on the current
 version of GXP. Perhaps you want to make a symlink @t{gxp3} to the
 directory you obtained, or directly rename the directory to @t{gxp3}.
 
-If you have cvs, it is recommended to use it for download.
+If you have cvs, you can use it to obtain the latest copy under development.
 @example
-cvs -d :pserver:anonymous@@www.logos.ic.i.u-tokyo.ac.jp:/var/lib/cvs co gxp3
+cvs -d :pserver:anonymous@@gxp.cvs.sourceforge.net:/cvsroot/gxp co gxp3
 @end example
 
 Either way, you will have directory called @t{gxp3}. Since GXP and
@@ -296,13 +298,18 @@ you are originally on host @t{hongo000} and you have another host,
 @t{hongo001}, which you can remote-login from @t{hongo000} via
 SSH. Furthermore, we assume you can do so without typing password
 every time you login @t{hongo001}. 
-??? SSH setup for GXP, if you are not familiar with necessary
+@xref{Introduction to SSH for GXP Users}, if you are not familiar with necessary
 SSH setup to do so. For those who already know it, 
 you need to have public/private
-key pairs and either (1) do not set the encryption passphrase of the private
-key, or (2) use @t{ssh-agent} and @t{ssh-add} (@t{eval
+key pairs and either (1) use @t{ssh-agent} and @t{ssh-add} (@t{eval
 `ssh-agent` && ssh-add}) and input the phassphrase to @t{ssh-add}, 
-so SSH does not ask you it again.
+so SSH does not ask you it again (recommended), or
+(2) set the encryption passphrase of the private key empty.
+Though the method (2) uses secure public-key protocol for
+authentication, when your account on the host storing the private key
+is compromised, the intruder may be able to access other hosts
+via the private key.
+
 Either way, you should have an environment
 where something like the following silently succeeds without
 your password/passphrase being asked by SSH client.
@@ -689,18 +696,19 @@ todo
 @menu
 * cd::                          
 * e::                           
-* use::                         
 * ep::                          
 * explore::                     
 * export::                      
 * help::                        
 * log_level::                   
+* make::                        
 * makeman::                     
 * ping::                        
 * popmask::                     
 * prof_start::                  
 * smask::                       
 * quit::                        
+* reclaim::                     
 * restoremask::                 
 * rmask::                       
 * rsh::                         
@@ -709,6 +717,7 @@ todo
 * showmasks::                   
 * stat::                        
 * trim::                        
+* use::                         
 @end menu
 
 @node cd, e, Command Reference, Command Reference
@@ -730,8 +739,7 @@ todo
 Subsequent commands will start at the specified directory.
 Options are the same as those of `@t{e}' command.
 
-
-@node e, use, cd, Command Reference
+@node e, ep, cd, Command Reference
 @section e, mw
 @vskip 5mm
 @b{Usage:}
@@ -739,7 +747,7 @@ Options are the same as those of `@t{e}' command.
 
   @t{gxpc} @t{e}  [@var{OPTION} ...] @var{CMD}
   @t{gxpc} @t{mw} [@var{OPTION} ...] @var{CMD}
-  @t{gxpc} @t{ep} [@var{OPTION} ...] file
+  @t{gxpc} @t{ep} [@var{OPTION} ...] @var{FILE}
 
 @end example
 @vskip 5mm
@@ -750,32 +758,50 @@ Options are the same as those of `@t{e}' command.
 
   Execute the command on the selected nodes.
 
-Option (for @t{mw} only):
-  @t{--master} 'command'
+@vskip 5mm
+@b{Options: }
+@table @code
+(for @t{mw} only):
+@item   @t{--master} 'command'
     equivalent to @t{e} @t{--updown} '3:4:command' ...
   if @t{--master} is not given, it is equivalent to @t{e} @t{--updown} 3:4 ...
 
-Options (for @t{e}, @t{mw}, and @t{ep}):
-  @t{--withmask},@t{-m} @var{MASK}
+@end table
+@vskip 5mm
+
+@vskip 5mm
+@b{Options: }
+@table @code
+(for @t{e}, @t{mw}, and @t{ep}):
+@item   @t{--withmask},@t{-m} @var{MASK}
     execute on a set of nodes saved by @t{savemask} or @t{pushmask}
-  @t{--withhostmask},@t{-h} @var{HOSTMASK}
-    execute on a set of nodes whose names match regexp @var{HOSTMASK}
-  @t{--withhostnegmask},-H @var{HOSTMASK}
-    execute on a set of nodes whose names do not match regexp @var{HOSTMASK}
-  @t{--up} FD0[:@var{FD1}]
+@item   @t{--withhostmask},@t{-h} @var{HOSTMASK}
+    execute on a set of nodes whose hostnames match regexp @var{HOSTMASK}
+@item   @t{--withhostnegmask},-H @var{HOSTMASK}
+    execute on a set of nodes whose hostnames do not match regexp @var{HOSTMASK}
+@item   @t{--withgupidmask},-g @var{HOSTMASK}
+    execute on a set of nodes whose gupid (shown by @t{gxpc} @t{stat}) 
+    match regexp @var{HOSTMASK}
+@item   @t{--withgupidnegmask},-G @var{HOSTMASK}
+    execute on a set of nodes whose gupid (shown by @t{gxpc} @t{stat}) 
+    do not match regexp @var{HOSTMASK}
+@item   @t{--up} FD0[:@var{FD1}]
     collect output from @var{FD0} of @var{CMD}, and output them to @var{FD1} of @t{gxpc}.
     if :@var{FD1} is omitted, it is treated as if @var{FD1} == @var{FD0}
-  @t{--down} FD0[:@var{FD1}]
+@item   @t{--down} FD0[:@var{FD1}]
     broadcast input to @var{FD0} of @t{gxpc} to @var{FD1} of @var{CMD}.
     if :@var{FD1} is omitted, it is treated as if @var{FD1} == @var{FD0}
-  @t{--updown} @var{FD1}:FD2[:@var{MASTER}]
+@item   @t{--updown} @var{FD1}:FD2[:@var{MASTER}]
     if :@var{MASTER} is omitted, collect output from @var{FD1} of @var{CMD},
     and broadcast them to @var{FD2} of @var{CMD}.
     if :@var{MASTER} is given, run @var{MASTER} on the local host, collect
     output from @var{FD1} of @var{CMD}, feed them to stdin of the @var{MASTER}.
     broadcast stdout of the @var{MASTER} to @var{FD1} of @var{CMD}.
-  @t{--pty}
+@item   @t{--pty}
     assign pseudo tty for stdin/stdout/stderr of @var{CMD}
+
+@end table
+@vskip 5mm
 
 By default,
 
@@ -806,145 +832,7 @@ as soon as they are newlined.
 @end example
 @vskip 5mm
 
-@node use, ep, e, Command Reference
-@section use, edges
-Note: @t{edges} command is deprecated.
-Use `@t{use}' command instead.
-
-@vskip 5mm
-@b{Usage:}
-@example
-
-  @t{gxpc} @t{use}          [@t{--as} @var{USER}] @var{RSH_NAME} @var{SRC} [@var{TARGET}]
-  @t{gxpc} @t{use} @t{--delete} [@t{--as} @var{USER}] @var{RSH_NAME} @var{SRC} [@var{TARGET}]
-  @t{gxpc} @t{use}
-  @t{gxpc} @t{use} @t{--delete} [idx]
-
-@end example
-@vskip 5mm
-
-@vskip 5mm
-@b{Description:}
-
-
-
-@vskip 5mm
-@example
-
-  Configure rsh-like commands used to login targets matching a
-particular pattern from hosts matching a particular pattern. The
-typical usage is `@t{gxpc} @t{use} @var{RSH_NAME} @var{SRC} @var{TARGET}', which says gxp can
-@t{use} an rsh-like command @var{RSH_NAME} for @var{SRC} to login @var{TARGET}. @t{gxpc}
-remembers these facts to decide which hosts should issue which
-commands to login which hosts, when @t{explore} command is issued. See the
-section of @t{explore} command and the tutorial section of the manual.
-
-@end example
-@vskip 5mm
-
-@vskip 5mm
-@b{Examples:}
-@example
-
-  @t{gxpc} @t{use}           ssh abc000.def.com pqr.xyz.ac.jp
-  @t{gxpc} @t{use}           ssh abc000 pqr
-  @t{gxpc} @t{use}           ssh abc
-  @t{gxpc} @t{use}           @t{rsh} abc
-  @t{gxpc} @t{use} @t{--as} taue ssh abc000 pqr
-  @t{gxpc} @t{use} qrsh      abc
-  @t{gxpc} @t{use} qrsh_host abc
-  @t{gxpc} @t{use} sge       abc
-  @t{gxpc} @t{use} torque    abc
-
-@end example
-@vskip 5mm
-
-The first line says that, if @t{gxpc} is told to login pqr.xyz.ac.jp by
-@t{explore} command, hosts named abc000.def.com can @t{use} `ssh' method to do
-so.  How it translates into the actual ssh command line can be shown
-by `@t{show_explore}' command (try `@t{gxpc} @t{help} @t{show_explore}') and can be
-configured by `@t{rsh}' command (try `@t{gxpc} @t{help} @t{rsh}').
-
-@var{SRC} and @var{TARGET} are actually regular expressions, so the line like the
-first one can often be written like the second one.  The first line
-is equivalent to the second line as long as there is only one host
-begining with abc000 and there is only one target beginning with pqr.
-In general, the specification:
-
-@vskip 5mm
-@example
-
-  @t{gxpc} @t{use} @var{RSH_NAME} @var{SRC} @var{TARGET}
-
-@end example
-@vskip 5mm
-
-is read: if @t{gxpc} is told to login a target matching regular
-expession @var{TARGET}, a host matching regular expression @var{SRC} can @t{use}
-@var{RSH_NAME} to do so.
-
-Note that the effect of @t{use} command is @var{NOT} to specify which target
-@t{gxpc} should login, but to specify @var{HOW} it can do so, if it is told
-to. It is the role of @t{explore} command to specify which target hosts it
-should login
-
-If the @var{TARGET} argument is omitted as in the third line, it is
-treated as if @var{TARGET} expression is @var{SRC}. That is, the third line
-is equivalent to:
-
-@vskip 5mm
-@example
-
-  @t{gxpc} @t{use} ssh abc abc
-
-@end example
-@vskip 5mm
-
-This is often useful to express that ssh login is possible
-between hosts within a single cluster, which typically have a
-common prefix in their host names. If the traditional @t{rsh} command
-is allowed within a single cluster, the fourth line may be useful
-too.
-
-If @t{--as} user option is given, login is issued using an explicit user
-name. The fifth line says when gxp attempts to login pqr from abc000,
-the explicit user name `taue' should be given. You do not need this as
-long as the underlying rsh-like command will complement it by a
-configuration file. @t{e}.g., ssh will read ~/.ssh/config to complement
-user name used to login a particular host.
-
-qrsh_host uses command qrsh, with an explicit hostname argument
-to login a particular host (i.@t{e}., qrsh -l hostname=...).  This is
-useful in environments where direct ssh is discouraged or
-disallowed and qrsh is preferred.
-
-qrsh also uses qrsh, but without an explicit hostname. The host
-is selected by the scheduler. Therefore it does not make sense to
-try to speficify a particular hostname as @var{TARGET}.  Thus, the
-effect of the line
-
-@vskip 5mm
-@example
-
-  @t{gxpc} @t{use} qrsh abc
-
-@end example
-@vskip 5mm
-
-is if targets beginning with abc is given (upon @t{explore} command),
-a host beginning with abc will issue qrsh, and get whichever host
-is allocated by the scheduler.
-
-@vskip 5mm
-@b{See Also:}
-@example
-
-  @t{explore} conf_explore
-
-@end example
-@vskip 5mm
-
-@node ep, explore, use, Command Reference
+@node ep, explore, e, Command Reference
 @section ep
 @vskip 5mm
 @b{Usage:}
@@ -952,7 +840,7 @@ is allocated by the scheduler.
 
   @t{gxpc} @t{e}  [@var{OPTION} ...] @var{CMD}
   @t{gxpc} @t{mw} [@var{OPTION} ...] @var{CMD}
-  @t{gxpc} @t{ep} [@var{OPTION} ...] file
+  @t{gxpc} @t{ep} [@var{OPTION} ...] @var{FILE}
 
 @end example
 @vskip 5mm
@@ -963,32 +851,50 @@ is allocated by the scheduler.
 
   Execute the command on the selected nodes.
 
-Option (for @t{mw} only):
-  @t{--master} 'command'
+@vskip 5mm
+@b{Options: }
+@table @code
+(for @t{mw} only):
+@item   @t{--master} 'command'
     equivalent to @t{e} @t{--updown} '3:4:command' ...
   if @t{--master} is not given, it is equivalent to @t{e} @t{--updown} 3:4 ...
 
-Options (for @t{e}, @t{mw}, and @t{ep}):
-  @t{--withmask},@t{-m} @var{MASK}
+@end table
+@vskip 5mm
+
+@vskip 5mm
+@b{Options: }
+@table @code
+(for @t{e}, @t{mw}, and @t{ep}):
+@item   @t{--withmask},@t{-m} @var{MASK}
     execute on a set of nodes saved by @t{savemask} or @t{pushmask}
-  @t{--withhostmask},@t{-h} @var{HOSTMASK}
-    execute on a set of nodes whose names match regexp @var{HOSTMASK}
-  @t{--withhostnegmask},-H @var{HOSTMASK}
-    execute on a set of nodes whose names do not match regexp @var{HOSTMASK}
-  @t{--up} FD0[:@var{FD1}]
+@item   @t{--withhostmask},@t{-h} @var{HOSTMASK}
+    execute on a set of nodes whose hostnames match regexp @var{HOSTMASK}
+@item   @t{--withhostnegmask},-H @var{HOSTMASK}
+    execute on a set of nodes whose hostnames do not match regexp @var{HOSTMASK}
+@item   @t{--withgupidmask},-g @var{HOSTMASK}
+    execute on a set of nodes whose gupid (shown by @t{gxpc} @t{stat}) 
+    match regexp @var{HOSTMASK}
+@item   @t{--withgupidnegmask},-G @var{HOSTMASK}
+    execute on a set of nodes whose gupid (shown by @t{gxpc} @t{stat}) 
+    do not match regexp @var{HOSTMASK}
+@item   @t{--up} FD0[:@var{FD1}]
     collect output from @var{FD0} of @var{CMD}, and output them to @var{FD1} of @t{gxpc}.
     if :@var{FD1} is omitted, it is treated as if @var{FD1} == @var{FD0}
-  @t{--down} FD0[:@var{FD1}]
+@item   @t{--down} FD0[:@var{FD1}]
     broadcast input to @var{FD0} of @t{gxpc} to @var{FD1} of @var{CMD}.
     if :@var{FD1} is omitted, it is treated as if @var{FD1} == @var{FD0}
-  @t{--updown} @var{FD1}:FD2[:@var{MASTER}]
+@item   @t{--updown} @var{FD1}:FD2[:@var{MASTER}]
     if :@var{MASTER} is omitted, collect output from @var{FD1} of @var{CMD},
     and broadcast them to @var{FD2} of @var{CMD}.
     if :@var{MASTER} is given, run @var{MASTER} on the local host, collect
     output from @var{FD1} of @var{CMD}, feed them to stdin of the @var{MASTER}.
     broadcast stdout of the @var{MASTER} to @var{FD1} of @var{CMD}.
-  @t{--pty}
+@item   @t{--pty}
     assign pseudo tty for stdin/stdout/stderr of @var{CMD}
+
+@end table
+@vskip 5mm
 
 By default,
 
@@ -1416,7 +1322,7 @@ Options are the same as those of `@t{e}' command.
 
   Show summary of @t{gxpc} commands or a @t{help} on a specific @var{COMMAND}.
 
-@node log_level, makeman, help, Command Reference
+@node log_level, make, help, Command Reference
 @section log_level, log_base_time
 @vskip 5mm
 @b{Usage:}
@@ -1438,7 +1344,32 @@ Command @t{log_base_time} will reset the time of the selected nodes
 to zero.  Subsequent log entries will record the time relative to
 this time.
 
-@node makeman, ping, log_level, Command Reference
+@node make, makeman, log_level, Command Reference
+@section make
+@vskip 5mm
+@b{Usage:}
+@example
+
+  @t{gxpc} @t{make} GNU-MAKE-ARGS [ -- GXPC-MAKE-ARGS ]
+
+@end example
+@vskip 5mm
+
+@vskip 5mm
+@b{Description:}
+
+
+  parallel and distributed @t{make}.
+
+@vskip 5mm
+@b{Options:}
+@table @code
+
+
+@end table
+@vskip 5mm
+
+@node makeman, ping, make, Command Reference
 @section makeman
 @vskip 5mm
 @b{Usage:}
@@ -1448,6 +1379,12 @@ this time.
 
 @end example
 @vskip 5mm
+
+@vskip 5mm
+@b{Description:}
+
+
+  Generate command reference chapter of gxp manual.
 
 @node ping, popmask, makeman, Command Reference
 @section ping
@@ -1536,6 +1473,9 @@ the @var{FILENAME}.
   @t{gxpc} @t{smask}    [-]
   @t{gxpc} @t{savemask} [-] @var{NAME}
   @t{gxpc} @t{pushmask} [-]
+  @t{e}.g.,
+  @t{gxpc}  @t{e}  'uname | grep Linux'
+  @t{gxpc}  @t{smask}
 
 @end example
 @vskip 5mm
@@ -1556,7 +1496,13 @@ zero.
 These commands can be used to efficiently choose the nodes
 to execute subsequent commands by various criterion.
 
-Here are some examples.
+@vskip 5mm
+@b{Examples:}
+@example
+
+
+@end example
+@vskip 5mm
 
 1.
 
@@ -1646,7 +1592,7 @@ the distance from the top.
 @end example
 @vskip 5mm
 
-@node quit, restoremask, smask, Command Reference
+@node quit, reclaim, smask, Command Reference
 @section quit
 @vskip 5mm
 @b{Usage:}
@@ -1665,7 +1611,24 @@ the distance from the top.
 If @t{--session_only} is given, daemons keep running and only the 
 session will cease.
 
-@node restoremask, rmask, quit, Command Reference
+@node reclaim, restoremask, quit, Command Reference
+@section reclaim
+@vskip 5mm
+@b{Usage:}
+@example
+
+  @t{gxpc} @t{reclaim} tid
+
+@end example
+@vskip 5mm
+
+@vskip 5mm
+@b{Description:}
+
+
+  Command @t{reclaim} will @t{reclaim} task tid unconditionally.
+
+@node restoremask, rmask, reclaim, Command Reference
 @section restoremask
 @vskip 5mm
 @b{Usage:}
@@ -1708,9 +1671,9 @@ session will cease.
 @b{Usage:}
 @example
 
-  @t{gxpc} @t{rsh}
-  @t{gxpc} @t{rsh} rsh_name
-  @t{gxpc} @t{rsh} rsh_name rsh_like_command_template
+  @t{gxpc} @t{rsh} [@var{OPTIONS}]
+  @t{gxpc} @t{rsh} [@var{OPTIONS}] rsh_name
+  @t{gxpc} @t{rsh} [@var{OPTIONS}] rsh_name rsh_like_command_template
 
 @end example
 @vskip 5mm
@@ -1719,11 +1682,12 @@ session will cease.
 @b{Description:}
 
 
-  Show or add rsh-like command explore/use will recognize to the repertoire.
+  Show, add, or modify rsh-like command explore/use will recognize
+  to the repertoire.
   'gxpc @t{rsh}' lists all configured rsh-like commands.
   'gxpc @t{rsh} rsh_name' shows the specified rsh-like command.
-  'gxpc @t{rsh} rsh_name rsh_like_command_template' configures the specified rsh-like
-  command to @t{use} rsh_like_command_template.
+  'gxpc @t{rsh} rsh_name rsh_like_command_template' adds or modifies (if exist)
+  the specified rsh-like command to @t{use} rsh_like_command_template.
 
 @vskip 5mm
 @example
@@ -1745,11 +1709,23 @@ session will cease.
 @vskip 5mm
 
 @vskip 5mm
+@b{Options:}
+@table @code
+
+@item   @t{--full}
+    when invoked as @t{gxpc} @t{rsh} @t{--full} (with no other args),
+    show command lines of all available rsh-like commands.
+
+@end table
+@vskip 5mm
+
+@vskip 5mm
 @b{Examples:}
 @example
 
+1.
   @t{gxpc} @t{rsh} ssh
-  (output) ssh: ssh -o 'StrictHostKeyChecking no' -A %target% %cmd%
+  (output) ssh : ssh -o 'StrictHostKeyChecking no' ... -A %target% %cmd%
 
 @end example
 @vskip 5mm
@@ -1761,55 +1737,52 @@ session will cease.
 @vskip 5mm
 @example
 
-         ssh -o 'StrictHostKeyChecking no' -A %target% %cmd%
+         ssh -o 'StrictHostKeyChecking no' ... -A %target% %cmd%
 
 @end example
 @vskip 5mm
 
-  where %target% will be replaced by a target name (normally a
-  hostname) and %cmd% will be replaced by whatever commands it wants
+  with %target% replaced by a target name (normally a
+  hostname) and %cmd% by whatever commands it wants
   to execute on the target.
-     
-@vskip 5mm
-@example
-
+  
+2.   
   @t{gxpc} @t{rsh} ssh ssh -i elsewhere/id_dsa -o 'StrictHostKeyChecking no' -A %target% %cmd%
 
-@end example
 @vskip 5mm
+@example
 
   This instructs gxp to @t{use} command line:
 
+@end example
 @vskip 5mm
-@example
 
      ssh -i elsewhere/id_dsa -o 'StrictHostKeyChecking no' -A %target% %cmd%
 
-@end example
-@vskip 5mm
-
-  when it uses ssh.  You can arbitrarily name a new rsh-like command. For example,
-  let's say on some hosts, ssh daemons listen on customized ports (say 2000) and
-  you need to connect to that port to login those hosts, while connecting to the
-  regular port to login others. Then you first define a new rsh-like command.
-  
 @vskip 5mm
 @example
 
-  @t{gxpc} @t{rsh} ssh2000 ssh -p 2000 -o 'StrictHostKeyChecking no' -A %target% %cmd%
+  when it uses ssh.  You can arbitrarily name a new rsh-like command. 
+  For example, let's say on some hosts, ssh daemons listen on customized 
+  ports (say 2000) and you need to connect to that port to login those 
+  hosts, while connecting to the regular port to login others. Then you 
+  first define a new rsh-like command.
 
 @end example
 @vskip 5mm
+  
+3.
+  @t{gxpc} @t{rsh} ssh2000 ssh -p 2000 -o 'StrictHostKeyChecking no' -A %target% %cmd%
+
+@vskip 5mm
+@example
 
   And you specicy ssh2000 label to login those hosts, using 'use' command. @t{e}.g.,
 
-@vskip 5mm
-@example
-
-     @t{use} ssh2000 <src> <target>
-
 @end example
 @vskip 5mm
+
+     @t{use} ssh2000 <src> <target>
 
 @vskip 5mm
 @b{See Also:}
@@ -1864,6 +1837,9 @@ session will cease.
 @example
 
   @t{gxpc} @t{showmasks} [@t{--level} 0/1] [@var{NAME}]
+  @t{e}.g.,
+  @t{gxpc} @t{showmasks}
+  @t{gxpc} @t{showmasks} @t{--level} 1
 
 @end example
 @vskip 5mm
@@ -1957,7 +1933,7 @@ nodes.
 @b{Usage:}
 @example
 
-  @t{gxpc} @t{stat}
+  @t{gxpc} @t{stat} [@var{LEVEL}]
 
 @end example
 @vskip 5mm
@@ -1966,9 +1942,10 @@ nodes.
 @b{Description:}
 
 
-  Show all live gxp daemons in tree format.
+  Show all live gxp daemons in tree format. @var{LEVEL} is 0, 1, or 2 and
+determines the detail level of the information shown.
 
-@node trim,  , stat, Command Reference
+@node trim, use, stat, Command Reference
 @section trim
 @vskip 5mm
 @b{Usage:}
@@ -1999,6 +1976,144 @@ the subtree from the tree of gxp daemons. For example,
   # type <Ctrl-C> to @t{quit}.
   @t{gxpc} @t{smask}
   @t{gxpc} @t{trim}
+
+@end example
+@vskip 5mm
+
+@node use,  , trim, Command Reference
+@section use, edges
+@vskip 5mm
+@b{Usage:}
+@example
+
+  @t{gxpc} @t{use}          [@t{--as} @var{USER}] @var{RSH_NAME} @var{SRC} [@var{TARGET}]
+  @t{gxpc} @t{use} @t{--delete} [@t{--as} @var{USER}] @var{RSH_NAME} @var{SRC} [@var{TARGET}]
+  @t{gxpc} @t{use}
+  @t{gxpc} @t{use} @t{--delete} [idx]
+
+@end example
+@vskip 5mm
+
+  @t{e}.g.,
+  @t{gxpc} @t{use} ssh your_hostname compute_node_prefix
+
+@vskip 5mm
+@b{Description:}
+
+
+
+@vskip 5mm
+@example
+
+  Configure rsh-like commands used to login targets matching a
+particular pattern from hosts matching a particular pattern. The
+typical usage is `@t{gxpc} @t{use} @var{RSH_NAME} @var{SRC} @var{TARGET}', which says gxp can
+@t{use} an rsh-like command @var{RSH_NAME} for @var{SRC} to login @var{TARGET}. @t{gxpc}
+remembers these facts to decide which hosts should issue which
+commands to login which hosts, when @t{explore} command is issued. See the
+tutorial section of the manual.
+
+@end example
+@vskip 5mm
+
+@vskip 5mm
+@b{Examples:}
+@example
+
+  @t{gxpc} @t{use}           ssh abc000.def.com pqr.xyz.ac.jp
+  @t{gxpc} @t{use}           ssh abc000 pqr
+  @t{gxpc} @t{use}           ssh abc
+  @t{gxpc} @t{use}           @t{rsh} abc
+  @t{gxpc} @t{use} @t{--as} taue ssh abc000 pqr
+  @t{gxpc} @t{use} qrsh      abc
+  @t{gxpc} @t{use} qrsh_host abc
+  @t{gxpc} @t{use} sge       abc
+  @t{gxpc} @t{use} torque    abc
+
+@end example
+@vskip 5mm
+
+The first line says that, if @t{gxpc} is told to login pqr.xyz.ac.jp by
+@t{explore} command, hosts named abc000.def.com can @t{use} `ssh' method to do
+so.  How it translates into the actual ssh command line can be shown
+by `@t{show_explore}' command (try `@t{gxpc} @t{help} @t{show_explore}') and can be
+configured by `@t{rsh}' command (try `@t{gxpc} @t{help} @t{rsh}').
+
+@var{SRC} and @var{TARGET} are actually regular expressions, so the line like the
+first one can often be written like the second one.  The first line
+is equivalent to the second line as long as there is only one host
+begining with abc000 and there is only one target beginning with pqr.
+In general, the specification:
+
+@vskip 5mm
+@example
+
+  @t{gxpc} @t{use} @var{RSH_NAME} @var{SRC} @var{TARGET}
+
+@end example
+@vskip 5mm
+
+is read: if @t{gxpc} is told to login a target matching regular
+expession @var{TARGET}, a host matching regular expression @var{SRC} can @t{use}
+@var{RSH_NAME} to do so.
+
+Note that the effect of @t{use} command is @var{NOT} to specify which target
+@t{gxpc} should login, but to specify @var{HOW} it can do so, if it is told
+to. It is the role of @t{explore} command to specify which target hosts it
+should login
+
+If the @var{TARGET} argument is omitted as in the third line, it is
+treated as if @var{TARGET} expression is @var{SRC}. That is, the third line
+is equivalent to:
+
+@vskip 5mm
+@example
+
+  @t{gxpc} @t{use} ssh abc abc
+
+@end example
+@vskip 5mm
+
+This is often useful to express that ssh login is possible
+between hosts within a single cluster, which typically have a
+common prefix in their host names. If the traditional @t{rsh} command
+is allowed within a single cluster, the fourth line may be useful
+too.
+
+If @t{--as} user option is given, login is issued using an explicit user
+name. The fifth line says when gxp attempts to login pqr from abc000,
+the explicit user name `taue' should be given. You do not need this as
+long as the underlying rsh-like command will complement it by a
+configuration file. @t{e}.g., ssh will read ~/.ssh/config to complement
+user name used to login a particular host.
+
+qrsh_host uses command qrsh, with an explicit hostname argument
+to login a particular host (i.@t{e}., qrsh -l hostname=...).  This is
+useful in environments where direct ssh is discouraged or
+disallowed and qrsh is preferred.
+
+qrsh also uses qrsh, but without an explicit hostname. The host
+is selected by the scheduler. Therefore it does not @t{make} sense to
+try to speficify a particular hostname as @var{TARGET}.  Thus, the
+effect of the line
+
+@vskip 5mm
+@example
+
+  @t{gxpc} @t{use} qrsh abc
+
+@end example
+@vskip 5mm
+
+is if targets beginning with abc is given (upon @t{explore} command),
+a host beginning with abc will issue qrsh, and get whichever host
+is allocated by the scheduler.
+
+@vskip 5mm
+@b{See Also:}
+@example
+
+  @t{explore} @t{rsh}
 
 @end example
 @vskip 5mm
