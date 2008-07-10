@@ -1,7 +1,8 @@
 2008-07-10 Taura
-	* ChangeLog for release 3.03 started
-
-2008-07-10 Taura
-	* fixed gxpc make bug. it should now use -g instead of -h to
-	submit a process.
-	
+	* ChangeLog : for release 3.03 started
+	* qsub_wrap (qsub_wrap_server.init) : an easier interface to pass
+	options to underlying qsub (--).
+	* gxpc.py (login_method_configs.__init__) : gxpc.py now takes 
+	advantage of the above.
+	* gxpc.py (cmd_interpreter.mk_installer_cmd) : get rid of distinction
+	between --real and --prepare.
