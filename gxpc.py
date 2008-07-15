@@ -4136,12 +4136,37 @@ See Also:
 
     def conv_login_method_cmdline(self, cmd_and_args):
         # cmd_and_args : list of strings
+        # convert %p% -> %(p)s
+        # convert %p:10% -> %(p)s
         replaced_args = []
+        default_args = {}               # p, q, r
+        pat = re.compile("%([^%]*)%")
         for a in cmd_and_args:
-            a = re.sub("%(.*)%", r"%(\1)s", a)
-            a = string.replace(a, "%(cmd)s", "%%(cmd)s")
-            replaced_args.append(a)
-        return replaced_args
+            # say a is like "T%J:-16%"
+            a_ = []
+            while 1:
+                m = pat.match(a)
+                if m is None: break
+                p = m.group(1)          # p : "J"
+                b = m.start(1) - 1      # position of "T%J%"
+                r = m.end(1) + 1        # position that follows "T%J%"
+                a_.append(a[:b])        # append "T"
+                idx = string.find(p, ":-") # see if p is like J:-5
+                if idx == -1:
+                    p_default = None
+                else:
+                    p,p_default = p[:idx], p[idx+2:]
+                if p_default is not None:
+                    default_args[p] = p_default
+                if p == "cmd":
+                    a_.append("%%(cmd)s") # append "%%(cmd)s"
+                else:
+                    a_.append("%%(%s)s" % p) # append "%(J)s"
+                a = a[r:]               # examine what follows "T%J%"
+            a_.append(a)
+            ra = string.join(a_, "")
+            replaced_args.append(ra)
+        return replaced_args, default_args
 
     def mk_installer_cmd(self, method_name, user, target, seq, opts):
         """
@@ -4153,7 +4178,7 @@ See Also:
             return None
         # rsh_args is like a
         #   [ "ssh", "%(target)s", "%(cmd)s" ]
-        rsh_args = self.conv_login_method_cmdline(session.login_methods[method_name])
+        rsh_args,default_args = self.conv_login_method_cmdline(session.login_methods[method_name])
         # mandatory args
         mand_args = ("--target_label %s --root_gupid %s --seq %s" 
                      % (target, self.gupid, seq))
@@ -4169,19 +4194,25 @@ See Also:
         opt_args = string.join(opt_args, " ")
 
         # build --rsh xxx --rsh xxx ...
-        dict = { "user" : user, "target" : target }
+        dic = {}
+        dic.update(default_args)
+        dic.update({ "user" : user, "target" : target })
         for var,val in opts.subst_arg:
-            dict[var] = val
+            dic[var] = val
             
         A = []
         for a in rsh_args:
             try:
-                subst_a = (a % dict)
+                subst_a = (a % dic)
             except KeyError,e:
                 p = e.args[0]
-                Es(("gxpc: parameter '%s' specified in rsh (try 'gxpc rsh %s') missing\n"
+                Es(("gxpc: a=%s parameter '%s' specified in rsh (try 'gxpc rsh %s') missing\n"
                     "in explore command line (give it by 'gxpc explore -a %s=X ...')\n"
-                    % (p, method_name, p)))
+                    % (a, p, method_name, p)))
+                return None
+            except ValueError,e:
+                Es(("gxpc: parameter substitution of '%s' failed %s\n"
+                    % (a, e.args)))
                 return None
             A.append("--rsh '%s'" % subst_a)
         rsh_args = string.join(A, " ")
