@@ -1,2 +1,2 @@
 SHELL=mksh
-LOCAL_FLAG="==="
+GXP_MAKE_LOCAL_EXEC="==="
