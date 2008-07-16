@@ -38,7 +38,7 @@ class ProcReader:
         self.prev_secs = 0.0
         self.cur_jiffies_table = {}
         self.prev_jiffies_table = {}
-        
+
         #calc the number of cpus
         self.num_cpus()
         #calc the kernel Hz
@@ -56,7 +56,6 @@ class ProcReader:
         '''
         sets:
            self.ncpus
-        
         returns:
            the number of CPUS
            on success, return NCPUS > 0
@@ -87,7 +86,7 @@ class ProcReader:
             return self.hz
         ncpus = self.num_cpus()
         assert(ncpus > 0)
-        
+
         try:
             up_sec = float(self.file_reader("/proc/uptime").split()[0])
             stat = self.file_reader("/proc/stat").split()
@@ -100,22 +99,22 @@ class ProcReader:
         hz = (jiffies / (up_sec * ncpus))
         if self.dbg >= self.DEBUG_DEBUG:
             Es("estimated hz : %.3f [Hz]\n" % (hz))
-        
-        if hz > 9 and hz < 11:      self.hz = 10   # S/390 (sometimes) 
-        elif hz > 18 and hz < 22:     self.hz = 20   # user-mode Linux 
-        elif hz > 30 and hz < 34:     self.hz = 34   # ia64 emulator
-        elif hz > 48 and hz < 52:     self.hz = 50  
-        elif hz > 58 and hz < 61:     self.hz = 60
-        elif hz > 62 and hz < 65:     self.hz = 64   # StrongARM /Shzark
-        #if hz > 95 and hz < 105:    self.hz = 100  # normal Linux
-        elif hz > 90 and hz < 110:    self.hz = 100  # normal Linux
-        elif hz > 124 and hz < 132:   self.hz = 128  # MIPS, ARM 
-        elif hz > 195 and hz < 204:   self.hz = 200  # normal << 1
-        elif hz > 253 and hz < 260:   self.hz = 256
-        elif hz > 393 and hz < 408:   self.hz = 400  # normal << 2 
-        elif hz > 790 and hz < 808:   self.hz = 800  # normal << 3 
-        elif hz > 990 and hz < 1010:  self.hz = 1000 # ARM
-        elif hz > 1015 and hz < 1035: self.hz = 1024 # Alpha, ia64 
+
+        if   hz > 9   and hz < 11:    self.hz = 10   # S/390 (sometimes)
+        elif hz > 18  and hz < 22:    self.hz = 20   # user-mode Linux
+        elif hz > 30  and hz < 34:    self.hz = 34   # ia64 emulator
+        elif hz > 48  and hz < 52:    self.hz = 50
+        elif hz > 58  and hz < 61:    self.hz = 60
+        elif hz > 62  and hz < 65:    self.hz = 64   # StrongARM /Shzark
+        #elif hz > 95  and hz < 105:   self.hz = 100  # normal Linux
+        elif hz > 90   and hz < 110:  self.hz = 100  # normal Linux
+        elif hz > 124  and hz < 132:  self.hz = 128  # MIPS, ARM
+        elif hz > 195  and hz < 204:  self.hz = 200  # normal << 1
+        elif hz > 253  and hz < 260:  self.hz = 256
+        elif hz > 393  and hz < 408:  self.hz = 400  # normal << 2
+        elif hz > 790  and hz < 808:  self.hz = 800  # normal << 3
+        elif hz > 990  and hz < 1010: self.hz = 1000 # ARM
+        elif hz > 1015 and hz < 1035: self.hz = 1024 # Alpha, ia64
         elif hz > 1180 and hz < 1220: self.hz = 1200 # Alpha
 
         if self.dbg >= self.DEBUG_DEBUG:
@@ -140,7 +139,7 @@ class ProcReader:
         #set ceiling to 100/NCPUS
         #return min(100.0 * proc_jiffies / sys_jiffies, 100.0 / self.ncpus)
         return min(100.0 * proc_jiffies / sys_jiffies, 100.0)
-    
+
     def probe(self):
         '''
         get all information that needs to be gathered in one probe
@@ -167,7 +166,7 @@ class ProcReader:
         if msg != "":
             return "calc_diff:" + msg
         return ""
-    
+
     def probe_procs(self):
         '''
         scan through /proc/[pid] for information about each active process
@@ -192,7 +191,7 @@ class ProcReader:
         #print "cur:%d, prev:%d"%(self.cur_secs, self.prev_secs)
         self.prev_secs = self.cur_secs
         self.cur_secs = time.time()
-        
+
         stat = self.file_reader("/proc/stat").split()
         # jiffies = user + nice + system
         jiffies = int(stat[1]) + int(stat[2]) + int(stat[3])
@@ -223,7 +222,7 @@ class ProcReader:
                 if self.dbg >= self.DEBUG_ERROR:
                     msg += "failed to read file under %s\n" % proc_dir
                 continue
-            
+
             try:
                 m = self.comm_ptn.match(stat_line)
                 pid   = int(m.group(1))
@@ -266,7 +265,7 @@ class ProcReader:
         '''
         msg = ""
         passed_secs = self.cur_secs - self.prev_secs
-        
+
         for pid, (ppid, jiffies) in self.cur_jiffies_table.iteritems():
             #if the process existed in the previous snapshot
             if pid in self.prev_jiffies_table:
@@ -280,7 +279,7 @@ class ProcReader:
                         jiffies = 0
             pcpu = self.calc_pcpu(jiffies, passed_secs)
             self.pcpus[pid] = pcpu
-            
+
             if self.dbg >= self.DEBUG_DEBUG:
                 if pcpu > 10.0 or (pid == -1 and jiffies > 0):
                     msg += "pid %d(%s) jiffies %d secs %.6f --> pcpu %.3f\n" % (pid, self.users[pid], jiffies, passed_secs, pcpu)
@@ -291,7 +290,7 @@ class ProcReader:
             return None
         return self.states[pid]
 
-    def get_nicer_info(self, mom_users, me):
+    def get_nicer_info(self, mom_users, me, mom_pct):
         """ Returns (Nora pcpu) """
         u_pcpu = {}
         for pid,pcpu in self.pcpus.items():
@@ -303,7 +302,7 @@ class ProcReader:
                     u_pcpu[user] = pcpu
         for user in mom_users:
             if user in u_pcpu:
-                u_pcpu[user] -= 100.0
+                u_pcpu[user] -= mom_pct
                 if u_pcpu[user] < 0.0:
                     u_pcpu[user] = 0.0
         sum_pcpu = 0.0
@@ -328,7 +327,7 @@ class W:
             (uid,idle) = self.parse(l)
             if uid == self.env.me:
                 continue
-            if uid in self.env.poorUsers: 
+            if uid in self.env.poorUsers:
                 continue
             if uid not in self.env.vipUsers:
                 if idle >= self.env.maxIdle:
@@ -336,7 +335,7 @@ class W:
             nUsers += 1
         pclose(p)
         self.nUsers = nUsers
-    
+
     def parse(self, l):
         assert l != ""
         ptn = re.compile("^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)\s*")
@@ -380,16 +379,17 @@ class Env(object):
         self.setDefaults()
         self.setWorkVars()
         self.getopt(args)
-        
+
     def setDefaults(self):
         self.pcpuDown = 33.3 # CPU % : To make child process down
-        self.pcpuUp = 25.0   # CPU % : To make child process up 
+        self.pcpuUp   = 25.0 # CPU % : To make child process up
+        self.pcpuMom  = 90.0 # CPU % : Processes spawned from batch schedulers can occupy
         self.ignoreNice = 19      # Don't ignore any processes other than NI == 19
         self.poorUsers = []
         self.vipUsers = []
         self.shortSleep = 2.0
         self.longSleep = 32.0
-        # Assume the user is idle 
+        # Assume the user is idle
         self.maxIdle = 10
 
     def setWorkVars(self):
@@ -403,9 +403,8 @@ class Env(object):
         self.maxPeeks = 5
         # Assume ready to run if the condition is satisfied 'max_peeks' times
         self.peek = 0
-        #self.pcpu = 100.0 * self.nprocs
         self.stopflag = False
-    
+
     def getopt(self,args):
         try:
             opts, args = getopt.getopt(args[1:], "a:hv:c:i:",
@@ -486,7 +485,7 @@ class ProcManager:
             self.waitpid(p)
             if p in self.env.procs:
                 self.env.procs.pop(p)
-            
+
     def killZombies(self):
         for p in self.env.procs.keys():
             state = self.reader.is_still_alive(p)
@@ -506,7 +505,7 @@ class ProcManager:
         if self.dbg >= 1: Es("Info: Now ready to continue\n")
         for p in self.env.procs:
             self.kill(-p, signal.SIGCONT)
-         
+
     def stop(self):
         if self.dbg >= 1: Es("Info: Stopping procs\n")
         for p in self.env.procs.keys():
@@ -528,7 +527,7 @@ class ProcManager:
                 del self.env.procs[pid]
             else:
                 Es("Error: Sending signal %d to %d failed\n"%(signal, pid))
-    
+
     def waitpid(self, pid):
         if self.dbg >= 1: Es("Info: Waitpid %d\n"%(pid))
         try:
@@ -562,8 +561,6 @@ class ProcManager:
 
 class Mom:
     def __init__(self, reader):
-        ptn_str = "pid\s*=\s*(\d+)"
-        self.ptn = re.compile(ptn_str)
         self.reader = reader
         self.dbg = dbg
         self.job_user = {}
@@ -582,7 +579,7 @@ class Mom:
         else:
             #jobs -> users
             return map(lambda(x):self.get_user_from_jobid(x), jobs)
-        
+
     def lookupJobs(self, hostname):
         # For torque 2.3.0
         def getText(node):
@@ -614,13 +611,25 @@ class Mom:
         return None
 
     def get_user_from_jobid(self, jobid):
+        """
+        returns the owner of the specified job.
+        jobs files are assumed to have "JOBID USERID GROUPID" for each line and
+        the first part of the jobid must be the sequence number of jobids.
+
+        An example of /var/spool/torque/mom_priv/prologue.parallel follows:
+        #!/bin/sh
+        D=`date +%y%m%d`
+        echo $1 $2 $3 >> ../mom_logs/jobs$D
+
+        TODO: support for many queues
+        """
         if jobid in self.job_user:
             return self.job_user[jobid]
-        # TODO: JOINed nodes do not know uid of the job
-        # 06/25/2008 15:06:56;0008;   pbs_mom;Job;21.keio000.sslab.ics.keio.ac.jp;JOIN JOB as node 4
-        # 06/24/2008 11:41:54;0001;   pbs_mom;Job;TMomFinalizeJob3;job 10.keio000.sslab.ics.keio.ac.jp started, pid = 14356
+        jobseq = int(jobid.split(".")[0])
         mom_logs_dir = "/var/spool/torque/mom_logs"
-        logfiles = glob.glob("%s/*" % (mom_logs_dir))
+        logfiles = glob.glob("%s/jobs*" % (mom_logs_dir))
+        logfiles.sort()
+        min_jobseq = jobseq + 1
         while(len(logfiles) > 0):
             f = logfiles.pop()
             fp = open(f, "r")
@@ -628,25 +637,23 @@ class Mom:
                 line = fp.readline()
                 if line == '':
                     break
-                if line.find(jobid) < 0:
+                (l_jobid, l_user) = line.split()[:2]
+                l_jobseq = int(l_jobid.split(".")[0])
+                if min_jobseq > l_jobseq:
+                    min_jobseq = l_jobseq
+                if jobid != l_jobid:
                     continue
-                m = self.ptn.search(line)
-                if m is None:
-                    continue
-                pid = m.group(1)
-                try:
-                    user = self.reader.users[int(pid)]
-                    self.job_user[jobid] = user
-                except:
-                    user = "Unknown"
-                    raise
+                user = l_user
                 if self.dbg >= 1:
                     Es("Info: job %s: owner is %s\n" % (jobid, user))
                 fp.close()
+                self.job_user[jobid] = user
                 return user
             fp.close()
+            if min_jobseq < jobseq:
+                break
         return "Unknown"
-        
+
 class Micer:
     def __init__(self):
         self.set_sig_handlers()
@@ -687,14 +694,14 @@ class Micer:
         if nUsers != 0:
             if self.dbg >= 1: Es("Info: interactive users exist\n")
             return False
-        
+
         # Gather information
         mom_users = self.mom.getMomUsers()
-        self.pcpu = self.reader.get_nicer_info(mom_users, self.env.me)
-        ncpus = self.reader.num_cpus()
-        
+        self.pcpu = self.reader.get_nicer_info(mom_users, self.env.me, self.env.pcpuMom)
+        ncpus = self.reader.num_cpus() - len(mom_users) * self.env.pcpuMom / 100.0
+
         if self.running:
-            threshold = self.env.pcpuDown * (ncpus - len(mom_users))
+            threshold = self.env.pcpuDown * ncpus
             if self.pcpu > threshold:
                 if self.dbg >= 1:
                     Es("Info: CPU load (%.3f) is higher than the threshold (%.3f)\n"%(self.pcpu, threshold))
@@ -702,12 +709,12 @@ class Micer:
             else:
                 return True
         else:
-            threshold = self.env.pcpuUp * (ncpus - len(mom_users))
+            threshold = self.env.pcpuUp * ncpus
             if self.pcpu > threshold:
                 return False
             else:
                 if self.dbg >= 1:
-                    Es("Info: Restarting the process\n")
+                    Es("Info: The process is runnable\n")
                 return True
 
     def main(self):
@@ -721,7 +728,7 @@ class Micer:
             for p in pids:
                 self.procman.attachTo(p)
         self.running = True
-                
+
         while True:
             if self.dbg >= 2:
                 Es("dbg2: Loop\n")
@@ -731,24 +738,24 @@ class Micer:
                 Es(msg)
             self.w.update()
             if self.env.stopflag: break
-            
+
             self.procman.killZombies()
             if len(self.env.procs) == 0:
                 if self.dbg >= 1:
                     Es("dbg1: Every process has exited\n")
                 break
+            o_sleeptime = self.sleeptime
             if self.runnable():
                 if self.running:
                     pass
                 else:
-                    if self.dbg >= 2: Es("Info: peek counter = %d\n"%(self.peek))
                     if self.sleeptime > self.env.shortSleep:
                         self.sleeptime /= 2
-                        if self.dbg >= 1:
-                            Es("Info: Setting sleep time to %d\n"%(self.sleeptime))
                     else:
                         self.sleeptime = self.env.shortSleep
                         self.peek += 1
+                        if self.dbg >= 2:
+                            Es("Info: peek counter = %d\n"%(self.peek))
                         if self.peek >= self.env.maxPeeks:
                             self.running = True
                             self.procman.cont()
@@ -758,9 +765,11 @@ class Micer:
                     self.running = False
                 self.peek = 0
                 self.sleeptime = self.env.longSleep
-		                
+
+            if self.dbg >= 1 and o_sleeptime != self.sleeptime:
+                Es("Info: Setting sleep time to %d\n"%(self.sleeptime))
             time.sleep(self.sleeptime)
-            
+
         self.procman.killall()
         if self.dbg >= 1:
             Es("Info: Exiting\n")
