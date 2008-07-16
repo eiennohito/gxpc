@@ -4145,7 +4145,7 @@ See Also:
             # say a is like "T%J:-16%"
             a_ = []
             while 1:
-                m = pat.match(a)
+                m = pat.search(a)
                 if m is None: break
                 p = m.group(1)          # p : "J"
                 b = m.start(1) - 1      # position of "T%J%"

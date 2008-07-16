@@ -181,10 +181,11 @@ Options:
       this host. by default, hostname (obtained by socket.gethostname())
       is used. if you specify one, hostname or IP address matching REGEXP
       ise used.
-  --qarg x :
-      x is added to the underlying qsub command line
   --dbg LEVEL (choice: 0/1/2, default=0)
       specifies debug level.
+
+  -- : 
+      whatever follows '--' in the command line is given to qsub.
 
 In sumary, the following is a possible command line to run SGE qsub.
 export PYTHONPATH=..  (include GXP_DIR, where GXP_DIR is the gxp3 toplevel dir)
