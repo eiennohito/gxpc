@@ -1422,6 +1422,7 @@ plot '-' with boxes
             self.close_fds()
             args = [ self.opts.make ] + self.make_args
             self.LOG("run make %s\n" % args)
+            os.environ["GXP_MAKELEVEL"] = "1"
             os.execvp(args[0], args)
         else:
             return pid

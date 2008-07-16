@@ -6,3 +6,11 @@
 	advantage of the above.
 	* gxpc.py (cmd_interpreter.mk_installer_cmd) : get rid of distinction
 	between --real and --prepare.
+
+2008-07-16 Taura
+	* rsh and explore now support parameter substitution. include %p% in
+	rsh config and supply args with explore -a p=xxx
+	* xmake, mksh : now I believe $(shell === ...) becomes completely
+	unnecessary. It automatically detects whether a command is executed
+	normally or within $(shell === ...).
+	

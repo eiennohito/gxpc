@@ -60,8 +60,10 @@ def submit_or_exec(so_name, cmd):
     elif cmd[0:4] == "make":
         # if this is a recursive make or $(shell ...) thing, do not submit
         # Es("local by recursive make\n")
+        lev = string.atoi(os.environ["GXP_MAKELEVEL"])
+        os.environ["GXP_MAKELEVEL"] = ("%d" % (lev + 1))
         os.execvp("sh", [ "sh", "-c", cmd ])
-    elif 0 and ("w" not in os.environ.get("MAKEFLAGS", "")):
+    elif string.atoi(os.environ.get("MAKELEVEL", "0")) < string.atoi(os.environ["GXP_MAKELEVEL"]):
         # submit all others
         # Es("local by no MAKEFLAGS\n")
         os.execvp("sh", [ "sh", "-c", cmd ])
@@ -69,7 +71,7 @@ def submit_or_exec(so_name, cmd):
         # os.environ.has_key("MAKEFLAGS") and "w" not in os.environ["MAKEFLAGS"]
         # a tricky way to judge if a command is run by shell.
         # os.environ.has_key("MAKEFLAGS")
-        Es("submit\n")
+        # Es("submit\n")
         submit(so_name, cmd)
 
 def translate_cwd():
