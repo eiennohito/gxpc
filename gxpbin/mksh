@@ -51,12 +51,15 @@ def submit_or_exec(so_name, cmd):
     
     """
     # Es("envenv=%s\n" % os.environ)
+    local_exec_cmd = os.environ.get("GXP_MAKE_LOCAL_EXEC_CMD", "")
     m = local_pat.match(cmd)
     if m and len(m.group(1)) >= 3:
         n_equals = m.end(1)
         # if it begins with === or more equals, do not submit
         # Es("local by %s\n" % m.group(1))
         os.execvp("sh", [ "sh", "-c", string.lstrip(cmd[n_equals:]) ])
+    elif local_exec_cmd != "" and re.match(local_exec_cmd, cmd):
+        os.execvp("sh", [ "sh", "-c", cmd ])
     elif cmd[0:4] == "make":
         # if this is a recursive make or $(shell ...) thing, do not submit
         # Es("local by recursive make\n")

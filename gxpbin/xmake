@@ -144,6 +144,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.parallelism_terminal = ("s", "png") # gnuplot type
         self.parallelism_image = ("s", "parallelism.png")
         self.gnuplot_err = ("s", "gnuplot.err")
+        self.local_exec_cmd = ("s", None) 
         #
         self.conf = ("s", "~/gxpc_make.conf")
         #
@@ -1417,12 +1418,14 @@ plot '-' with boxes
             os.environ["MAKEFILES"] = xmake_mk
         else:
             os.environ["MAKEFILES"] = "%s %s" % (xmake_mk, makefiles)
+        os.environ["GXP_MAKELEVEL"] = "1"
+        if self.opts.local_exec_cmd is not None:
+            os.environ["GXP_MAKE_LOCAL_EXEC_CMD"] = self.opts.local_exec_cmd
         pid = os.fork()
         if pid == 0:
             self.close_fds()
             args = [ self.opts.make ] + self.make_args
             self.LOG("run make %s\n" % args)
-            os.environ["GXP_MAKELEVEL"] = "1"
             os.execvp(args[0], args)
         else:
             return pid
