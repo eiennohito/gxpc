@@ -756,7 +756,7 @@ qsub_wrap hostname
             if self.job_id is None: return 1
             ng = self.talk_to_qsub_process(so, hello)
         except KeyboardInterrupt,e:
-	    Es("got KeyboardInterrupt\n")
+	    Es("qsub_wrap: got KeyboardInterrupt\n")
 
 	if ng:
 	    # talk_to_qsub failed, leave output

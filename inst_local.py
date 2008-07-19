@@ -13,7 +13,8 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-import base64,glob,os,random,socket,stat,string,sys,types
+import base64,glob,os,random,signal,socket,stat,string
+import sys,time,types
 import ioman,expectd,opt
 """
 This file is script which, when invoked, copies a specified
@@ -559,7 +560,7 @@ class installer(expectd.expectd):
         s,g = self.expect_hello(O.hello, O.hello_timeout, 1)
         if s == OK: return g
         if dbg>=2: self.Em("Bring up NG\n")
-        self.kill()
+        # self.kill()
         return None
 
     def show_argv(self, argv):
@@ -583,7 +584,12 @@ class installer(expectd.expectd):
             #  "Brought up on hongo100-tau-2008-07-06-14-40-00-3878 None hongo hongo100\n"
             self.Wm("Brought up on %s %s\n" % (g, O.seq))
         else:
-            self.kill()
+            self.kill_x(signal.SIGINT)
+            try:
+                time.sleep(2.0)
+            except KeyboardInterrupt:
+                pass
+            self.kill_x(signal.SIGKILL)
         self.wait(1)
         self.flush_outs()
 

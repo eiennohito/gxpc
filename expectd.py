@@ -55,6 +55,9 @@ class expectd(ioman.ioman):
     def kill(self):
         return self.proc.kill()
 
+    def kill_x(self, sig):
+        return self.proc.kill_x(sig)
+
     def send(self, msg):
         """
         send msg (string) to the standard input of the

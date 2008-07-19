@@ -2004,6 +2004,20 @@ class child_process(process_base):
                     % (e.args,))
             return -1
         
+    def kill_x(self, sig):
+        if dbg>=2:
+            LOG("child_process.kill : killing %s with %d\n" \
+                % (self.pid, sig))
+        if self.pid is None: return -1
+        try:
+            os.kill(self.pid, sig)
+            return 0
+        except OSError,e:
+            if dbg>=2:
+                LOG("child_process.kill : failed %s\n" \
+                    % (e.args,))
+            return -1
+        
 # -------------------------------------------------------------------
 # channel for communicating with processes
 # -------------------------------------------------------------------
