@@ -5,7 +5,7 @@ def Es(s):
     sys.stderr.write(s)
 
 envs_to_pass = [ "MAKEFLAGS", "MAKELEVEL", "MAKEFILES",
-                 "GXP_MAKE_SO_NAME" ]
+                 "GXP_MAKE_SO_NAME" ][0:0]
 
 def submit(so_name, cmd):
     cwd = translate_cwd()

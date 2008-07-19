@@ -3,7 +3,7 @@
 import signal,popen2,sys,os,time,re,getopt,glob,socket,errno,resource,re,pwd
 from xml.dom.minidom import parse, parseString
 
-dbg = 2
+dbg = 0
 
 def Es(s):
     sys.stderr.write((" " + s))

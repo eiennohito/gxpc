@@ -144,6 +144,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.parallelism_terminal = ("s", "png") # gnuplot type
         self.parallelism_image = ("s", "parallelism.png")
         self.gnuplot_err = ("s", "gnuplot.err")
+        self.dir = ("s", None)
         self.local_exec_cmd = ("s", None) 
         #
         self.conf = ("s", "~/gxpc_make.conf")
@@ -160,6 +161,15 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.help     = (None, 0)
         self.h        = "help"
         self.n        = "emulate"
+
+    def postcheck(self):
+        if self.dir is not None:
+            self.log = os.path.join(self.dir, self.log)
+            self.state = os.path.join(self.dir, self.state)
+            self.parallelism_gpl = os.path.join(self.dir, self.parallelism_gpl)
+            self.parallelism_image = os.path.join(self.dir,
+                                                  self.parallelism_image)
+            self.gnuplot_err = os.path.join(self.dir, self.gnuplot_err)
 
     def usage(self):
         u = r"""usage:
