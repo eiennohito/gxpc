@@ -1105,8 +1105,11 @@ class xmake_server:
     def mk_temp(self, state):
         n = 10**7 - 1
         n_retries = 10
+        directory,base = os.path.split(state)
         for i in range(0, n_retries):
-            tmp = "_%d_%07d_%s" % (os.getpid(), random.randint(0, n), state)
+            tmp_base = ("_%d_%07d_%s"
+                        % (os.getpid(), random.randint(0, n), base))
+            tmp = os.path.join(directory, tmp_base)
             try:
                 wp = open(tmp, "wb")
                 return tmp,wp           # OK, return
