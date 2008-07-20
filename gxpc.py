@@ -77,7 +77,7 @@ class peer_tree_node:
     def show_rec(self, indent):
         spaces = " " * indent
         Ws(("%s%s (= %s %s)\n" 
-            % (spaces, self.target_label, self.hostname, self.name)))
+            % (spaces, self.name, self.hostname, self.target_label)))
         for c in self.children.values():
             c.show_rec(indent + 1)
 
