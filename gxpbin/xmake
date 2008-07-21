@@ -144,7 +144,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.parallelism_terminal = ("s", "png") # gnuplot type
         self.parallelism_image = ("s", "parallelism.png")
         self.gnuplot_err = ("s", "gnuplot.err")
-        self.dir = ("s", None)
+        self.dir = ("s", "./")
         self.local_exec_cmd = ("s", None) 
         #
         self.conf = ("s", "~/gxpc_make.conf")
@@ -163,7 +163,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.n        = "emulate"
 
     def postcheck(self):
-        if self.dir is not None:
+        if 0 and (self.dir is not None):
             self.log = os.path.join(self.dir, self.log)
             self.state = os.path.join(self.dir, self.state)
             self.parallelism_gpl = os.path.join(self.dir, self.parallelism_gpl)
@@ -682,8 +682,9 @@ class xmake_server:
         return -1 on failure, 0 on success
         """
         if self.opts.log != "":
+            log = os.path.join(self.opts.dir, self.opts.log)
             try:
-                self.logfp = open(self.opts.log, "wb")
+                self.logfp = open(log, "wb")
             except Exception,e:
                 Es("%s\n" % (e.args,))
                 return -1
@@ -1293,7 +1294,10 @@ td.man_working {
         wp.write('</table>\n')
 
     def run_gnuplot(self, cur_time):
-        wp = open(self.opts.parallelism_gpl, "wb")
+        gpl = os.path.join(self.opts.dir, self.opts.parallelism_gpl)
+        err = os.path.join(self.opts.dir, self.opts.gnuplot_err)
+        img = os.path.join(self.opts.dir, self.opts.parallelism_image)
+        wp = open(gpl, "wb")
         wp.write(r"""set terminal png
 set style fill solid
 plot '-' with boxes
@@ -1304,12 +1308,9 @@ plot '-' with boxes
         wp.write('%.3f %d\n' % (cur_time, p))
         wp.write('e\n')
         wp.close()
-        cmd = ("gnuplot %s 2> %s > %s"
-               % (self.opts.parallelism_gpl,
-                  self.opts.gnuplot_err,
-                  self.opts.parallelism_image))
+        cmd = "gnuplot %s 2> %s > %s" % (gpl, err, img)
         status = os.system(cmd)
-        fp = open(self.opts.gnuplot_err, "rb")
+        fp = open(err, "rb")
         err = fp.read()
         fp.close()
         self.LOG("gnuplot status = %s\n" % status)
@@ -1361,8 +1362,8 @@ plot '-' with boxes
                      self.opts.parallelism_image)))
 
     def record_state(self, finished):
-        state = self.opts.state
-        if state == "": return
+        if self.opts.state == "": return
+        state = os.path.join(self.opts.dir, self.opts.state)
         tmp,wp = self.mk_temp(state)
         cur_time = self.cur_time()
         
