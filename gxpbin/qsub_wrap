@@ -75,7 +75,7 @@ class nqs_fujitsu_system_option:
     """
     def __init__(self):
         self.name = "nqs_fujitsu"
-        self.qsub_pattern = re.compile("Request (?P<job_id>\d+\..*) submitted to queue:")
+        self.qsub_pattern = re.compile(".*Request (?P<job_id>\d+\..*) submitted to queue:", re.DOTALL)
         self.qstat_trust_status = 0
         self.qstat_pattern = "%job_id%.+RUNNING"
         self.qstat_job_id_flag = "-r"
@@ -94,7 +94,7 @@ class nqs_hitachi_system_option:
     """
     def __init__(self):
         self.name = "nqs_hitachi"
-        self.qsub_pattern = re.compile("Request (?P<job_id>\d+\..*) submitted to queue:")
+        self.qsub_pattern = re.compile(".*Request (?P<job_id>\d+\..*) submitted to queue:", re.DOTALL)
         self.qstat_trust_status = 0
         self.qstat_pattern = "\n%job_id%"
         self.qstat_job_id_flag = None

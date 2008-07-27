@@ -137,14 +137,15 @@ class xmake_cmd_opts(opt.cmd_opts):
 	opt.cmd_opts.__init__(self)
         # log file
         self.log      = ("s", "xmake.log")
-        # state file
+        # state file directory
+        self.state_dir = ("s", "./")
+        # state file 
         self.state    = ("s", "state.html")
         # parallelism file
         self.parallelism_gpl = ("s", "parallelism.gpl")
         self.parallelism_terminal = ("s", "png") # gnuplot type
         self.parallelism_image = ("s", "parallelism.png")
         self.gnuplot_err = ("s", "gnuplot.err")
-        self.dir = ("s", "./")
         self.local_exec_cmd = ("s", None) 
         #
         self.conf = ("s", "~/gxpc_make.conf")
@@ -162,15 +163,6 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.h        = "help"
         self.n        = "emulate"
 
-    def postcheck(self):
-        if 0 and (self.dir is not None):
-            self.log = os.path.join(self.dir, self.log)
-            self.state = os.path.join(self.dir, self.state)
-            self.parallelism_gpl = os.path.join(self.dir, self.parallelism_gpl)
-            self.parallelism_image = os.path.join(self.dir,
-                                                  self.parallelism_image)
-            self.gnuplot_err = os.path.join(self.dir, self.gnuplot_err)
-
     def usage(self):
         u = r"""usage:
     gxpc make <GNU make options> [ -- <gxpc make options> ]
@@ -184,6 +176,9 @@ gxpc make options:
   --sem SEM_SPECS :
       specify concurrency constraints for various jobs.
       see SEM_SPECS below.
+  --state_dir DIR :
+      specify directory where state.html and assocated files are written
+      (including xmake.log). created if not exist.
   --state FILE :
       write job/worker status to FILE (default: "state.html")
   --log FILE :
@@ -322,7 +317,7 @@ class shot_stage_in(shot_stage):
         try:
             in_fd = os.open(self.filename, os.O_RDONLY)
         except OSError,e:
-            Es("%s\n" % (e.args,))
+            Es("xmake: %s : %s\n" % (self.filename, e.args,))
             return -1
         os.dup2(in_fd, 0)
         os.close(in_fd)
@@ -340,7 +335,7 @@ class shot_stage_out(shot_stage):
         try:
             out_fd = os.open(self.filename, os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0644)
         except OSError,e:
-            Es("%s\n" % (e.args,))
+            Es("xmake: %s : %s\n" % (self.filename, e.args,))
             return -1                   # error
         os.dup2(out_fd, 1)
         os.close(out_fd)
@@ -682,11 +677,11 @@ class xmake_server:
         return -1 on failure, 0 on success
         """
         if self.opts.log != "":
-            log = os.path.join(self.opts.dir, self.opts.log)
+            log = os.path.join(self.opts.state_dir, self.opts.log)
             try:
                 self.logfp = open(log, "wb")
             except Exception,e:
-                Es("%s\n" % (e.args,))
+                Es("xmake: %s : %s\n" % (log, e.args,))
                 return -1
         self.LOG("started at %.3f\n" % time.time())
         return 0
@@ -895,7 +890,7 @@ class xmake_server:
                 elif var == "local":
                     wa.local = int(val)
                 else:
-                    Es("invalid resource spec in %s\n" % attr_cmd)
+                    Es("xmake: invalid resource spec in %s\n" % attr_cmd)
                     self.LOG("invalid resource spec in %s\n" % attr_cmd)
         if wa.local: wa.resources.append(("local", 1))
         return wa,cmd
@@ -1066,8 +1061,41 @@ class xmake_server:
         else:
             return ("unknown", ("unknown %s" % status))
 
-    def mk_lnk(self, f):
-        return ('<a href="%s">%s</a>' % (f, f))
+    def mk_lnk(self, f, from_dir):
+        real_f = os.path.realpath(f)
+        real_from_dir = os.path.realpath(from_dir)
+        common = os.path.commonprefix([real_f, real_from_dir])
+        d,base = os.path.split(real_f)
+        relative_path = base
+        while 1:
+            try:
+                if os.path.samefile(common, d): break
+            except OSError,e:
+                if e.args[0] == errno.ENOENT: return f
+                raise
+            d,base = os.path.split(d)
+            relative_path = os.path.join(base, relative_path)
+        d = real_from_dir
+        while 1:
+            try:
+                if os.path.samefile(common, d): break
+            except OSError,e:
+                if e.args[0] == errno.ENOENT: return f
+                raise
+            d,base = os.path.split(d)
+            relative_path = os.path.join("..", relative_path)
+        return ('<a href="%s">%s</a>' % (relative_path, f))
+
+    def xxmk_lnk(self, f, from_dir):
+        real_f = os.path.realpath(f)
+        real_from_dir = os.path.realpath(from_dir)
+        common = os.path.commonprefix(real_f, real_from_dir)
+        d,base = os.path.split(real_f)
+        relative_path = base
+        while not os.path.samefile(common, d):
+            d,base = os.path.split(d)
+            realative_path = os.path.join("..", realative_path)
+        return ('<a href="%s">%s</a>' % (relative_path, f))
 
     def modify_cmd(self, cmd):
         option_regexps = [ "\-\-[^ ]+=",
@@ -1092,7 +1120,7 @@ class xmake_server:
                     for f in string.split(arg[m.end():], arg_splitter):
                         if os.path.exists(f):
                             found = found + 1
-                            files.append(self.mk_lnk(f))
+                            files.append(self.mk_lnk(f, self.opts.state_dir))
                         else:
                             files.append(f)
                     C.append((found,
@@ -1294,9 +1322,9 @@ td.man_working {
         wp.write('</table>\n')
 
     def run_gnuplot(self, cur_time):
-        gpl = os.path.join(self.opts.dir, self.opts.parallelism_gpl)
-        err = os.path.join(self.opts.dir, self.opts.gnuplot_err)
-        img = os.path.join(self.opts.dir, self.opts.parallelism_image)
+        gpl = os.path.join(self.opts.state_dir, self.opts.parallelism_gpl)
+        err = os.path.join(self.opts.state_dir, self.opts.gnuplot_err)
+        img = os.path.join(self.opts.state_dir, self.opts.parallelism_image)
         wp = open(gpl, "wb")
         wp.write(r"""set terminal png
 set style fill solid
@@ -1361,9 +1389,21 @@ plot '-' with boxes
                   % (self.opts.parallelism_image,
                      self.opts.parallelism_image)))
 
+    def ensure_directory(self, dire):
+        try:
+            os.mkdir(dire)
+        except OSError,e:
+            if e.args[0] == errno.EEXIST:
+                pass
+            else:
+                raise
+        if os.path.isdir(dire): return 0
+        Es("xmake: could not make a state directory %s\n" % dire)
+        return -1
+    
     def record_state(self, finished):
         if self.opts.state == "": return
-        state = os.path.join(self.opts.dir, self.opts.state)
+        state = os.path.join(self.opts.state_dir, self.opts.state)
         tmp,wp = self.mk_temp(state)
         cur_time = self.cur_time()
         
@@ -1604,6 +1644,7 @@ plot '-' with boxes
         if self.opts.help:
             Es(self.opts.usage())
             return 1
+        if self.ensure_directory(self.opts.state_dir) == -1: return 1
         if self.open_LOG() == -1: return 1
         self.semaphores = self.mk_semaphores()
         if self.semaphores is None: return 1

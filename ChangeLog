@@ -13,4 +13,16 @@
 	* xmake, mksh : now I believe $(shell === ...) becomes completely
 	unnecessary. It automatically detects whether a command is executed
 	normally or within $(shell === ...).
+
+2008-07-27 Taura
+	* gxpc.py (cmd_interpreter.find_daemon_addrs2) : handle cases where
+	the host is extremely slow and gxpc.py takes 20 secs to bring up.
+	it now waits up to 20 secs with exponentially backoff sleep time.
+
+	* qsub_wrap (nqs_hitachi_system_option) : fixed regexp to get jobid
+	from qsub output, so it can correctly skip messages before 
+	"Request ..." line.
+
+	* xmake (xmake_server.mk_lnk) : fixed a bug that links to output
+	files are broken when --state_dir is given.
 	

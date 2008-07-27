@@ -1936,6 +1936,7 @@ class cmd_interpreter:
             Es("gxpc: %s %s\n" % (daemon_pat, e.args))
             return None
         start_t = time.time()
+        sleep_t = 0.01
         while time.time() < start_t + wait_time:
             addrs = []
             # daemon is actually a name of a unix-domain socket file
@@ -1954,7 +1955,9 @@ class cmd_interpreter:
                 elif daemon_addr is not None:
                     addrs.append((gupid, daemon_addr))
             if len(addrs) > 0: return addrs
-            time.sleep(0.01)
+            time.sleep(sleep_t)
+            sleep_t = sleep_t * 1.5
+            if sleep_t > 3.0: sleep_t = 3.0
         return []
         
     def create_daemon(self, create_daemon_explicit):
