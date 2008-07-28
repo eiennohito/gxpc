@@ -107,7 +107,7 @@ class login_method_configs:
         self.sge_host    = "qsub_wrap --sys sge %cmd% -- -l hostname=%target%"
         
         self.torque      = "qsub_wrap --sys torque %cmd%"
-        self.torque_l    = "qsub_wrap --sys torque %cmd% -- -l nodes=%nodes:-1%:ppn=%ppn:-1%"
+        self.torque_n    = "qsub_wrap --sys torque %cmd% -- -l nodes=%nodes:-1%:ppn=%ppn:-1%"
         self.torque_host = "qsub_wrap --sys torque %cmd% -- -l host=%target%"
 
         self.nqs_hitachi = "qsub_wrap --sys nqs_hitachi %cmd%"
