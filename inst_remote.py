@@ -124,7 +124,7 @@ def install_file(path, type, mode, base64_content):
     else:
         bomb()
 
-def install_files(prefix, data):
+def install_files(prefix, gxp_top, data):
     """
     given a directory prefix (e.g., ~/.gxp_tmp), 
     make a temporary directory in it (e.g., ~/.gxp_tmp/gxp_hoge_1024),
@@ -140,21 +140,16 @@ def install_files(prefix, data):
     prefix = os.path.expandvars(os.path.expanduser(prefix))
     # make a temporary directory
     tmp_dir = mk_tmp_dir(prefix)
-    flag = ("gxp3/REMOTE_INSTALLED", "REG", 0644, base64.encodestring(""))
+    flag = (("%s/REMOTE_INSTALLED" % gxp_top), 
+            "REG", 0644, base64.encodestring(""))
     for rel_path,type,mode,base64_content in data + [ flag ]:
         path = os.path.join(tmp_dir, rel_path)
         install_file(path, type, mode, base64_content)
     # rename the temporary directory to something else
     return rename_dir(prefix, tmp_dir)
 
-def install(prefix, data, code):
-    # install the received data
-    inst_dir = install_files(prefix, data)
-    # say installation finished
-    os.write(1, ("%s%s OK\n" % (code, inst_dir)))
-
 def check_install_exec(first_script, first_args, second_script, second_args,
-                       prefix, data, code):
+                       prefix, gxp_top, data, code):
     if data is None:
         if os.path.exists(first_script):
             # say installation finished
@@ -167,7 +162,7 @@ def check_install_exec(first_script, first_args, second_script, second_args,
             # wait for data
             data = eval(read_bytes(string.atoi(read_bytes(10))))
     # install the received data
-    inst_dir = install_files(prefix, data)
+    inst_dir = install_files(prefix, gxp_top, data)
     # say installation finished
     os.write(1, ("%s OK\n" % code))
     script = second_script % { "inst_dir" : inst_dir }

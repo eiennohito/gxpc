@@ -2029,7 +2029,9 @@ class gxpd(ioman.ioman):
                                 gxp_dir)
         pypath = self.push_path(pypath,
                                 os.path.join(gxp_dir, "gxpbin"))
+        prefix,gxp_top = os.path.split(gxp_dir)
         return gxpd_environment({ "GXP_DIR"      : gxp_dir,
+                                  "GXP_TOP"      : gxp_top,
                                   "GXP_HOSTNAME" : self.hostname,
                                   "GXP_GUPID"    : self.gupid,
                                   "PATH"         : path,

@@ -146,6 +146,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.parallelism_terminal = ("s", "png") # gnuplot type
         self.parallelism_image = ("s", "parallelism.png")
         self.gnuplot_err = ("s", "gnuplot.err")
+        self.max_records = ("i", 200)
         self.local_exec_cmd = ("s", None) 
         #
         self.conf = ("s", "~/gxpc_make.conf")
@@ -156,7 +157,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         # in case you want to run GNU make with a different name
         self.make     = ("s", "make")
         self.gxpc     = ("s", "gxpc")
-        self.qlen     = ("i", 1000)
+        self.qlen     = ("i", 10000)
         self.sem      = ("s*", [])
         self.emulate  = (None, 0)
         self.help     = (None, 0)
@@ -1226,6 +1227,8 @@ td.man_working {
 <tr><td>pid</td><td>%s</td></tr>
 <tr><td>start time</td><td>%s</td></tr>
 <tr><td>elapsed time (sec)</td><td>%.2f</td></tr>
+<tr><td>waiting / total jobs</td><td>%d / %d</td></tr>
+<tr><td>free / total workers</td><td>%d / %d</td></tr>
 <tr><td>xmake args</td><td>%s</td></tr>
 <tr><td>make args</td><td>%s</td></tr>
 <tr><td>make pid</td><td>%s</td></tr>
@@ -1240,14 +1243,48 @@ td.man_working {
        os.getpid(), 
        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.start_t)),
        self.cur_time(),
+       len(self.shots_todo), len(self.works),
+       len(self.free_men), len(self.men),
        self.xmake_args, self.make_args, 
        self.make_pid, mk_class, mk_status,
        self.so_name, 
        self.gxpc_pid, self.tid, gxpc_status,
        self.gxpc_fd))
+
     
-    def write_works(self, cur_time, wp):
-        wp.write('<h1>Jobs</h1>\n')
+    def write_recent_works(self, cur_time, wp):
+        works = self.works
+        if self.opts.max_records >= 0:
+            works = self.works[-self.opts.max_records:]
+        self.write_works_aux("Recent Jobs", works, cur_time, wp)
+
+    def write_failed_works(self, cur_time, wp):
+        works = []
+        for w in self.works:
+            if w.status != 0:   # None or non-zero int
+                works.append(w)
+        if self.opts.max_records >= 0:
+            works = works[-self.opts.max_records:]
+        self.write_works_aux("Failed Jobs", works, cur_time, wp)
+
+    def write_long_works(self, cur_time, wp):
+        t_works = []
+        for w in self.works:
+            if len(w.runs) == 0: continue
+            time_start = w.runs[-1].time_start
+            time_end = w.runs[-1].time_end
+            if time_end is None: time_end = cur_time
+            t_works.append((time_start - time_end, w))
+        t_works.sort()
+        if self.opts.max_records >= 0:
+            t_works = t_works[:self.opts.max_records]
+        works = []
+        for t,w in t_works:
+            works.append(w)
+        self.write_works_aux("Long Jobs", works, cur_time, wp)
+
+    def write_works_aux(self, label, works, cur_time, wp):
+        wp.write('<h1>%s</h1>\n' % label)
         wp.write('<table class="works">\n')
         wp.write(('<tr> '
                   '<td>idx</td> '
@@ -1259,7 +1296,8 @@ td.man_working {
                   '<td>turn around time</td> '
                   '<td>status</td> '
                   '</tr>\n'))
-        for w in self.works:
+
+        for w in works:
             queued_t = time.ctime(w.req_time + self.start_t)
             run = w.runs[-1]
             s = run.time_start
@@ -1417,7 +1455,9 @@ plot '-' with boxes
         # -------- parallelism --------
         self.write_parallelism(cur_time, wp)
         # -------- work --------
-        self.write_works(cur_time, wp)
+        self.write_failed_works(cur_time, wp)
+        self.write_long_works(cur_time, wp)
+        self.write_recent_works(cur_time, wp)
         # -------- men state --------
         self.write_men(cur_time, wp)
         # -------- trailer --------

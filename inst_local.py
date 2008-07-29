@@ -133,7 +133,7 @@ default_inst_remote_stub_file = "$GXP_DIR/inst_remote_stub.py"
 #
 
 # default_second_script = "$GXP_DIR/gxpd.py"
-default_second_script = "%(inst_dir)s/gxp3/gxpd.py"
+default_second_script = "%(inst_dir)s/$GXP_TOP/gxpd.py"
 default_second_args_template = [ "--remove_self",
                                  "--listen", "none:",
                                  "--parent", "$GXP_GUPID",
@@ -370,9 +370,10 @@ class installer(expectd.expectd):
         first_args = self.expands(O.first_args_template, O.__dict__)
         second_script = self.expand(O.second_script, None)
         second_args = self.expands(O.second_args_template, O.__dict__)
-        main = ("check_install_exec(%r, %r, %r, %r, %r, %r, %r)"
+        gxp_top = os.environ["GXP_TOP"]
+        main = ("check_install_exec(%r, %r, %r, %r, %r, %r, %r, %r)"
                 % (first_script, first_args, second_script, second_args,
-                   O.target_prefix, inst_data, code))
+                   O.target_prefix, gxp_top, inst_data, code))
         inst_remote_stub = self.read_file(self.expand(O.inst_remote_stub_file,
                                                       None))
         inst_remote = self.read_file(self.expand(O.inst_remote_file, None))
