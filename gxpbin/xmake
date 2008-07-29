@@ -1261,7 +1261,7 @@ td.man_working {
     def write_failed_works(self, cur_time, wp):
         works = []
         for w in self.works:
-            if w.status != 0:   # None or non-zero int
+            if w.status is not None and w.status != 0: # None and non-zero int
                 works.append(w)
         if self.opts.max_records >= 0:
             works = works[-self.opts.max_records:]
@@ -1272,6 +1272,7 @@ td.man_working {
         for w in self.works:
             if len(w.runs) == 0: continue
             time_start = w.runs[-1].time_start
+            if time_start is None: continue
             time_end = w.runs[-1].time_end
             if time_end is None: time_end = cur_time
             t_works.append((time_start - time_end, w))
@@ -1329,6 +1330,48 @@ td.man_working {
                          queued_t, start_t, end_t,
                          man, elapsed, cls, sts)))
         wp.write('</table>\n')
+
+    def write_works_in_comments(self, cur_time, wp):
+        wp.write('<!--\n')
+        wp.write(('idx\t'
+                  'command\t'
+                  'queued at\t'
+                  'started at\t' 
+                  'finished at\t'
+                  'executed by\t'
+                  'turn around time\t'
+                  'status\n'))
+
+        for w in self.works:
+            queued_t = time.ctime(w.req_time + self.start_t)
+            run = w.runs[-1]
+            s = run.time_start
+            e = run.time_end
+            start_t = ""
+            end_t = ""
+            elapsed = ""
+            man = ""
+            if s is not None:
+                man = run.man.name
+                start_t = time.ctime(s + self.start_t)
+                if e is not None:
+                    end_t = time.ctime(e + self.start_t)
+                    elapsed = "%.2f" % (e - s)
+                else:
+                    elapsed = "%.2f" % (cur_time - s)
+            cls,sts = w.show_status()
+            wp.write(('%d\t'
+                      '%s\t'
+                      '%s\t'
+                      '%s\t'
+                      '%s\t'
+                      '%s\t'
+                      '%s\t'
+                      '%s\n'
+                      % (w.idx, self.modify_cmd(w.cmd),
+                         queued_t, start_t, end_t,
+                         man, elapsed, cls, sts)))
+        wp.write('-->\n')
 
     def write_men(self, cur_time, wp):
         men = self.men.items()

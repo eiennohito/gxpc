@@ -1,8 +1,9 @@
 #!/bin/bash
 
-VERSION=02
+VERSION=03
 DIR=gxp-3.${VERSION}
 
+cvs up
 mkdir -p releases
 cd releases
 cvs -d :ext:ttaauu@gxp.cvs.sourceforge.net:/cvsroot/gxp export -r HEAD gxp3
