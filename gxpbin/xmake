@@ -582,6 +582,8 @@ class xmake_server:
         # UNIX domain socket to accept connect from mksh
         self.so = None
         self.so_name = None             # so's path name
+        #
+        self.cleaning = 0
         # sigchild handling
         # a sig handler writes to child_wfd,
         # and the main thread receives it from rfd
@@ -1647,10 +1649,13 @@ plot '-' with boxes
         
     def kill_gxpc(self):
         if self.gxpc_pid is not None:
-            self.LOG("killing initial process and children %s\n" % self.gxpc_pid)
+            self.LOG(("killing initial process and children %s\n"
+                      % self.gxpc_pid))
             os.kill(self.gxpc_pid, signal.SIGINT)
 
     def prepare_cleanup(self):
+        if self.cleaning: return
+        self.cleaning = 1
         self.close_socket()
         self.kill_gxpc()
 
