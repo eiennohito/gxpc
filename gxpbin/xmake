@@ -1370,9 +1370,9 @@ td.man_working {
                       '%s\t'
                       '%s\t'
                       '%s\n'
-                      % (w.idx, self.modify_cmd(w.cmd),
+                      % (w.idx, w.cmd,
                          queued_t, start_t, end_t,
-                         man, elapsed, cls, sts)))
+                         man, elapsed, sts)))
         wp.write('-->\n')
 
     def write_men(self, cur_time, wp):
@@ -1503,6 +1503,7 @@ plot '-' with boxes
         self.write_failed_works(cur_time, wp)
         self.write_long_works(cur_time, wp)
         self.write_recent_works(cur_time, wp)
+        self.write_works_in_comments(cur_time, wp)
         # -------- men state --------
         self.write_men(cur_time, wp)
         # -------- trailer --------
