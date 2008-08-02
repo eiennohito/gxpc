@@ -154,6 +154,9 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.update_interval_1 = ("f", 2.0)
         self.update_interval_2 = ("f", 20.0)
         self.auto_update_interval = ("i", 60.0)
+        self.time_limit = ("s", None)
+        self.no_dispatch_after = ("i", None)
+        self.interrupt_at = ("i", None)
         # in case you want to run GNU make with a different name
         self.make     = ("s", "make")
         self.gxpc     = ("s", "gxpc")
@@ -164,6 +167,38 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.h        = "help"
         self.n        = "emulate"
 
+    def postcheck(self):
+        # self.time_limit is like "a:b", it is treated as if
+        # --no_dispatch_after a and --interrupt_at b are given
+        if self.time_limit is not None:
+            # parse time_limit (like 30:60) and set
+            # no_dispatch_after = 30 and interrupt_at = 60
+            limits = string.split(self.time_limit, ":", 1)
+            if len(limits) == 1:
+                [ no_dispatch_after_s ] = limits
+                interrupt_at_s = ""
+            else:
+                [ no_dispatch_after_s, interrupt_at_s ] = limits
+            if no_dispatch_after_s == "":
+                no_dispatch_after = None # omitted. infty
+            else:
+                no_dispatch_after = self.safe_atof(no_dispatch_after_s, -1)
+                if no_dispatch_after == -1:
+                    Es("xmake: invalid time limit (%s)\n" % self.time_limit)
+                    return -1
+            if interrupt_at_s == "":
+                interrupt_at = None
+            else:
+                interrupt_at = self.safe_atof(interrupt_at_s, -1)
+                if interrupt_at == -1:
+                    Es("xmake: invalid time limit (%s)\n" % self.time_limit)
+                    return -1
+            # now we have no_dispatch_after and interrupt_at (floats)
+            if self.no_dispatch_after is None:
+                self.no_dispatch_after = no_dispatch_after
+            if self.interrupt_at is None:
+                self.interrupt_at = interrupt_at
+        
     def usage(self):
         u = r"""usage:
     gxpc make <GNU make options> [ -- <gxpc make options> ]
@@ -206,6 +241,11 @@ gxpc make options:
       specify the backlog of the socket the scheduler listens
       (default : 1000). you might want to increase this value
       when there are more than 1000 workers.
+  --timelimit soft[:hard]
+      soft specifies the time when make stops dispatching jobs. after this time,
+      it only waits for outstanding workss to finish, and then throws away all
+      jobs (not dispatched) with exit status 124. hard specifies the time when
+      make kills (with SIGINT) works in progress.
 
 SEM_SPECS:
   SEM_SPECS ::= SEM_SPEC[,SEM_SPEC]*
@@ -421,9 +461,15 @@ class Run:
     def finish(self, status, cur_time):
         self.time_end = cur_time
         self.status = status
-        self.server.free_men.append(self.man) # this man is now free
-        self.server.LOG("man %s now free\n" % self.man.name)
-        self.man.running.remove(self)
+        man = self.man
+        # man is None if this shot is aborted
+        if man:
+            self.server.free_men.append(man) # this man is now free
+            self.server.LOG("man %s now free\n" % man.name)
+            man.running.remove(self)
+        else:
+            assert os.WIFEXITED(status), status
+            assert (os.WEXITSTATUS(status) == 124), status
         if self.work.status is None:
             # this is the first time a run for the work has finished
             self.work.finish(status)
@@ -657,7 +703,7 @@ class xmake_server:
                     [ s,v ] = sv
                     v = self.safe_int(v)
                     if v is None:
-                        Es(('gxpc make error: wrong argument to --sem "%s"\n'
+                        Es(('xmake: gxpc make error: wrong argument to --sem "%s"\n'
                             % se))
                         return None
                 self.LOG("semaphore: %s := %d\n" % (s, v))
@@ -1000,12 +1046,17 @@ class xmake_server:
                     
     def dispatch(self):
         """
-        dispatch a single work, assuming there is a free worker
+        dispatch some works, assuming there is a free worker
         and a work to execute.
 
         gxpc e -g <worker> --tid <tid> --keep_connection 0 '<cmd>'
 
         """
+        if self.opts.no_dispatch_after is not None \
+               and self.cur_time() > self.opts.no_dispatch_after:
+            self.LOG(("do not dispatch work after %.3f\n"
+                      % self.opts.no_dispatch_after))
+            return 0
         matches = self.find_matches()
         if len(matches) == 0: return 0
         cur_time = self.cur_time()
@@ -1223,7 +1274,9 @@ td.man_working {
     def write_basic_info(self, cur_time, wp):
         mk_class,mk_status = self.status_to_str(self.make_status)
         gxpc_class,gxpc_status = self.status_to_str(self.gxpc_status)
-        wp.write(r"""<h1>Basic info</h1>
+        wp.write((r'''<a name="Basic info">
+<h1>Basic info</h1>
+<a href="#">page top</a><br><br>
 <table class="basic_info">
 <tr><td>command line</td><td>%s</td></tr>
 <tr><td>pid</td><td>%s</td></tr>
@@ -1241,7 +1294,7 @@ td.man_working {
 <tr><td>gxpc status</td><td>%s</td></tr>
 <tr><td>gxpc fd</td><td>%s</td></tr>
 </table>
-""" % (self.sys_argv,
+''' % (self.sys_argv,
        os.getpid(), 
        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.start_t)),
        self.cur_time(),
@@ -1251,7 +1304,7 @@ td.man_working {
        self.make_pid, mk_class, mk_status,
        self.so_name, 
        self.gxpc_pid, self.tid, gxpc_status,
-       self.gxpc_fd))
+       self.gxpc_fd)))
 
     
     def write_recent_works(self, cur_time, wp):
@@ -1287,18 +1340,21 @@ td.man_working {
         self.write_works_aux("Long Jobs", works, cur_time, wp)
 
     def write_works_aux(self, label, works, cur_time, wp):
-        wp.write('<h1>%s</h1>\n' % label)
-        wp.write('<table class="works">\n')
-        wp.write(('<tr> '
-                  '<td>idx</td> '
-                  '<td>command</td> '
-                  '<td>queued at</td> '
-                  '<td>started at</td> '
-                  '<td>finished at</td> '
-                  '<td>executed by</td> '
-                  '<td>turn around time</td> '
-                  '<td>status</td> '
-                  '</tr>\n'))
+        wp.write((r'''<a name="%s">
+<h1>%s</h1>
+<a href="#">page top</a><br><br>
+<table class="works">
+<tr>
+<td>idx</td>
+<td>command</td>
+<td>queued at</td>
+<td>started at</td>
+<td>finished at</td>
+<td>executed by</td>
+<td>turn around time</td>
+<td>status</td>
+</tr>
+''' % (label,label)))
 
         for w in works:
             queued_t = time.ctime(w.req_time + self.start_t)
@@ -1378,9 +1434,12 @@ td.man_working {
     def write_men(self, cur_time, wp):
         men = self.men.items()
         men.sort()
-        wp.write('<h1>Worker States</h1>\n')
-        wp.write('<table class="men">\n')
-        wp.write('<tr><td class="men_header">worker name</td><td>jobs</td><td>status</td></tr>\n')
+        wp.write(r'''<a name="Worker States">
+<h1>Worker States</h1>
+<a href="#">page top</a><br><br>
+<table class="men">
+<tr><td class="men_header">worker name</td><td>jobs</td><td>status</td></tr>
+''')
         for name,man in men:
             n_running = len(man.running)
             if n_running == 0:
@@ -1444,33 +1503,56 @@ plot '-' with boxes
         return string.join(outs, "")
         
     def run_uptime(self):
+        self.LOG("getting uptime stat\n")
         return self.run_cmd("uptime")
 
     def run_vmstat(self):
+        self.LOG("getting vmstat stat\n")
         return self.run_cmd("vmstat")
+
+    def write_table_of_contents(self, cur_time, wp):
+        wp.write(r'''<a name="Table of Contents">
+<h1>Contents</h1>
+<ul>
+<li><a href="#System Stats">System States</a>
+<li><a href="#Basic info">Basic info</a>
+<li><a href="#Parallelism">Parallelism</a>
+<li>Jobs
+<ul>
+  <li><a href="#Failed Jobs">Failed Jobs</a>
+  <li><a href="#Long Jobs">Long Jobs</a>
+  <li><a href="#Recent Jobs">Recent Jobs</a>
+</ul>
+<li><a href="#Worker States">Worker States</a>
+</ul>
+''')
 
     def write_stat(self, cur_time, wp):
         uptime = self.run_uptime()
         vmstat = self.run_vmstat()
-        wp.write('<h1>System Stats</h1>\n')
-        wp.write('<h2>vmstat</h2>\n')
-        wp.write('<pre>%s</pre>\n' % vmstat)
-        wp.write('<h2>uptime</h2>\n')
-        wp.write('<pre>%s</pre>\n' % uptime)
-        
+        wp.write((r'''<a name="System Stats">
+<h1>System Stats</h1>
+<a href="#">page top</a><br><br>
+<h2>vmstat</h2>
+<pre>%s</pre>
+<h2>uptime</h2>
+<pre>%s</pre>
+''' % (vmstat, uptime)))
+
     def write_parallelism(self, cur_time, wp):
+        self.LOG("generating parallelism profile\n")
         self.run_gnuplot(cur_time)
-        wp.write('<h1>Parallelism</h1>\n')
-        wp.write(('<p>if the following image is broken, '
-                  'gnuplot may have gotten an error</p>'))
-        wp.write(r"""<ul>
+        wp.write(('''<a name="Parallelism">
+<h1>Parallelism</h1>
+<a href="#">page top</a><br><br>
+<p>if the following image is broken, gnuplot may have gotten an error</p>
+<ul>
 <li><a href="%s">gnuplot source</a>
 <li><a href="%s">gnuplot error</a>
-</ul>        
-""" % (self.opts.parallelism_gpl, self.opts.gnuplot_err))
-        wp.write(('<a href="%s"><img src="%s" width=640></a><br>'
-                  % (self.opts.parallelism_image,
-                     self.opts.parallelism_image)))
+</ul>
+<a href="%s"><img src="%s" width=640></a><br>
+''' % (self.opts.parallelism_gpl, self.opts.gnuplot_err, 
+       self.opts.parallelism_image, self.opts.parallelism_image)))
 
     def ensure_directory(self, dire):
         try:
@@ -1493,6 +1575,8 @@ plot '-' with boxes
         header,trailer = self.get_header_trailer(finished)
         # -------- header --------
         wp.write(header)
+        # -------- index --------
+        self.write_table_of_contents(cur_time, wp)
         # -------- load avg and vmstat --------
         self.write_stat(cur_time, wp)
         # -------- basic info --------
@@ -1503,9 +1587,10 @@ plot '-' with boxes
         self.write_failed_works(cur_time, wp)
         self.write_long_works(cur_time, wp)
         self.write_recent_works(cur_time, wp)
-        self.write_works_in_comments(cur_time, wp)
         # -------- men state --------
         self.write_men(cur_time, wp)
+        # -------- all works in comments --------
+        self.write_works_in_comments(cur_time, wp)
         # -------- trailer --------
         wp.write(trailer)
         wp.close()
@@ -1513,7 +1598,7 @@ plot '-' with boxes
 
     def show_state(self):
         self.LOG(("%d/%d waiting/total jobs, "
-                  "%d/%d free/busy men, "
+                  "%d/%d free/total men, "
                   "socket = %s, make = %s, gxpc = %s, gxpc_fd = %s\n"
                   % (len(self.shots_todo), len(self.works),
                      len(self.free_men), len(self.men),
@@ -1659,7 +1744,18 @@ plot '-' with boxes
         self.cleaning = 1
         self.close_socket()
         self.kill_gxpc()
+        self.abandon_all_shots_todo()
 
+    def abandon_all_shots_todo(self):
+        cur_time = self.cur_time()
+        status = os.system("exit 124")
+        for shot in self.shots.values():
+            shot.finish(status, cur_time)
+        self.shots = {}
+        while len(self.shots_todo) > 0:
+            shot = self.shots_todo.pop(0)
+            shot.finish(status, cur_time)
+        
     def determine_exit_status(self):
         s = self.make_status
         if s is None:
@@ -1697,8 +1793,28 @@ plot '-' with boxes
         return self.determine_exit_status()
 
     def server_iterate(self):
+        # take some special action for time limit
+        # (1) soft limit reached and no work in flight
+        # (2) hard limit reached
+        if self.interrupted == 0:
+            int_at = self.opts.interrupt_at
+            nd_after = self.opts.no_dispatch_after
+            cur_time = self.cur_time()
+            if int_at is not None and cur_time > int_at:
+                self.interrupted = 1
+                msg = ("hard limit %.3f reached. outstanding jobs will be killed with SIGINT. waiting jobs will exit with 124\n"
+                       % int_at)
+                self.LOG(msg)
+                Es("xmake: %s" % msg)
+            elif nd_after is not None and cur_time > nd_after and len(self.shots) == 0:
+                self.interrupted = 1
+                msg = ("soft limit %.3f reached. wait for outstanding jobs to finish. waiting jobs will exit with 124\n"
+                       % nd_after)
+                self.LOG(msg)
+                Es("xmake: %s" % msg)
+
         if self.make_pid is None or self.interrupted > 0:
-            if self.gxpc_pid is None and self.gxpc_fd is None:
+            if self.gxpc_pid is None and self.gxpc_fd is None and self.make_pid is None:
                 return 0
             else:
                 self.prepare_cleanup()
@@ -1710,9 +1826,15 @@ plot '-' with boxes
         if self.so: R.append(self.so)
         if self.gxpc_fd: R.append(self.gxpc_fd)
         if self.n_state_changes > xmake_server.FAST_UPDATE_THRESHOLD:
-            timeout = max(0.0, self.next_record_time_1 - self.cur_time())
+            nr = self.next_record_time_1
         else:
-            timeout = max(0.0, self.next_record_time_2 - self.cur_time())
+            nr = self.next_record_time_2
+        int_at = self.opts.interrupt_at
+        cur_time = self.cur_time()
+        if int_at is not None and cur_time < int_at < nr:
+            timeout = int_at - cur_time
+        else:
+            timeout = max(1.0, nr - cur_time)
         self.LOG("select(%d, timeout=%.2f)\n" % (len(R), timeout))
         try:
             RR = []
