@@ -961,6 +961,12 @@ class xmake_server:
         self.shots_todo.append(work.make_run().shots[0])
         self.works.append(work)
         self.n_state_changes = self.n_state_changes + 1
+
+    def recv_works(self):
+        while 1:
+            R,_,_ = select.select([self.so], [], [], 0.0)
+            if len(R) == 0: break
+            self.recv_work()
         
     def recv_fins(self):
         """
@@ -1015,7 +1021,7 @@ class xmake_server:
         self.parallelism.append((cur_time, p - 1))
         shot.finish(int(status), cur_time)
         
-    def find_matches(self):
+    def find_matches_x(self):
         self.LOG("matching men and works\n")
         M = []                          # work -> man
         for shot in self.shots_todo:
@@ -1042,6 +1048,42 @@ class xmake_server:
                     break           # found match for man
         for shot,man in M:
             self.shots_todo.remove(shot)
+        return M
+                    
+    def find_matches(self):
+        self.LOG("matching men and works\n")
+        M = []                          # work -> man
+        new_shots_todo = []
+        while len(self.shots_todo) > 0:
+            shot = self.shots_todo.pop(-1)
+            # check if work is executable meeting resource constraints
+            self.LOG("finding match for shot '%s'\n" % shot)
+            if self.check_resources(shot) == 0:
+                self.LOG("hold due to insufficient resources\n")
+                new_shots_todo.append(shot)
+                continue
+            if shot.run.man:
+                # local or second or later shots
+                self.LOG("using %s\n" % shot.run.man.name)
+                self.commit_resources(shot)
+                M.append((shot, shot.run.man))
+            else:
+                # look for man who can execute it
+                found = 0
+                for man in self.free_men:
+                    self.LOG("assign %s\n" % man.name)
+                    self.commit_resources(shot)
+                    self.free_men.remove(man)
+                    shot.run.man = man # assign man to run
+                    man.running.append(shot.run)
+                    man.runs.append(shot.run)
+                    M.append((shot, man))
+                    found = 1
+                    break           # found match for man
+                if found == 0:
+                    new_shots_todo.append(shot)
+        new_shots_todo.reverse()
+        self.shots_todo = new_shots_todo
         return M
                     
     def dispatch(self):
@@ -1749,9 +1791,14 @@ plot '-' with boxes
     def abandon_all_shots_todo(self):
         cur_time = self.cur_time()
         status = os.system("exit 124")
-        for shot in self.shots.values():
+        shots = self.shots.values()
+        self.LOG(("exiting %d outstanding processes\n"
+                  % len(shots)))
+        for shot in shots:
             shot.finish(status, cur_time)
         self.shots = {}
+        self.LOG(("exiting %d waiting processes\n"
+                  % len(self.shots_todo)))
         while len(self.shots_todo) > 0:
             shot = self.shots_todo.pop(0)
             shot.finish(status, cur_time)
@@ -1814,8 +1861,11 @@ plot '-' with boxes
                 Es("xmake: %s" % msg)
 
         if self.make_pid is None or self.interrupted > 0:
-            if self.gxpc_pid is None and self.gxpc_fd is None and self.make_pid is None:
-                return 0
+            if self.gxpc_pid is None and self.gxpc_fd is None:
+                if self.make_pid is None:
+                    return 0
+                else:
+                    self.LOG("waiting for make %s to terminate\n" % self.make_pid)
             else:
                 self.prepare_cleanup()
         # loop while make is still alive
@@ -1844,7 +1894,7 @@ plot '-' with boxes
                 self.LOG("select interrupted\n")
             else:
                 raise
-        if self.so in RR: self.recv_work()
+        if self.so in RR: self.recv_works()
         if self.gxpc_fd in RR: self.recv_fins()
         if self.child_rfd in RR: self.handle_child_death()
         return 1
@@ -1870,7 +1920,8 @@ plot '-' with boxes
             return self.server_main()
         finally:
             self.periodic(1)
-
+            self.close_LOG()
+            
 if __name__ == "__main__":
     sys.exit(xmake_server().main())
 
