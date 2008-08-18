@@ -264,7 +264,7 @@ details of CONCURRENCY CONTROL.
 
 class Man:
     """
-    a worker or a man
+    a worker, or a man
     """
     def __init__(self, name, idx, t):
         self.name = name                # name
@@ -281,12 +281,56 @@ class shot_id_counter:
         self.c = c + 1
         return "x%d" % c
 
+# terminology
+#
+# a shot, a run, and a job.
+#
+# - A job consists of one or more runs (usually a run).
+# - A run consists of one or more shots (usually one).
+#
+# A job is whatever is invoked by a GNU make. That is, a single
+# command in your Makefile corresponds to a job.
+# 
+# A job is dispatched to a node and this event make a single run.
+# A job is usually finished by a single run, but if a run fails for
+# some reason, there may be more than two runs for a single job.
+#
+# A run in general consists of one or more shots. For a run that
+# just executes a command, there is only one shot for a run.
+# If a run needs stage-in / stage-out, a run may consist of 
+# shots for stage-in, a shot for the real command, and shots for 
+# stage-out.
+#
+# a job +--+--- first run ----+ shot (stage in)
+#          |                  + shot (stage in)
+#          |                  + shot (real command)
+#          |                  + shot (stage out)
+#          |
+#          |
+#          +--- second run
+#          |
+#          .
+#          .
+#
+# Put differently from bottom up manner, a shot is whatever is 
+# dispatched to a remote node with a single stroke. A series of
+# shots to a single worker comprises a run. A single or multiple
+# runs will complete a job.
+#
+
 class Shot:
+    """
+    see above explanation also.
+    a shot is the smallest unit of work submitted to a worker.
+    it may be a stage in command, stage out command, or the real command.
+
+    this is the common ancestor of all shot classes.
+    """
     counter = shot_id_counter()
     def __init__(self, server, run, resources):
-        self.server = server
+        self.server = server            # xmake_server object
         self.run = run                  # parent run object this shot is for
-        self.resources = resources
+        self.resources = resources      # resources (semaphores) needed
         self.time_start = None
         self.time_end = None
 
@@ -295,6 +339,9 @@ class Shot:
                 % (self.__class__.__name__, self.cmd, self.resources))
 
     def shot(self, cur_time):
+        """
+        'fire' this shot
+        """
         self.start_time = cur_time
         if self.run.time_start is None:
             self.run.time_start = cur_time
@@ -322,6 +369,7 @@ class shot_stage(Shot):
     def shot(self, cur_time, emulate):
         Shot.shot(self, cur_time)
         if emulate:
+            # emulation mode. pretend as if it succeeds
             cmd = "exit 0"
         else:
             cmd = self.cmd
@@ -349,6 +397,12 @@ class shot_stage(Shot):
                          % (pid, self.id)))
 
 class shot_stage_in(shot_stage):
+    """
+    stage in shot. send file from local host to the remote host.
+    this is done by essentially
+
+       gxpc e -g worker_gupid 'cat > target_file' < src_file
+    """
     def __init__(self, server, run, resources, filename):
         Shot.__init__(self, server, run, resources)
         self.filename = filename
@@ -365,6 +419,9 @@ class shot_stage_in(shot_stage):
         return 0                        # go ahead
 
 class shot_stage_out(shot_stage):
+    """
+    stage out shot.
+    """
     def __init__(self, server, run, resources, filename):
         Shot.__init__(self, server, run, resources)
         self.filename = filename
@@ -383,6 +440,9 @@ class shot_stage_out(shot_stage):
         return 0
 
 class shot_rexec(Shot):
+    """
+    real shot on a remote node
+    """
     def __init__(self, server, run, resources, cmd):
         Shot.__init__(self, server, run, resources)
         self.cmd = cmd
@@ -418,6 +478,9 @@ class shot_rexec(Shot):
                          % (pid, self.id)))
     
 class shot_lexec(Shot):
+    """
+    real shot on the local host
+    """
     def __init__(self, server, run, resources, cmd):
         Shot.__init__(self, server, run, resources)
         self.cmd = cmd
@@ -450,7 +513,7 @@ class Run:
         """
         a work has been dispatched to man at time t
         """
-        self.server = server
+        self.server = server            # xmake_server object
         self.work = work                # the parent work this run is for
         self.man = None                 # set by find_matches
         self.shots = []                 # filled by make_run
@@ -468,6 +531,8 @@ class Run:
             self.server.LOG("man %s now free\n" % man.name)
             man.running.remove(self)
         else:
+            # this happens when we reach the time limit and this work
+            # must be aborted before dispatched to any man
             assert os.WIFEXITED(status), status
             assert (os.WEXITSTATUS(status) == 124), status
         if self.work.status is None:
@@ -485,11 +550,11 @@ class Work:
         self.server = server
         self.idx = idx                  # index
         self.req_time = req_time        # request time
-        self.conn = conn
-        self.envs = envs        # [ "MAKEFLAGS=..", "MAKELEVEL=.." ]
-        self.cwd = cwd          # work dir
-        self.cmd = cmd          # command
-        self.local = local      # 1 or 0
+        self.conn = conn                # connection to the mksh
+        self.envs = envs       # envs to pass [ "MAKEFLAGS=..", "MAKELEVEL=.." ]
+        self.cwd = cwd         # work dir
+        self.cmd = cmd         # command
+        self.local = local     # 1 or 0
         self.stage_ins = stage_ins      # files to stage in
         self.stage_outs = stage_outs    # files to stage out
         self.resources = resources      # resource spec
@@ -497,6 +562,9 @@ class Work:
         self.runs = []        # run records for the work. usually one
 
     def show_status(self):
+        """
+        for reporting
+        """
         if self.status is None:
             run = self.runs[-1]
             if run.man is None:
