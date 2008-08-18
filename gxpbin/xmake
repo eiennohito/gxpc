@@ -241,7 +241,7 @@ gxpc make options:
       specify the backlog of the socket the scheduler listens
       (default : 1000). you might want to increase this value
       when there are more than 1000 workers.
-  --timelimit soft[:hard]
+  --time_limit soft[:hard]
       soft specifies the time when make stops dispatching jobs. after this time,
       it only waits for outstanding workss to finish, and then throws away all
       jobs (not dispatched) with exit status 124. hard specifies the time when
