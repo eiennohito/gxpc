@@ -1654,7 +1654,7 @@ td.man_working {
                 else:
                     elapsed = "%.2f" % (cur_time - s)
             cls,sts = w.show_status()
-            cmds = string.join(self.modify_cmds(w.cmds), "<br>")
+            cmds = string.join(self.modify_cmds(w.cmds), "<br><br>")
             wp.write(('<tr>'
                       '<td>%d</td> '
                       '<td>%s</td> '
@@ -1730,7 +1730,7 @@ td.man_working {
             else:
                 i = 0
                 for run in man.running:
-                    cmds = string.join(run.work.cmds, "<br>")
+                    cmds = string.join(run.work.cmds, "<br><br>")
                     if i == 0:
                         wp.write(('<tr>'
                                   '<td rowspan=%d>%s</td>'
@@ -2165,4 +2165,48 @@ plot '-' with boxes
             
 if __name__ == "__main__":
     sys.exit(xmake_server().main())
+
+#
+# memo (staging)
+#
+# (1) add the following lines in gxpc_make.conf
+#
+# preprocess staging_in_cmd
+# postprocess staging_out_cmd
+#
+# then, for each command executed by make, staging_in_cmd is
+# executed before it, and staging_out_cmd after it, 
+# by the same worker (thus on the same host) as the one
+# executing the command itself. e.g.,
+#
+# preprocess echo hello
+# postprocess echo bye
+#
+# will print hello and bye before and after each command.
+#
+# (2) if the staging_in_command or staging_out_cmd include %(cmd)s,
+# it will be replaced by the command to be executed, with all quote
+# characters (' and ") replaced by spaces for the reasons explained shortly.
+# this will allow you to analyze the line and decide what to do based
+# on the command line.
+#
+# preprocess ./your_stage_in_tool '%(cmd)s'
+# postprocess ./your_stage_out_tool '%(cmd)s'
+#
+# will call ./your_stage_in_tool 'enju foo' for the command 'enju foo'
+# executed by make. by looking at the command line in your_stage_in_tool,
+# you may perhaps want to stage in foo somehow.
+#
+# note that it is not mandatory, but highly recommended to quote the %(cmd)s,
+# to avoid problems associated with shell special characters. for example,
+# if the command is 'enju foo > hello', what will be executed before this
+# is './your_stage_in_tool enju foo > hello', which is probably not what
+# you intended.
+#
+# there would still be a problem if the command includes ' chracter and
+# substitute %(cmd)s for it. to avoid this problem, it currently replaces
+# all ' and " with spaces.
+#
+
+
 
