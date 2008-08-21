@@ -2018,9 +2018,10 @@ class gxpd(ioman.ioman):
         else:
             return "%s:%s" % (val, orig)
 
-    def get_gxpd_environment(self):
+    def get_gxpd_environment(self, root_gupid):
         gxp_dir = self.get_gxp_dir()
         if gxp_dir is None: return None
+        if root_gupid == "": root_gupid = self.gupid
         path = self.push_path(os.environ.get("PATH", ""),
                               gxp_dir)
         path = self.push_path(path,
@@ -2030,15 +2031,16 @@ class gxpd(ioman.ioman):
         pypath = self.push_path(pypath,
                                 os.path.join(gxp_dir, "gxpbin"))
         prefix,gxp_top = os.path.split(gxp_dir)
-        return gxpd_environment({ "GXP_DIR"      : gxp_dir,
-                                  "GXP_TOP"      : gxp_top,
-                                  "GXP_HOSTNAME" : self.hostname,
-                                  "GXP_GUPID"    : self.gupid,
-                                  "PATH"         : path,
-                                  "PYTHONPATH"   : pypath })
+        return gxpd_environment({ "GXP_DIR"        : gxp_dir,
+                                  "GXP_TOP"        : gxp_top,
+                                  "GXP_HOSTNAME"   : self.hostname,
+                                  "GXP_GUPID"      : self.gupid,
+                                  "GXP_ROOT_GUPID" : root_gupid,
+                                  "PATH"           : path,
+                                  "PYTHONPATH"     : pypath })
 
-    def set_gxpd_environment(self, remove_self):
-        env = self.get_gxpd_environment()
+    def set_gxpd_environment(self, remove_self, root_gupid):
+        env = self.get_gxpd_environment(root_gupid)
         if env is None:
             return -1
         else:
@@ -2060,7 +2062,7 @@ class gxpd(ioman.ioman):
         self.set_target_label(opts.target_label)
         if self.setup_channel_listen(opts.listen, opts.created_explicitly, opts.qlen) == -1:
             return gxpd.EX_OSERR
-        if self.set_gxpd_environment(opts.remove_self) == -1:
+        if self.set_gxpd_environment(opts.remove_self, opts.root_gupid) == -1:
             return gxpd.EX_OSERR
         if dbg>=2:
             ioman.LOG("bring up GXP_DIR=%s argv=%s\n" \
