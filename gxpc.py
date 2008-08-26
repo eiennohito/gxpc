@@ -1285,7 +1285,7 @@ class cmd_interpreter:
         if env is not None:
             os.environ.update(env.dict)
         # Es("gxpc: sys.path = %s\n" % sys.path)
-        sys.path = sys.path[1:] + sys.path[:1]
+        # sys.path = sys.path[1:] + sys.path[:1]
         # load or make session
         if os.path.exists(self.session_file):
             if self.opts.verbosity>=2:
