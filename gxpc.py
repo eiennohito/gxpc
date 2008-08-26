@@ -55,6 +55,9 @@ def Ws(s):
 def Es(s):
     sys.stderr.write(s)
 
+def Ef():
+    sys.stderr.flush()
+
 class counter:
     def __init__(self, init):
         self.x = init
@@ -1281,6 +1284,8 @@ class cmd_interpreter:
         env = self.get_gxpc_environment()
         if env is not None:
             os.environ.update(env.dict)
+        # Es("gxpc: sys.path = %s\n" % sys.path)
+        sys.path = sys.path[1:] + sys.path[:1]
         # load or make session
         if os.path.exists(self.session_file):
             if self.opts.verbosity>=2:
@@ -1937,6 +1942,7 @@ class cmd_interpreter:
             return None
         start_t = time.time()
         sleep_t = 0.01
+        dot_displayed = 0
         while time.time() < start_t + wait_time:
             addrs = []
             # daemon is actually a name of a unix-domain socket file
@@ -1954,7 +1960,13 @@ class cmd_interpreter:
                     self.cleanup_daemon_files(gupid)
                 elif daemon_addr is not None:
                     addrs.append((gupid, daemon_addr))
-            if len(addrs) > 0: return addrs
+            if len(addrs) > 0:
+                if dot_displayed: Es(" OK\n")
+                return addrs
+            if 1 or sleep_t > 1.0:
+                dot_displayed = 1
+                Es(".")
+                Ef()
             time.sleep(sleep_t)
             sleep_t = sleep_t * 1.5
             if sleep_t > 3.0: sleep_t = 3.0
