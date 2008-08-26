@@ -1855,7 +1855,7 @@ class cmd_interpreter:
                     if opts.verbosity >= 2:
                         Es("gxpc: created, check it again\n")
                     # search socket files with specified pid
-                    addrs = self.find_daemon_addrs2(pid, 5.0)
+                    addrs = self.find_daemon_addrs2(pid, 20.0)
                     if len(addrs) == 1:
                         gupid,daemon_addr = addrs[0]
                         self.gupid = gupid
