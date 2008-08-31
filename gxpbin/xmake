@@ -2137,10 +2137,11 @@ plot '-' with boxes
             nr = self.next_record_time_2
         int_at = self.opts.interrupt_at
         cur_time = self.cur_time()
-        if int_at is not None and cur_time < int_at < nr:
+        if int_at is not None and int_at < nr:
             timeout = int_at - cur_time
         else:
-            timeout = max(1.0, nr - cur_time)
+            timeout = nr - cur_time
+        if timeout < 1.0: timeout = 1.0
         self.LOG("select(%d, timeout=%.2f)\n" % (len(R), timeout))
         try:
             RR = []
