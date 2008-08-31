@@ -1185,9 +1185,18 @@ class xmake_server:
         self.works.append(work)
         self.n_state_changes = self.n_state_changes + 1
 
+
+
     def recv_works(self):
         while 1:
-            R,_,_ = select.select([self.so], [], [], 0.0)
+            try:
+                R = []
+                R,_,_ = select.select([self.so], [], [], 0.0)
+            except select.error,e:
+                if e.args[0] == errno.EINTR:
+                    self.LOG("select interrupted in recv_works\n")
+                else:
+                    raise
             if len(R) == 0: break
             self.recv_work()
         
