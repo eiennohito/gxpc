@@ -1277,78 +1277,63 @@ class xmake_server:
         self.parallelism.append((cur_time, p - 1))
         shot.finish(int(status), cur_time)
         
-    def find_matches_x(self):
-        if self.logfp:
-            self.LOG("matching men and works\n")
-        M = []                          # work -> man
-        for shot in self.shots_todo:
-            # check if work is executable meeting resource constraints
-            if self.logfp:
-                self.LOG("finding match for shot '%s'\n" % shot)
-            if self.check_resources(shot) == 0:
-                if self.logfp:
-                    self.LOG("hold due to insufficient resources\n")
-                continue
-            if shot.run.man:
-                # local or second or later shots
-                if self.logfp:
-                    self.LOG("using %s\n" % shot.run.man.name)
-                self.commit_resources(shot)
-                M.append((shot, shot.run.man))
-            else:
-                # look for man who can execute it
-                for man in self.free_men:
-                    if self.logfp:
-                        self.LOG("assign %s\n" % man.name)
-                    self.commit_resources(shot)
-                    self.free_men.remove(man)
-                    shot.run.man = man # assign man to run
-                    man.running.append(shot.run)
-                    man.runs.append(shot.run)
-                    M.append((shot, man))
-                    break           # found match for man
-        for shot,man in M:
-            self.shots_todo.remove(shot)
-        return M
-                    
     def find_matches(self):
+        fifo = 1
         if self.logfp:
             self.LOG("matching men and works\n")
         M = []                          # work -> man
         new_shots_todo = []
         while len(self.shots_todo) > 0:
-            shot = self.shots_todo.pop(-1)
+            if fifo:
+                shot = self.shots_todo.pop(0)
+            else:
+                shot = self.shots_todo.pop(-1)
             # check if work is executable meeting resource constraints
+            # log becomes too large
+            # self.LOG("finding match for shot '%s'\n" % shot)
             if self.logfp:
-                self.LOG("finding match for shot '%s'\n" % shot)
+                if dbg>=2:
+                    self.LOG("finding match for shot '%s'\n" % shot)
             if self.check_resources(shot) == 0:
                 if self.logfp:
-                    self.LOG("hold due to insufficient resources\n")
+                    if dbg>=2:
+                        self.LOG("hold due to insufficient resources\n")
                 new_shots_todo.append(shot)
                 continue
             if shot.run.man:
                 # local or second or later shots
                 if self.logfp:
-                    self.LOG("using %s\n" % shot.run.man.name)
+		    self.LOG(("shot '%s' continues using %s\n"
+                              % (shot, shot.run.man.name)))
                 self.commit_resources(shot)
                 M.append((shot, shot.run.man))
             else:
                 # look for man who can execute it
                 found = 0
-                for man in self.free_men:
+                if shot.run.work.local:
+                    found = 1
+                    man = self.local_man
+                else:
+                    for man in self.free_men:
+                        self.free_men.remove(man)
+                        found = 1
+                        break           # found match for man
+                if found:
                     if self.logfp:
-                        self.LOG("assign %s\n" % man.name)
+                        self.LOG(("shot '%s' assignged %s\n"
+                                  % (shot, man.name)))
                     self.commit_resources(shot)
-                    self.free_men.remove(man)
-                    shot.run.man = man # assign man to run
+                    shot.run.man = man  # assign man to run
                     man.running.append(shot.run)
                     man.runs.append(shot.run)
                     M.append((shot, man))
-                    found = 1
-                    break           # found match for man
-                if found == 0:
+                else:
                     new_shots_todo.append(shot)
-        new_shots_todo.reverse()
+        # fifo or lifo?
+        if fifo:
+            pass
+        else:
+            new_shots_todo.reverse()
         self.shots_todo = new_shots_todo
         return M
                     
@@ -1990,9 +1975,9 @@ plot '-' with boxes
             t > self.next_record_time_2):
             self.record_state(finished)
             self.last_record_time = self.cur_time()
-            time_to_next_1 = max((t - self.last_record_time) * 10.0,
+            time_to_next_1 = max((t - self.last_record_time) * 50.0,
                                  self.opts.update_interval_1)
-            time_to_next_2 = max((t - self.last_record_time) * 10.0,
+            time_to_next_2 = max((t - self.last_record_time) * 50.0,
                                  self.opts.update_interval_2)
             if self.last_record_time < 10.0:
                 # heuristics to update more eagerly in the beginning
