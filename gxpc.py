@@ -4429,6 +4429,12 @@ Options:
   --children_hard_limit N
     control the shape of the explore tree. if this value is N, gxpc
     keeps the number of children of a single host no more than N, in any event.
+  --target_prefix PATH
+    specify the directory in remote hosts in which gxp files are installed.
+    default is ~/.gxp_tmp, meaning a temporary directory like
+    ~/.gxp_tmp/RANDOM_NAME/gxp3 will be created and all files are installed
+    there. automatically created if it does not exist. use e.g., /tmp/YOUR_NAME
+    or something if you have ridicuously slow home directory.
   --verbosity N (0 <= N <= 2)
     set verbosity level (the larger the more verbose)
   --set_default
