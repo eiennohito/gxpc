@@ -1007,6 +1007,7 @@ class explore_cmd_opts(opt.cmd_opts):
         self.verbosity = ("i", None) # default leave it to inst_local.py
         self.timeout = ("f", None)   # ditto
         self.install_timeout = ("f", None) # ditto
+        self.target_prefix = ("s", None)
         self.children_soft_limit = ("i", 10)
         self.children_hard_limit = ("i", 40)
         self.min_wait = ("i", 5)
@@ -1961,9 +1962,9 @@ class cmd_interpreter:
                 elif daemon_addr is not None:
                     addrs.append((gupid, daemon_addr))
             if len(addrs) > 0:
-                if dot_displayed: Es(" OK\n")
+                if opts.verbosity >= 2 and dot_displayed: Es(" OK\n")
                 return addrs
-            if 1 or sleep_t > 1.0:
+            if opts.verbosity >= 2 and sleep_t > 1.0:
                 dot_displayed = 1
                 Es(".")
                 Ef()
@@ -4205,6 +4206,8 @@ See Also:
             opt_args.append("--hello_timeout %f" % opts.timeout)
         if opts.install_timeout is not None:
             opt_args.append("--install_timeout %f" % opts.install_timeout)
+        if opts.target_prefix is not None:
+            opt_args.append("--target_prefix %s" % opts.target_prefix)
         if opts.verbosity is not None:
             opt_args.append("--dbg %d" % opts.verbosity)
         opt_args = string.join(opt_args, " ")

@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import errno,os,random,re,select,socket,string,sys,time
+import opt
 
 dbg=1
 
@@ -173,6 +174,30 @@ class ifconfig:
         return []
 
     
+class bcp_cmd_opts(opt.cmd_opts):
+    def __init__(self):
+        #             (type, default)
+        # types supported
+        #   s : string
+        #   i : int
+        #   f : float
+        #   l : list of strings
+        #   None : flag
+	opt.cmd_opts.__init__(self)
+        # log file
+        self.min_pkt_sz = ("i", 10000)
+        self.max_pkt_sz = ("i", 100000)
+        self.show_progress = ("s", "^$")
+        self.verbosity = ("i", 1)
+        self.help = (None, 0)
+
+    def postcheck(self):
+        if self.max_pkt_sz < self.min_pkt_sz:
+            if dbg>=3:
+                Es(("bcp : warning : max_pkt_sz (%d) < min_pkt_sz (%d),"
+                    " fixed to %d\n" % (self.max_pkt_sz, self.min_pkt_sz,
+                                        self.min_pkt_sz)))
+            self.max_pkt_sz = self.min_pkt_sz
 
 class ring_connector:
     def up(self, s):
@@ -238,7 +263,7 @@ class ring_connector:
         self.rnd = max_rnd
         
         if self.exec_idx == 0:
-            if dbg>=2:
+            if dbg>=3:
                 Es("src_idx = %d\n" % self.src_idx)
                 Es("src_file = %s\n" % self.src_file)
                 Es("src_sz = %s\n" % self.src_sz)
@@ -278,7 +303,7 @@ class ring_connector:
         self.dst_file = dst_file
         self.dst_dir = dst_dir
         if self.exec_idx == 0:
-            if dbg>=2:
+            if dbg>=3:
                 Es("dst_file = %s\n" % dst_file)
                 Es("dst_dir = %s\n" % dst_dir)
 
@@ -318,14 +343,14 @@ class ring_connector:
         # each host (more precisely on each shared
         # directory)
         # wfd = -1
-        if dbg>=2:
+        if dbg>=3:
             Es("%s : attempt to create %s\n" % (self.gxp_host, name))
         try:
             # wfd = os.open(name, os.O_CREAT|os.O_EXCL)
             os.mkdir(name)
         except OSError,e:
             if e.args[0] == errno.EEXIST:
-                if dbg>=2:
+                if dbg>=3:
                     Es("%s : %s exists %s\n" % \
                        (self.gxp_host, name, e.args))
                 return None
@@ -339,7 +364,7 @@ class ring_connector:
                 return None
             else:
                 raise
-        if dbg>=2:
+        if dbg>=3:
             Es("%s : created %s\n" % (self.gxp_host, name))
         # os.close(wfd)
         return name
@@ -415,7 +440,7 @@ class ring_connector:
         self.n_receivers = n_receivers
         self.players = players
         if dst_lock is not None:
-            if dbg>=2:
+            if dbg>=3:
                 Es("%s : remove %s\n" % (self.host, dst_lock))
             # os.remove(dst_lock)
             os.rmdir(dst_lock)
@@ -446,7 +471,7 @@ class ring_connector:
 
     def connect_to(self, host, ip, port):
         rs = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        if dbg>=2:
+        if dbg>=3:
             Es("%s : connect to %s %s:%d\n" % (self.host, host, ip, port))
         rs.setblocking(0)
         err = rs.connect_ex((ip, port))
@@ -458,14 +483,14 @@ class ring_connector:
                (self.host, host, ip, port))
             return -1
         rs.setblocking(1)
-        if dbg>=2:
+        if dbg>=3:
             Es("%s : connected to %s %s:%d\n" % (self.host, host, ip, port))
         self.enlarge_buf(rs, socket.SOL_SOCKET,
                          socket.SO_SNDBUF)
         return rs
         
     def accept(self):
-        if dbg>=2:
+        if dbg>=3:
             Es("%s : accept\n" % self.host)
         ls,_ = self.ss.accept()
         self.ss.close()
@@ -511,11 +536,14 @@ class ring_connector:
         self.final_rank = (self.src_rank + n - 1) % n
         # my right neighbor
         right_host,right_ip,right_port,_,_ = players_list[(self.rank + 1) % n]
+        left_host,left_ip,left_port,_,_ = players_list[(self.rank - 1) % n]
 
         # connect to my right neighbor
         self.right_so = self.connect_to(right_host, right_ip, right_port)
+        self.right_host = right_host
         # accept connection from my left neighbor
         self.left_so = self.accept()
+        self.left_host = left_host
         return 0
 
     def test_ring(self):
@@ -523,7 +551,7 @@ class ring_connector:
         transfer one byte data from src to dst and back to src
         """
         if self.rank == self.src_rank:
-            if dbg>=2:
+            if dbg>=3:
                 Es("%s : send a token to test ring\n" \
                    % (self.host))
             self.right_so.send("a")
@@ -531,15 +559,15 @@ class ring_connector:
             if x != "a":
                 Es("%s : could not begin transfer\n" % self.host)
                 return -1
-            if dbg>=2:
+            if dbg>=3:
                 Es("%s : received a token back. ring OK\n" \
                    % (self.host))
         else:
-            if dbg>=2:
+            if dbg>=3:
                 Es("%s : wait for a token\n" % (self.host))
             x = self.left_so.recv(1)
-            if dbg>=2:
-                Es("%s : received a token\n" % (self.host))
+            if dbg>=3:
+                Es("%s : last process received a token\n" % (self.host))
             self.right_so.send(x)
         return 0
         
@@ -558,7 +586,24 @@ class ring_connector:
         if self.decide_roles(src_spec, dst_spec) == -1: return -1
         if self.make_ring() == -1: return -1
         if self.test_ring() == -1: return -1
+        if re.match(self.opts.show_progress, self.host) or (dbg>=2 and self.rank == self.final_rank):
+            self.show_progress = 1
+        else:
+            self.show_progress = 0
+        
         return 0                        # OK
+
+    def recv_bytes(self, so, min_sz, max_sz):
+        X = []
+        l = 0
+        while 1:
+            x = so.recv(max_sz - l)
+            if x == "": break
+            X.append(x)
+            l = l + len(x)
+            if l >= min_sz: break
+        return string.join(X, "")
+
 
     def transfer(self):
         """
@@ -578,45 +623,79 @@ class ring_connector:
             up_fp = None
             down_fp = open(self.dst_file, "wb")
 
-        if dbg>=2:
+        if dbg>=3:
             if down_fp is not None:
                 Es("%s : writes to %s\n" \
                    % (self.host, self.dst_file))
 
+        T0 = time.time()                # start time
+        MB = 1024.0 * 1024.0
         read = 0
         written = 0
-        pkt_sz = 1000000
+        min_pkt_sz = self.opts.min_pkt_sz
+        max_pkt_sz = self.opts.max_pkt_sz
         while 1:
+            t0 = time.time()
             if up_fp is not None:
-                X = up_fp.read(pkt_sz)
+                X = up_fp.read(max_pkt_sz)
             else:
-                X = self.left_so.recv(pkt_sz)
+                X = self.recv_bytes(self.left_so, min_pkt_sz, max_pkt_sz)
                 # X = os.read(self.left_fd, 10000)
+            t1 = time.time()
             if X == "": break
+            len_X = len(X)
             read = read + len(X)
+
+            if self.show_progress:
+                if up_fp is not None:
+                    Es(("%s : read %d bytes in %.6f MB/s (cummulative : %d bytes in %.6f MB/s)\n"
+                        % (self.host, len(X), len_X / MB / (t1 - t0),
+                           read, read / MB / (t1 - T0))))
+                else:
+                    Es(("%s -> %s : received %d bytes in %.6f MB/s (cummulative : %d bytes in %.6f MB/s)\n"
+                        % (self.left_host, self.host, len(X), len_X / MB / (t1 - t0),
+                           read, read / MB / (t1 - T0))))
+
+            t0 = time.time()
             while X:
                 if self.rank == self.final_rank:
                     l = len(X)
                 else:
                     # l = os.write(self.right_fd, X)
-                    l = self.right_so.send(X)
+                    if 1:
+                        self.right_so.sendall(X)
+                        l = len(X)
+                    else:
+                        l = self.right_so.send(X)
                 if down_fp is not None:
                     written = written + l
                     down_fp.write(X[:l])
                 X = X[l:]
+            t1 = time.time()
+            if self.show_progress:
+                if self.rank != self.final_rank:
+                    Es(("%s -> %s : sent %d bytes in %.6f MB/sec (cummulative : %d bytes in %.6f MB/s)\n"
+                        % (self.host, self.right_host, len_X, len_X / MB / (t1 - t0),
+                           written, written / MB / (t1 - T0))))
+                elif down_fp is not None:
+                    Es(("%s : written %d bytes in %.6f MB/sec (cummulative : %d bytes in %.6f MB/s)\n"
+                        % (self.host, len_X, len_X / MB / (t1 - t0),
+                           written, written / MB / (t1 - T0))))
+                
+            
         if down_fp is not None and written != self.src_sz:
             Es(("%s: bcp: error: written sz (%d) did not "
                 "match expected sz (%d)! the file will be "
                 "incorrect\n" % (self.host, written, self.src_sz)))
         if self.rank == self.final_rank:
             if dbg>=1:
-                Es("%s : last proc finished\n" % self.host)
-        if dbg>=2:
+                Es("%s : last process finished\n" % self.host)
+        if dbg>=3:
             Es("%s : close socket to right neibhbor\n" % self.host)
         self.right_so.close()
-        if dbg>=2:
+        if dbg>=3:
             Es("%s : OK\n" % self.host)
-        if dbg>=2:
+        if dbg>=3:
             Es(("%s : wait for socket from left neibhbor to " \
                 "be closed\n" % self.host))
         c = self.left_so.recv(1)
@@ -624,7 +703,7 @@ class ring_connector:
             Es("%s: bcp: error: socket not cleanly closed\n" \
                % self.host)
             return -1
-        if dbg>=2:
+        if dbg>=3:
             Es("%s : OK\n" % self.host)
         return 0
 
@@ -711,18 +790,24 @@ firewall between hosts for now.
         
     def main(self, argv):
         # bcp src [dest]
-        if len(argv) == 0:
+        global dbg
+        opts = bcp_cmd_opts()
+        if opts.parse(argv) == -1: return 1
+        if len(opts.args) == 0:
             self.usage()
             return 1
-        elif len(argv) == 1 and argv[0] == "--help":
+        elif opts.help:
             self.usage()
             return 1
-        elif len(argv) == 1:
-            src_spec = argv[0]
+        elif len(opts.args) == 1:
+            src_spec = opts.args[0]
             dst_spec = src_spec
         else:
-            src_spec = argv[0]
-            dst_spec = argv[1]
+            src_spec = opts.args[0]
+            dst_spec = opts.args[1]
+        self.opts = opts
+        dbg = opts.verbosity
+
         t0 = time.time()
         if self.setup(src_spec, dst_spec) == -1: return 1
         t1 = time.time()
