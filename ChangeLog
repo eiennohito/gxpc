@@ -25,4 +25,18 @@
 
 	* xmake (xmake_server.mk_lnk) : fixed a bug that links to output
 	files are broken when --state_dir is given.
+
+2008-09-02 Taura
+
+	* gxpc.py (cmd_interpreter.mk_installer_cmd) :
+	explore now supports --target_prefix option that specifies
+	the directory of remote hosts under which gxp will be automatically
+	copied.
+
+	* xmake (xmake_server.find_matches) : 
+	fixed the phenomena that xmake.log sometimes grows very large.
+
+	* bcp (ring_connector.transfer) :
+	bcp supports several options for performance tuning/investigation.
+
 	
