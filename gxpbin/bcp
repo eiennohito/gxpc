@@ -710,7 +710,7 @@ class ring_connector:
     def usage(self):
         Es(r"""usage:
 
-  gxpc mw bcp SOURCE [DEST]
+  gxpc mw bcp [OPTIONS] SOURCE [DEST]
 
 Copy SOURCE on a host to DEST on all hosts.
 
@@ -751,6 +751,23 @@ NOTE 2: The process chosen as the source checks if the destination
 file is the same as the source, and if so, it won't write to it.
 Other processes, if elected as a writer, will overwrite the
 destination file.
+
+Options:
+  --min_pkt_sz (default: 10000)
+    the minimum size each host receives before it relays the data
+    to the next host. each host essentially repeats receiving this
+    amount of data and then relays it to the next. in slow networks,
+    data tend to be received in small fragments and this may cause
+    overheads.
+  --max_pkt_sz (default: 100000)
+    the maximum size each host receives in a single call to recv
+    system call. it limits the memory size.
+  --show_progress (default: "^$")
+    regular expression specifying which hosts should print their
+    progress. if verbosiy (below) is >=2, the last process in the
+    transfer pipeline will show the progress
+  --verbosity (default: 1)
+    specify how verbose it is
 
 Examples:
 
