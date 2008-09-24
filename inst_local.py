@@ -44,7 +44,7 @@ there. Here is how it basically works.
 # List of space-separated strings that are used as python interpreters
 # I never exprienced other than this.
 #
-default_pythons = "python"
+default_python = "python"
 
 #
 # Overall, we first try to run
@@ -173,7 +173,7 @@ class inst_options(opt.cmd_opts):
         # reasonable default values above
         # ---------------- 
         # (1) list of possible python paths 
-        self.pythons = ("s", default_pythons)
+        self.python = ("s*", []) # if empty, use [ default_python ]
         # (2) the command which is run to test if things have 
         # already been installed, so there is no need to install
         self.first_script = ("s", default_first_script)
@@ -196,6 +196,9 @@ class inst_options(opt.cmd_opts):
         self.hello_timeout = ("f", default_hello_timeout)
         self.install_timeout = ("f", default_install_timeout)
         self.dbg = ("i", 0)
+    def postcheck(self):
+        if len(self.python) == 0:
+            self.python.append(default_python)
 
 # -----------
 # installer
@@ -400,7 +403,7 @@ class installer(expectd.expectd):
         IO_ERROR = ioman.ch_event.IO_ERROR
         TIMEOUT  = ioman.ch_event.TIMEOUT
         #
-        pythons = string.split(string.strip(O.pythons))
+        pythons = O.python
         # -----------
         # check if the remote system is ready without installation
         if self.remote_installed():
@@ -445,7 +448,7 @@ class installer(expectd.expectd):
         # a command like
         # 'ssh python -c ...; /usr/local/bin/python -c ...'
         checks = []
-        check_py = (r"""%s -c 'import sys; """
+        check_py = (r"""exec %s -c 'import sys; """
                     """print "%s",sys.hexversion'""")
         for p in pythons:
             checks.append(check_py % (p,p))
@@ -521,16 +524,18 @@ class installer(expectd.expectd):
         what is eventually executed is inst_remote.py
         """
         P = []
-        for python in string.split(string.strip(pythons)):
+        for python in pythons:
+            body = ('%s -c "import os; exec(os.read(0, %d));" '
+                    % (python, stub_sz))
             if len(P) == 0:
-                P.append("if ")
+                p = ('if type %s > /dev/null; then %s ;' % (python, body))
             else:
-                P.append(" elif ")
-            p = ("""type %s > /dev/null ; then """
-                 """%s -c "import os; exec(os.read(0, %d));" ;"""
-                 % (python, python, stub_sz))
+                p = ('elif type %s > /dev/null; then %s ;' % (python, body))
             P.append(p)
-        P.append(" fi")
+        if len(P) > 0: 
+            p = (' else echo no python interpreter found "(%s)" 1>&2 ; fi'
+                 % string.join(pythons, ","))
+            P.append(p)
         return ("/bin/sh -c '%s'" % string.join(P, ""))
 
     def install2(self, O):
@@ -541,7 +546,7 @@ class installer(expectd.expectd):
         #
         code = "INSTALL%09d" % random.randint(0, 999999999)
         stub_sz,prog = self.mk_program2(O, code)
-        python_cmd = self.mk_python_cmdline(O.pythons, stub_sz)
+        python_cmd = self.mk_python_cmdline(O.python, stub_sz)
         sub = self.subst_cmd3(python_cmd, O.rsh)
         if dbg>=2: self.Em("Install and exec %s\n" % sub)
         self.spawn(sub)

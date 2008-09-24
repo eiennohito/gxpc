@@ -37,16 +37,21 @@ def safe_mkdir(directory, mode):
             os.mkdir(directory, mode)
     except OSError,e:
         if e.args[0] != errno.EEXIST: raise
+    return 0
 
 def safe_makedirs(directory, mode):
     """
     create directory and its ancestors as necessary
     """
+    if os.path.exists(directory): 
+        if not os.path.isdir(directory):
+            os.write(2, "%s exists but not directory\n" % prefix)
+        return -1
     head,tail = os.path.split(directory)
     if head != directory:
-        # this really talks about anythin but root or ''
-        safe_makedirs(head, mode)
-        safe_mkdir(directory, mode)
+        # this really talks about anything but root or ''
+        if safe_makedirs(head, mode) == -1: return -1
+        return safe_mkdir(directory, mode)
 
 def mk_tmp_dir(root_directory, root_mode=None, mode=None):
     """
@@ -112,7 +117,8 @@ def install_file(path, type, mode, base64_content):
             fd = os.open(path, flag)
         else:
             fd = os.open(path, flag, mode)
-        os.write(fd, base64.decodestring(base64_content))
+        if base64_content is not None:
+            os.write(fd, base64.decodestring(base64_content))
         os.close(fd)
     elif type == "FIFO":
         if mode is None:
@@ -141,7 +147,7 @@ def install_files(prefix, gxp_top, data):
     # make a temporary directory
     tmp_dir = mk_tmp_dir(prefix)
     flag = (("%s/REMOTE_INSTALLED" % gxp_top), 
-            "REG", 0644, base64.encodestring(""))
+            "REG", 0644, None)
     for rel_path,type,mode,base64_content in data + [ flag ]:
         path = os.path.join(tmp_dir, rel_path)
         install_file(path, type, mode, base64_content)

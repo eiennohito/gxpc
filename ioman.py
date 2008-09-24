@@ -205,28 +205,36 @@ class portability_class:
         self.set_fcntl_constants()
 
     def set_fcntl_constants(self):
+        self.F_GETFL = fcntl.F_GETFL
+        self.F_SETFL = fcntl.F_SETFL
+        self.F_GETFD = fcntl.F_GETFD
+        self.F_SETFD = fcntl.F_SETFD
         ok = 0
-        if fcntl.__dict__.has_key("F_SETFL"):
-            self.F_GETFL = fcntl.F_GETFL
-            self.F_SETFL = fcntl.F_SETFL
-            self.F_GETFD = fcntl.F_GETFD
-            self.F_SETFD = fcntl.F_SETFD
+        if fcntl.__dict__.has_key("FD_CLOEXEC"):
             self.FD_CLOEXEC = fcntl.FD_CLOEXEC
             ok = 1
-        else:
+        if ok == 0:
             try:
+                FCNTL_ok = 0
+                import warnings
+                warnings.filterwarnings("ignore", "", DeprecationWarning)
                 import FCNTL
-                self.F_GETFL = FCNTL.F_GETFL
-                self.F_SETFL = FCNTL.F_SETFL
-                self.F_GETFD = FCNTL.F_GETFD
-                self.F_SETFD = FCNTL.F_SETFD
-                self.FD_CLOEXEC = FCNTL.FD_CLOEXEC
-                ok = 1
+                FCNTL_ok = 1
+                warnings.resetwarnings()
             except ImportError:
                 pass
+            if FCNTL_ok and FCNTL.__dict__.has_key("FD_CLOEXEC"):
+                self.FD_CLOEXEC = FCNTL.FD_CLOEXEC
+                ok = 1
         if ok == 0:
-            LOG("This platform provides no ways to make "
-                "fd non-blocking. abort\n")
+            # assume FD_CLOEXEC = 1. see 
+            # http://mail.python.org/pipermail/python-bugs-list/2001-December/009360.html
+            self.FD_CLOEXEC = 1
+            ok = 1
+
+        if ok == 0:
+            LOG("This platform provides no ways to set "
+                "close-on-exec flag. abort\n")
             os._exit(1)
 
     def set_blocking_fd(self, fd, blocking):

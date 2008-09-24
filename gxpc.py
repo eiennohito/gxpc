@@ -1003,6 +1003,7 @@ class explore_cmd_opts(opt.cmd_opts):
         self.targetfile = ("s*", [])
         self.targetcmd = ("s*", [])
         self.subst_arg = ("s*", [])
+        self.python = ("s*", [])
 
         self.verbosity = ("i", None) # default leave it to inst_local.py
         self.timeout = ("f", None)   # ditto
@@ -4210,6 +4211,8 @@ See Also:
             opt_args.append("--target_prefix %s" % opts.target_prefix)
         if opts.verbosity is not None:
             opt_args.append("--dbg %d" % opts.verbosity)
+        for python in opts.python:
+            opt_args.append("--python %s" % python)
         opt_args = string.join(opt_args, " ")
 
         # build --rsh xxx --rsh xxx ...
