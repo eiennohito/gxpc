@@ -44,9 +44,9 @@ def safe_makedirs(directory, mode):
     create directory and its ancestors as necessary
     """
     if os.path.exists(directory): 
-        if not os.path.isdir(directory):
-            os.write(2, "%s exists but not directory\n" % prefix)
-        return -1
+        if os.path.isdir(directory): return 0
+	os.write(2, "%s exists but not directory\n" % prefix)
+    	return -1
     head,tail = os.path.split(directory)
     if head != directory:
         # this really talks about anything but root or ''
@@ -58,7 +58,8 @@ def mk_tmp_dir(root_directory, root_mode=None, mode=None):
     create root_directory if not exist, and 
     make a unique temporary directory there.
     """
-    safe_makedirs(root_directory, root_mode)
+    if safe_makedirs(root_directory, root_mode) == -1:
+        bomb("could not make tmp directory")
     for i in range(0, 10):
         t = int(math.floor(time.time() * 1000000.0) % 100000000.0)
         seq = random.randint(0, 999999)

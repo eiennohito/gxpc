@@ -1527,6 +1527,7 @@ class cmd_interpreter:
 
     def get_gxpc_environment(self):
         gxp_dir = self.get_gxp_dir()
+        prefix,gxp_top = os.path.split(gxp_dir)
         if gxp_dir is None: return None
         gxpbin_dir = os.path.join(gxp_dir, "gxpbin")
         path = os.environ.get("PATH", "")
@@ -1536,6 +1537,7 @@ class cmd_interpreter:
         pypath = self.push_path(pypath, gxp_dir)
         pypath = self.push_path(pypath, gxpbin_dir)
         return gxpc_environment({ "GXP_DIR"      : gxp_dir,
+                                  "GXP_TOP"      : gxp_top,
                                   "GXP_GUPID"    : self.gupid,
                                   "PATH"         : path,
                                   "PYTHONPATH"   : pypath })
@@ -4005,8 +4007,9 @@ Use use command to specify how (e.g., 'gxpc use ssh %s %s').
             Ws(r"""Set environment variables GXP_DIR/GXP_GUPID
 to run the above command. e.g., 
   export GXP_DIR=%s
+  export GXP_TOP=%s
   export GXP_GUPID=gupid
-""" % os.environ["GXP_DIR"])
+""" % (os.environ["GXP_DIR"], os.environ["GXP_TOP"]))
         return 0
         
 
