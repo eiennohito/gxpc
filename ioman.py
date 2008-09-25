@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-#!/usr/local/bin/python
-#!/usr/bin/python
 # Copyright (c) 2005 by Kenjiro Taura. All rights reserved.
 #
 # THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY 
@@ -187,7 +184,10 @@ def mk_non_interruptible_socket(af, type):
 
 class non_interruptible_select:
     def select(self, R, W, E, T=None):
-        return apply_no_intr(select.select, (R, W, E, T))
+	if T is None:
+            return apply_no_intr(select.select, (R, W, E))
+        else:
+            return apply_no_intr(select.select, (R, W, E, T))
         
 nointr_select = non_interruptible_select()
 
@@ -2419,8 +2419,9 @@ class ioman:
                         % (len(R1), len(W1)))
         else:
             if dbg>=2:
-                LOG("trying to select %d rchans %d wchans [%s]\n" \
+                LOG("trying to select %d rchans %d wchans [%r]\n" \
                     % (len(R), len(W), timeout))
+            assert timeout is None or type(timeout) is types.FloatType, (timeout, type(timeout))
             R1,W1,_ = nointr_select.select(R, W, [], timeout)
             if dbg>=2:
                 LOG("returned with %d reads %d writes\n" % (len(R1), len(W1)))

@@ -40,7 +40,16 @@ import os,sys
 if len(sys.argv) == 2 and sys.argv[1] == "prompt":
     os._exit(prompt())
     
-import cPickle,cStringIO,errno,fcntl,glob,random,re
+def import_safe_pickler():
+    import cPickle,pickle
+    try:
+        cPickle.dumps(None)
+        return cPickle
+    except:
+        return pickle
+
+pickler = import_safe_pickler()
+import cStringIO,errno,fcntl,glob,random,re
 import select,signal,socket,stat # shlex
 import string,time,threading,types,copy
 import opt,gxpm,gxpd
@@ -623,7 +632,7 @@ class session_state:
                      (self.last_ok_count,
                       self.cur_exec_count,
                       self.peer_tree_count))
-            cPickle.dump(self, wp)
+            pickler.dump(self, wp)
             wp.close()
             os.chmod(rand_file, 0600)
             os.rename(rand_file, self.filename)
@@ -1366,7 +1375,7 @@ class cmd_interpreter:
         session = None
         if full:
             try:
-                session = cPickle.load(fp)
+                session = pickler.load(fp)
             except cPickle.UnpicklingError,e:
                 Es("%s\n" % (e.args,))
                 fp.close()
@@ -1982,8 +1991,8 @@ class cmd_interpreter:
             gxpd_py = gxpd.get_this_file()
             os.setpgrp()
             os.close(0)
-            os.execvp(gxpd_py,
-                      [ gxpd_py,
+            os.execvp(sys.executable, 
+                      [ sys.executable, gxpd_py,
                         "--created_explicitly", 
                         ("%d" % create_daemon_explicit),
                         "--no_stdin",

@@ -383,6 +383,9 @@ class installer(expectd.expectd):
         inst_remote_and_main = ("%s\n%s\n" % (inst_remote, main))
         prog = ("%s%10d%s" % (inst_remote_stub,
                               len(inst_remote_and_main), inst_remote_and_main))
+	# wp = open("progprog", "wb")
+	# wp.write(prog)
+	# wp.close()
         return len(inst_remote_stub),prog
 
     def expect_hello(self, hello, timeout, forward_err):

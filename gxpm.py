@@ -14,13 +14,21 @@
 # copyright notice.
 #
 
-import cPickle
+def import_safe_pickler():
+    import cPickle,pickle
+    try:
+        cPickle.dumps(None)
+        return cPickle
+    except:
+        return pickle
+
+pickler = import_safe_pickler()
 
 def unparse(m):
-    return cPickle.dumps(m)
+    return pickler.dumps(m)
 
 def parse(msg):
-    return cPickle.loads(msg)
+    return pickler.loads(msg)
 
 class exec_env:
     def __init__(self):

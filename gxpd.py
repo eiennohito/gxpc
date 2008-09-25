@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-#!/usr/local/bin/python
-#!/usr/bin/python
 # Copyright (c) 2008 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2007 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2006 by Kenjiro Taura. All rights reserved.
@@ -2138,6 +2135,7 @@ class gxpd(ioman.ioman):
         if "HOME" in os.environ:
             gxp_tmp = os.path.join(os.environ["HOME"], ".gxp_tmp")
             allowed.append(gxp_tmp)
+            allowed.append(os.path.realpath(gxp_tmp))
 
         for top in self.remove_on_exit:
             if self.allowed_to_remove(allowed, top) == 0:

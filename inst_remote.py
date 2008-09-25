@@ -162,7 +162,8 @@ def check_install_exec(first_script, first_args, second_script, second_args,
             # say installation finished
             os.write(1, ("%s OK\n" % code))
             # and exec
-            os.execvp(first_script, [ first_script ] + first_args)
+            # os.execvp(first_script, [ first_script ] + first_args)
+            os.execvp(sys.executable, [ sys.executable, first_script ] + first_args)
         else:
             # say I want to data
             os.write(1, ("%s WD\n" % code))
@@ -173,7 +174,7 @@ def check_install_exec(first_script, first_args, second_script, second_args,
     # say installation finished
     os.write(1, ("%s OK\n" % code))
     script = second_script % { "inst_dir" : inst_dir }
-    os.execvp(script, [ script ] + second_args)
+    os.execvp(sys.executable, [ sys.executable, script ] + second_args)
 
 
 # inst_local.py is supposed to append a string that invokes either
