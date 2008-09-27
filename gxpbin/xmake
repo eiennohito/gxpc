@@ -1590,6 +1590,7 @@ td.man_working {
 <a href="#">page top</a><br><br>
 <table class="basic_info">
 <tr><td>command line</td><td>%s</td></tr>
+<tr><td>master hostname</td><td>%s</td></tr>
 <tr><td>pid</td><td>%s</td></tr>
 <tr><td>start time</td><td>%s</td></tr>
 <tr><td>elapsed time (sec)</td><td>%.2f</td></tr>
@@ -1606,6 +1607,7 @@ td.man_working {
 <tr><td>gxpc fd</td><td>%s</td></tr>
 </table>
 ''' % (self.sys_argv,
+       self.hostname,
        os.getpid(), 
        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.start_t)),
        self.cur_time(),
@@ -2159,6 +2161,7 @@ plot '-' with boxes
         self.men[local_man_name] = self.local_man
         self.free_men = []
         self.interrupted = 0
+        self.hostname = socket.gethostname()
         self.periodic(0)
         while 1:
             try:
