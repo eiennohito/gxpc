@@ -1,16 +1,22 @@
 #!/bin/bash
 
+if [ ! $# -eq 1 ]; then
+  echo "Usage: $0 YOUR_SF_ACCOUNT"
+  exit 1
+fi
+
+USER=$1
 VERSION=03
 DIR=gxp-3.${VERSION}
 
 cvs up
 mkdir -p releases
 cd releases
-cvs -d :ext:ttaauu@gxp.cvs.sourceforge.net:/cvsroot/gxp export -r HEAD gxp3
+cvs -d :ext:${USER}@gxp.cvs.sourceforge.net:/cvsroot/gxp export -r HEAD gxp3
 mv gxp3 ${DIR}
 tar cvf ${DIR}.tar ${DIR}
 bzip2 ${DIR}.tar
-#rsync -avP -e ssh ${DIR}.tar.bz2 ttaauu@frs.sourceforge.net:uploads/
+rsync -avP -e ssh ${DIR}.tar.bz2 ${USER}@frs.sourceforge.net:uploads/
 cd ..
 
 ls releases
