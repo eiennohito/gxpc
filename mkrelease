@@ -23,3 +23,10 @@ rsync -avP -e ssh ${DIR}.tar.bz2 ${USER}@frs.sourceforge.net:uploads/
 cd ..
 
 ls releases
+
+cat <<EOF 
+now login sourceforge from https://sourceforge.net/account/login.php
+and https://sourceforge.net/project/admin/editreleases.php?package_id=282790&group_id=233088
+(if you are lost, login goto Admin -> File Release)
+EOF
+
