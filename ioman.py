@@ -1555,8 +1555,9 @@ class pipe_constructor:
         should_be_implemented_in_subclass()
     
 class pipe_constructor_pipe(pipe_constructor):
-    def __init__(self, bufsz):
+    def init(self, bufsz):
         self.r,self.w = os.pipe()
+        return 0,""             # OK
 
     def child_file_numbers(self, usage):
         # usage : list of (r/w, file_descriptor_number)
@@ -1635,13 +1636,21 @@ class pipe_constructor_sockpair(pipe_constructor):
     def get_user_name(self):
         return os.environ.get("USER", "unknown")
         
-    def __init__(self, bufsz):
+    def init(self, bufsz):
         sa = mk_non_interruptible_socket(socket.AF_UNIX,
                                          socket.SOCK_STREAM)
         name = "/tmp/%s_%d_%d_%d" \
                % (self.get_user_name(), os.getpid(), sa.fileno(),
                   random.randint(0, 1000000))
-        sa.bind(name)
+        try:
+            sa.bind(name)
+        except socket.error,e:
+            # /tmp not writable
+            if e.args[0] == errno.ENOENT or e.args[0] == errno.EACCES:
+                msg = ("could not create a socket %s %s" % (name, e))
+                return -1,msg
+            else:
+                raise
         sa.listen(1)
         w = mk_non_interruptible_socket(socket.AF_UNIX,
                                          socket.SOCK_STREAM)
@@ -1659,6 +1668,7 @@ class pipe_constructor_sockpair(pipe_constructor):
             self.safe_setsockopt(r, l, socket.SO_RCVBUF, bufsz)
         self.r = r
         self.w = w
+        return 0,""
 
     def safe_setsockopt(self, so, level, buftype, target_sz):
         ok = so.getsockopt(level, buftype)
@@ -1748,9 +1758,10 @@ class pipe_constructor_sockpair(pipe_constructor):
 class pipe_constructor_pty(pipe_constructor):
     """
     """
-    def __init__(self, bufsz):
+    def init(self, bufsz):
         self.m,self.s = os.openpty()
         self.pch_m = None
+        return 0,""
 
     def child_file_numbers(self, usage):
         return [ self.s ]
@@ -1930,11 +1941,18 @@ class child_process(process_base):
         for pipe_con,parent_use,child_use in self.pipe_desc:
             # close-on-exec flags?
             # create pipes
-            pipe = pipe_con("max")
+            pipe = pipe_con()
+            err,msg = pipe.init("max")
+            if err == -1:
+                LOG("child_process.run : %s\n" % msg)
+                return err,msg
             pipes.append((pipe,parent_use,child_use))
         # pipes.sort()
         pid = os.fork()
-        if pid == -1: return -1
+        if pid == -1: 
+            msg = "could not fork a process"
+            LOG("child_process.run : %s\n" % msg)
+            return -1,msg
         if pid == 0:
             # child:
             # Arrange file descriptors so that for each entry
@@ -1995,7 +2013,7 @@ class child_process(process_base):
                     pch = pipe.parent_mk_primitive_channel(mode, 0)
                     ch = channel_con(pch, self, name)
                 pipe.parent_close(parent_use)
-            return 0
+            return 0,""
 
     def kill(self):
         if dbg>=2:
@@ -2188,17 +2206,18 @@ class ioman:
         
         """
         p = mk_process(cmd, pipe_desc, env, cwd)
-        if p.run() == 0:
+        err,msg = p.run()
+        if err == 0:            # OK
             self.add_process(p)
             for ch in p.w_channels_rev.keys():
                 self.add_wchannel(ch)
             for ch in p.r_channels_rev.keys():
                 self.add_rchannel(ch)
-            return p
+            return p,msg
         else:
-            if dbg>=2:
-                LOG("ioman.spawn_generic failed to run [%s]\n" % cmd)
-            return None
+            if dbg>=0:
+                LOG("ioman.spawn_generic failed to run [%s] %s\n" % (cmd, msg))
+            return None,msg
 
     def sigchld(self, num, frame):
         """

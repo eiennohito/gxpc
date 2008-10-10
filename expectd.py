@@ -39,18 +39,21 @@ class expectd(ioman.ioman):
         """
         if self.proc is not None:
             raise expect_error("Child process already spawned")
-        pipe_desc = [ (ioman.pipe_constructor_sockpair,
+        pipe_desc = [ (ioman.pipe_constructor_pipe,
                        [("r", 1, ioman.rchannel_process)],
                        [("w", 1)]),
-                      (ioman.pipe_constructor_sockpair,
+                      (ioman.pipe_constructor_pipe,
                        [("r", 2, ioman.rchannel_process)],
                        [("w", 2)]),
-                      (ioman.pipe_constructor_sockpair,
+                      (ioman.pipe_constructor_pipe,
                        [("w", 0, ioman.wchannel_process)],
                        [("r", 0)]) ]
-        self.proc = self.spawn_generic(ioman.child_process,
-                                       cmd, pipe_desc, None, None)
-        return self.proc
+        proc,msg = self.spawn_generic(ioman.child_process,
+                                      cmd, pipe_desc, None, None)
+        if proc is None: 
+            raise expect_error("Failed to create child process %s\n" % msg)
+        self.proc = proc
+        return proc
 
     def kill(self):
         return self.proc.kill()

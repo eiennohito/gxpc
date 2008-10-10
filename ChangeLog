@@ -40,3 +40,13 @@
 	bcp supports several options for performance tuning/investigation.
 
 	
+2008-10-10 Taura
+	* expectd.py (expectd.spawn) :
+	it now uses pipe, not socketpair, when creating a child process.
+	this is to avoid failing to create socket in /tmp (in broken /tmp
+	permission).
+
+	* gxpc.py (cmd_interpreter.add_up_pipe):
+	* gxpc.py (cmd_interpreter.add_down_pipe):
+	ditto
+	

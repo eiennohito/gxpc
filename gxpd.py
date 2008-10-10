@@ -536,8 +536,8 @@ class gxpd(ioman.ioman):
                 return 0
             else:
                 assert af is None, af
-                self.Es("%s : invalid listen addr '%s'\n" \
-                        % (self.gupid, listen_arg))
+                Es("%s : invalid listen addr '%s'\n" \
+                       % (self.gupid, listen_arg))
                 return -1
         s = ioman.mk_non_interruptible_socket(af, socket.SOCK_STREAM)
         s.bind(addr)
@@ -1184,7 +1184,11 @@ class gxpd(ioman.ioman):
         # given by --export option of e
         if action.env is not None:
             env.update(action.env)
-        p = self.spawn_generic(process_class, shcmd, pipe_desc, env, cwd)
+        p,msg = self.spawn_generic(process_class, shcmd, pipe_desc, env, cwd)
+        if p is None:
+            m = gxpm.up(self.gupid, task.tid, gxpm.event_info(1, msg))
+            task.forward_up(m, gxpm.unparse(m))
+            return
         # set relative id <-> process
         p.rid = action.rid
         task.processes[p.pid] = p
@@ -2004,8 +2008,8 @@ class gxpd(ioman.ioman):
         # full_path_gxpd_py should be like a/gxp3/gxpd.py
         a,b = os.path.split(full_path_gxpd_py)
         if b != "gxpd.py":
-            self.Es("%s : could not derive GXP_DIR from %s\n" \
-                    % (self.gupid, full_path_gxpd_py))
+            Es("%s : could not derive GXP_DIR from %s\n" \
+                   % (self.gupid, full_path_gxpd_py))
             return None
         return a
 

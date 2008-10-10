@@ -1,12 +1,15 @@
 #!/bin/bash
 
+# convention. increase this number BEFORE you make a release
+# (i.e., if VERSION=04, it means version 3.04 HAS BEEN released)
+VERSION=04
+
 if [ ! $# -eq 1 ]; then
-  echo "Usage: $0 YOUR_SF_ACCOUNT"
+  echo "Usage: $0 YOUR_SOURCEFORGE_ACCOUNT"
   exit 1
 fi
 
 USER=$1
-VERSION=03
 DIR=gxp-3.${VERSION}
 
 cvs up
