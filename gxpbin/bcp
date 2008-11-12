@@ -134,7 +134,7 @@ class ifconfig:
             return []
         return ip_addrs
         
-    def sort_addrs(self, ip_addrs):
+    def sort_addrs_x(self, ip_addrs):
         """
         1. remove duplicates.
         2. remove loopback addrs (127.0.0.1).
@@ -161,16 +161,59 @@ class ifconfig:
             sorted_ip_addrs.append(ip)
         return sorted_ip_addrs
 
-    def get_my_addrs(self, hint=None):
+    def get_addr_prio(self, ip, prio):
+        """
+        prio: list of compiled regexps.
+        return the first index of regexp in prio
+        that match ip. if none match, return the 
+        length of the list
+        """
+        i = 0
+        for regexp in prio:
+            if regexp.match(ip): return i
+            i = i + 1
+        return len(prio)
+
+    def sort_addrs(self, ip_addrs, addrs_prio):
+        """
+        addrs_prio is a list of regexps that will be
+        matched against ip_addrs
+
+        1. remove duplicates.
+        2. remove loopback addrs (127.0.0.1).
+        3. sort IP addresses.
+           global addrs first
+        """
+        a = {}
+        for ip in ip_addrs:
+            a[ip] = 1
+        to_sort = []
+        for ip in a.keys():
+            # p1 : primary priority
+            # p2 : secondary priority (127.0.0.1 has a lower prio)
+            # p3 : ip string itself (to avoid non-determinism)
+            p1 = self.get_addr_prio(ip, addrs_prio)
+            if self.is_local_ip_addr(ip):
+                p2 = 1
+            else:
+                p2 = 0
+            to_sort.append((p1, p2, ip))
+        to_sort.sort()
+        sorted_ip_addrs = []
+        for _,_,ip in to_sort:
+            sorted_ip_addrs.append(ip)
+        return sorted_ip_addrs
+
+    def get_my_addrs(self, addrs_prio, hint=None):
         """
         get my ip address the clients are told to connect to.
         """
         # first by ifconfig
         A = self.get_my_addrs_by_ifconfig(hint=hint)
-        if len(A) > 0: return self.sort_addrs(A)
+        if len(A) > 0: return self.sort_addrs(A, addrs_prio)
         # second by looking up my hostname
         A = self.get_my_addrs_by_lookup(hint=hint)
-        if len(A) > 0: return self.sort_addrs(A)
+        if len(A) > 0: return self.sort_addrs(A, addrs_prio)
         return []
 
     
@@ -189,6 +232,8 @@ class bcp_cmd_opts(opt.cmd_opts):
         self.max_pkt_sz = ("i", 100000)
         self.show_progress = ("s", "^$")
         self.verbosity = ("i", 1)
+        # --connect_prio 10.1,10.2
+        self.connect_prio = ("s", "")
         self.help = (None, 0)
 
     def postcheck(self):
@@ -198,6 +243,20 @@ class bcp_cmd_opts(opt.cmd_opts):
                     " fixed to %d\n" % (self.max_pkt_sz, self.min_pkt_sz,
                                         self.min_pkt_sz)))
             self.max_pkt_sz = self.min_pkt_sz
+        # "10.1,10.2" --> [ re.compile("10.1"), re.compile("10.2") ] 
+        prio = []
+        for addr in string.split(self.connect_prio, ","):
+            addr = string.strip(addr)
+            if addr == "": continue
+            try:
+                c = re.compile(addr)
+            except re.error,e:
+                Es(("bcp : invalid arg to --connect_prio. bad regexp "
+                    "'%s' in %s %s\n" % (addr, self.connect_prio, e.args)))
+                return -1
+            prio.append(c)
+        self.connect_prio = prio
+        return 0
 
 class ring_connector:
     def up(self, s):
@@ -334,7 +393,8 @@ class ring_connector:
         ss.listen(10)
         self.ss = ss
         self.host = socket.gethostname()
-        self.ip_addr = ifconfig().get_my_addrs()[0]
+        ip_addrs = ifconfig().get_my_addrs(self.opts.connect_prio)
+        self.ip_addr = ip_addrs[0]
         _,self.port = ss.getsockname()
 
     def create_lock_file(self, name):
@@ -707,13 +767,18 @@ class ring_connector:
             Es("%s : OK\n" % self.host)
         return 0
 
-    def usage(self):
+    def usage(self, full):
         Es(r"""usage:
 
   gxpc mw bcp [OPTIONS] SOURCE [DEST]
 
 Copy SOURCE on a host to DEST on all hosts.
 
+""")
+        if full == 0:
+            Es("Try --help to see detailed help.\n")
+        else:
+            Es(r"""
 ex.
 
   gxpc mw bcp shepherd:large_file  /data/your/dir/
@@ -768,6 +833,11 @@ Options:
     transfer pipeline will show the progress
   --verbosity (default: 1)
     specify how verbose it is
+  --connect_prio (default: "")
+    specify the priority of ip addresses to connect to in the form
+    of comma-separated regular expression. see CONNECT_PRIO example below.
+    quick example: --connect_prio 10,192  will prefer to use addresses
+    that begin with 10 most, those that begin with 192 next, and then others.
 
 Examples:
 
@@ -796,6 +866,32 @@ will have the same large_file in the end.
 will elect the host that hat the largest 'large_file' and all hosts
 will have the same large_file in the end.
 
+CONNECT_PRIO:
+
+--connect_prio takes a comma-separeted list of regular expressions.
+All IP addresses of each host is matched against them in the specified
+order, and earlier in the list it matches, the higher priority it
+has. For example, let's say you have a host having three addresses
+127.0.0.1, 10.1.2.3, 10.2.3.4, and 123.234.45.56.  if you specify
+'--connect_prio 10', then 10.1.2.3 and 10.2.3.4 will have higher
+preference to the other two. If you have multiple addresses of the
+same priority, one is chosen arbitrarily but 127.0.0.1 is considered
+having the lower priority.  '--connect_prio 10.1,10.2' will give
+the highest priority to 10.1.2.3, the second highest to 10.2.3.4,
+and then the other two. Note that 10.1 is a regular expression, so
+it actually matches 1001, 1011, etc. If this is to be an issue,
+you should write '10\.,10\.2'.
+
+The word "priority" may be misleading, because as of now, each host
+simply announces its highest-priory address, and the host that
+connects to it connects to only that address. If this address is not
+connectable, it will simply fail (or block).  It does not try other
+addresses.  You may want to use a list to specify preferences depending
+on hosts concisely. For example, if you have a host X having 
+123.98.0.1 and 10.0.0.1 favoring the former, and another host Y
+having 123.99.0.1 and 10.0.0.2 favoring the latter, you may say
+--connect_prio 123.98,10.
+
 BUGS:
 
 It assumes connections are not blocked. If some connections are
@@ -810,11 +906,11 @@ firewall between hosts for now.
         global dbg
         opts = bcp_cmd_opts()
         if opts.parse(argv) == -1: return 1
-        if len(opts.args) == 0:
-            self.usage()
+        if opts.help:
+            self.usage(1)
             return 1
-        elif opts.help:
-            self.usage()
+        elif len(opts.args) == 0:
+            self.usage(0)
             return 1
         elif len(opts.args) == 1:
             src_spec = opts.args[0]
