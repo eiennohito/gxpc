@@ -67,7 +67,7 @@ class task:
         self.cmd = cmd
 
 class master:
-    dbg = 0
+    dbg = 1
     def __init__(self, tasks_file, status_file, log_file, inactive_file, max_tasks):
         self.tasks_file = tasks_file
         self.status_file = status_file
@@ -96,6 +96,7 @@ class master:
         self.status_fp = open_for_append(self.status_file)
         self.log_fp = open_for_append(self.log_file)
         self.free_hosts = []
+        self.known_hosts = {}   # hosts that I have ever heard
         self.n_issued = 0
         self.n_finished = 0
 
@@ -223,6 +224,7 @@ class master:
                 #assert self.n_workers == safe_atoi(n_workers)
                 pass
             self.free_hosts.append(host)
+            self.known_hosts[host] = None
             self.write_log("%s %s available\n" % (time.ctime(), host))
         else:
             self.bomb()
@@ -353,7 +355,8 @@ class master:
                  self.n_issued, self.n_finished))
             if len(self.tasks) > 0 and len(self.free_hosts) > 0:
                 self.match_task_and_host()
-            if self.n_issued == self.n_finished:
+            if self.n_issued == self.n_finished \
+                    and self.n_workers == len(self.known_hosts):
                 break
         self.to_worker_fp.close()
         self.show_summary()
