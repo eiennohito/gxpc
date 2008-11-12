@@ -4778,6 +4778,7 @@ use.
                     Es(" Or, consider specifying --children_hard_limit N to increase"
                        " the maximum number of children of a single host."
                        " e.g., explore --children_hard_limit 50 .... \n")
+                to_explore.sort()
                 for u in to_explore:
                     Es(" %s\n" % u)
             if len(self.failed_to_explore) > 0:
