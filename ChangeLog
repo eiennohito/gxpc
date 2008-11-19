@@ -50,3 +50,15 @@
 	* gxpc.py (cmd_interpreter.add_down_pipe):
 	ditto
 	
+2008-11-19 Taura
+        * gxpc.py (cmd_interpreter.mk_explore_cmd) :
+	changed the semantics of use, so that use torque X Y means
+	Y is reacheable via ssh from hosts whose TARGET NAME 
+	(not HOSTNAME) matches X. Now the following works reliably.
+	  use torque myhost hogehoge
+	  use torque hogehoge hahahaha
+	  explore hogehoge hahahaha
+
+	* tmsub,tmsub.rb
+	added support for obtaining resources via TORQUE psched API.
+	

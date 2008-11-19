@@ -34,7 +34,7 @@ class qsub_wrap_server_cmd_opts(opt.cmd_opts):
         #   None : flag
         opt.cmd_opts.__init__(self)
         self.sys        = ("s", "guess")  # sge,torque,pbs,nqs
-        self.qsub       = ("s", "qsub")
+        self.qsub       = ("s", None)
         self.qstat      = ("s", None)
         self.qdel       = ("s", None)
         self.timeout    = ("f", 150.0)  # "" means infty
@@ -42,6 +42,7 @@ class qsub_wrap_server_cmd_opts(opt.cmd_opts):
         self.display_progress_interval = ("f", 20.0)
         self.taskset = ("s", None)
         self.leave_output = (None, 0)
+        self.export     = ("s*", [])
         self.qarg       = ("s*", [])
         self.addr       = ("s*", [])
         self.hostname   = ("s", None)
@@ -52,6 +53,17 @@ class qsub_wrap_server_cmd_opts(opt.cmd_opts):
         # self.sync       = (None, 0)
         # self.x       = "qarg"
 
+    def postcheck(self):
+        exports = []
+        for x in self.export:
+            var_val = string.split(x, "=", 1)
+            if len(var_val) != 2:
+                Es("qsub_wrap : invalid arg to --export (must be var=val)\n")
+                return -1
+            [ var, val ] = var_val
+            exports.append((var, val))
+        self.export = exports
+            
 class torque_system_option:
     """
     standard, open-source version of torque
@@ -68,6 +80,23 @@ class torque_system_option:
         self.qsub = "qsub"
         self.qstat = "qstat"
         self.qdel = "qdel"
+
+class torque_psched_system_option:
+    """
+    standard, open-source version of torque
+    """
+    def __init__(self):
+        self.name = "torque_psched"
+        self.qsub_pattern = re.compile("tmsub: child task (?P<job_id>\d+) generated")
+        self.qstat_trust_status = 1
+        self.qstat_pattern = None # define it when trust_status = 0
+        self.qstat_job_id_flag = None
+        self.qsub_stdout_flag = None
+        self.qsub_stderr_flag = None
+        self.qsub_shell_arg = []
+        self.qsub = "tmsub"
+        self.qstat = None
+        self.qdel = None
 
 class nqs_fujitsu_system_option:
     """
@@ -206,6 +235,7 @@ qsub_wrap hostname
         sys = string.lower(opt.sys)
         self.sys_options = { "sge"    : sge_system_option(),
                              "torque" : torque_system_option(),
+                             "torque_psched" : torque_psched_system_option(),
                              "n1ge"   : n1ge_system_option(),
                              "nqs_hitachi" : nqs_hitachi_system_option(),
                              "nqs_fujitsu" : nqs_fujitsu_system_option() }
@@ -286,7 +316,7 @@ qsub_wrap hostname
         so.listen(3)
         return so,port
 
-    def popen(self, args):
+    def popen(self, args, exports):
         """
         like popen, but returns everything (pid,stdin,stdout,stderr),
         all in raw integers
@@ -303,6 +333,7 @@ qsub_wrap hostname
             os.dup2(in_r, 0)
             os.dup2(out_w, 1)
             os.dup2(err_w, 2)
+            self.extend_env(exports)
             for fd in [ in_r, out_w, err_w ]:
                 if fd > 2: os.close(fd)
             try:
@@ -324,10 +355,10 @@ qsub_wrap hostname
         fp.close()
         return content
         
-    def system(self, args, stdin_input):
+    def system(self, args, stdin_input, exports):
         if dbg>=2:
             Es("%s : running %s\n" % (self.cmd, args))
-        pid,stdin,stdout,stderr = self.popen(args)
+        pid,stdin,stdout,stderr = self.popen(args, exports)
         wp = os.fdopen(stdin, "wb")
         wp.write(stdin_input)
         wp.close()
@@ -339,23 +370,11 @@ qsub_wrap hostname
             return os.WEXITSTATUS(status),stdout_output,stderr_output
         else:
             return 1,stdout_output,stderr_output
-        
-    def extended_path(self):
-        p = self.opt.add_path
-        if p is not None:
-            if os.environ.has_key("PATH"):
-                return ("%s:%s" % (p, os.environ["PATH"]))
-            else:
-                return p
 
-    def extended_pythonpath(self):
-        p = self.opt.add_pythonpath
-        if p is not None:
-            if os.environ.has_key("PYTHONPATH"):
-                return ("%s:%s" % (p, os.environ["PYTHONPATH"]))
-            else:
-                return p
-
+    def extend_env(self, exports):
+        for var,val in exports:
+            os.environ[var] = os.path.expandvars(val)
+    
     def search_job_id_from_qsub_output(self, qsub_output):
         if self.sys_opt is None:
             sys_options = self.sys_options.values()
@@ -486,12 +505,17 @@ qsub_wrap hostname
         stdin_content = ""
 
         # add "-o file -e file" thing
-        args = args + [ self.sys_opt.qsub_stdout_flag, stdout,
-                        self.sys_opt.qsub_stderr_flag, stderr ]
+        if self.sys_opt.qsub_stdout_flag is not None:
+            args.append(self.sys_opt.qsub_stdout_flag)
+            args.append(stdout)
+        if self.sys_opt.qsub_stderr_flag is not None:
+            args.append(self.sys_opt.qsub_stderr_flag)
+            args.append(stderr)
         # the last argument to qsub is the script name
         args.append(script)
         # finally send the job
-        r,stdout_output,stderr_output = self.system(args, stdin_content)
+        r,stdout_output,stderr_output = self.system(args, stdin_content,
+                                                    self.opt.export)
 
         # Ws(stdout_output)
         Es(stderr_output)
@@ -532,12 +556,15 @@ qsub_wrap hostname
             return None
 
     def check_job_in_queue(self):
+        if self.opt.qstat is None:
+            # treat as if the job is still in the queue
+            return 1,"","",[]
         if self.sys_opt.qstat_job_id_flag is None:
             qstat_args = [ self.opt.qstat, self.job_id ]
         else:
             qstat_args = [ self.opt.qstat, 
                            self.sys_opt.qstat_job_id_flag, self.job_id ]
-        r,stdout_output,stderr_output = self.system(qstat_args, "")
+        r,stdout_output,stderr_output = self.system(qstat_args, "", self.opt.export)
         if self.sys_opt.qstat_trust_status:
             if r == 0:
                 inq = 1
@@ -563,8 +590,11 @@ qsub_wrap hostname
                     Es("%s : %s %s (ignored)\n" % (self.cmd, filename, e.args,))
         
     def delete_job(self):
+        if self.opt.qdel is None:
+            # treat as if it always succeeds
+            return 0
         qdel_args = [ self.opt.qdel, self.job_id ]
-        r,stdout_output,stderr_output = self.system(qdel_args, "")
+        r,stdout_output,stderr_output = self.system(qdel_args, "", self.opt.export)
         # Ws(stdout_output)
         Es(stderr_output)
         if r == 0:

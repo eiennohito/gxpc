@@ -121,6 +121,7 @@ class login_method_configs:
         self.torque      = "qsub_wrap --sys torque %cmd%"
         self.torque_n    = "qsub_wrap --sys torque %cmd% -- -l nodes=%nodes:-1%:ppn=%ppn:-1%"
         self.torque_host = "qsub_wrap --sys torque %cmd% -- -l host=%target%"
+        self.torque_psched = "qsub_wrap --sys torque_psched %cmd% -- --node %target% --lib %lib:-libtorque.so%"
 
         self.nqs_hitachi = "qsub_wrap --sys nqs_hitachi %cmd%"
         self.nqs_fujitsu = "qsub_wrap --sys nqs_fujitsu %cmd%"
@@ -4004,8 +4005,11 @@ Description:
         # ----------- real work -----------
         if len(opts.args) < 2:
             return cmd_interpreter.RET_NOT_RUN
-        
-        nid,tgt,cmd = self.mk_explore_cmd(opts.args[0], opts.args[0], opts.args[1], {}, opts)
+        name = opts.args[0]
+        # treat as if the src node's target_label/hostname/gupid are 
+        # all the same
+        nid,tgt,cmd = self.mk_explore_cmd(name, name, name,
+                                          opts.args[1], {}, opts)
         if cmd is None:
             Ws((r"""I don't know how to login %s from %s.
 Use use command to specify how (e.g., 'gxpc use ssh %s %s').
@@ -4269,18 +4273,35 @@ See Also:
         # Es("replace_tgt_pat -> %s\n" % p)
         return p
         
-    def mk_explore_cmd_cache(self, src_hostname, src_gupid, tgt, aliases, opts, ng_cache):
+    def mk_explore_cmd_cache(self, src_target_label, src_hostname, src_gupid,
+                             tgt, aliases, opts, ng_cache):
         if ng_cache.has_key((src_gupid,tgt)): return None,None,None
-        nid,t,cmd = self.mk_explore_cmd(src_hostname, src_gupid, tgt, aliases, opts)
+        nid,t,cmd = self.mk_explore_cmd(src_target_label, src_hostname,
+                                        src_gupid, tgt, aliases, opts)
         if cmd is None: ng_cache[src_gupid,tgt] = None
         return nid,t,cmd
 
-    def mk_explore_cmd(self, src_hostname, src_gupid, tgt, aliases, opts):
+    def mk_explore_cmd(self, src_target_label, src_hostname, src_gupid,
+                       tgt, aliases, opts):
         """
         make an explore command string for src to reach tgt
         """
         for method_name,user,src_pat,tgt_pat in self.session.edges:
-            m = re.match(src_pat, src_hostname)
+            # check if src_pat is either "hostname=xxx", "gupid=xxx",
+            # or "target=xxx"
+            m = re.match("(target|hostname|gupid)=(.*)", src_pat)
+            if m:
+                src_pat = m.group(2)
+                if m.group(1) == "target":
+                    name_to_match = src_target_label
+                elif m.group(1) == "hostname":
+                    name_to_match = src_hostname
+                else:
+                    assert m.group(1) == "gupid"
+                    name_to_match = src_gupid
+            else:
+                name_to_match = src_target_label
+            m = re.match(src_pat, name_to_match)
             if m:
                 found = 0
                 for t in aliases.get(tgt, [ tgt ]):
@@ -4345,8 +4366,7 @@ See Also:
                 # get next target until h's children become too many
                 tgt = to_explore.pop(0)
                 # check if h is allowed to issue cmd to tgt
-                # nid,a_tgt,cmd = self.mk_explore_cmd_cache(h.name, tgt, aliases, opts, ng_cache)
-                nid,a_tgt,cmd = self.mk_explore_cmd_cache(h.hostname, h.name, tgt, aliases, opts, ng_cache)
+                nid,a_tgt,cmd = self.mk_explore_cmd_cache(h.target_label, h.hostname, h.name, tgt, aliases, opts, ng_cache)
                 if cmd is None:
                     # no, h cannot directly reach tgt
                     n_ng = n_ng + 1

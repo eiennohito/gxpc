@@ -103,7 +103,7 @@ class cmd_opts:
                 A.append(string.join(X, " "))
             else:
                 A.append("--%s %s" % (k, v))
-        return string.join(A, " ")
+        return string.join(A + self.args, " ")
 
     def parse(self, argv):
         short,long = self.get_options()
