@@ -248,8 +248,10 @@ class session_state:
     def gen_random_id(self):
         return self.randint(0, 10**8 - 1)
 
-    def select_exec_tree(self, mask, hostmask, hostnegmask, 
-                         gupidmask, gupidnegmask):
+    def select_exec_tree(self, mask,
+                         hostmask, hostnegmask, 
+                         gupidmask, gupidnegmask,
+                         targetmask, targetnegmask):
         """
         mask : name, number, or None (all)
 
@@ -260,14 +262,15 @@ class session_state:
         hostnegmask :  given by -H (--withhostnegmask)  .*
         gupidmask :    given by -g (--withgupidmask)    .*
         gupidnegmask : given by -G (--withgupidnegmask) .*
+        targetmask :    given by -g (--withtargetmask)    .*
+        targetnegmask : given by -G (--withtargetnegmask) .*
 
         """
 
         # first choose the appropriate tree by mask
         # most of the time it is in stack_exec_trees[0]
         if mask is None or self.peer_tree is None:
-            # t = gxpm.target_tree(".*", ".*", 1, 0, None, None)
-            t = gxpm.target_tree(".*", ".*", 1, 0, gxpm.exec_env(), None)
+            t = gxpm.target_tree(".*", ".*", ".*", 1, 0, gxpm.exec_env(), None)
             ex = None                   # unknown
         elif type(mask) is types.StringType:
             if self.saved_exec_trees.has_key(mask):
@@ -316,8 +319,26 @@ class session_state:
         else:
             gupidmask_pat = re.compile(".")
 
+        # --------- targetmask (-t, -T) ---------------
+        if targetmask is not None:
+            try:
+                targetmask_pat = re.compile(targetmask)
+            except Exception,e:
+                Es("gxpc: invalid targetmask '%s' %s\n" % (targetmask, e.args))
+                return (None,None)
+        elif targetnegmask is not None:
+            try:
+                targetnegmask_pat = re.compile(targetnegmask)
+            except Exception,e:
+                Es("gxpc: invalid targetnegmask '%s' %s\n" % (targetnegmask, e.args))
+                return (None,None)
+            targetmask_pat = re.compile("(?!(%s))" % targetnegmask)
+        else:
+            targetmask_pat = re.compile(".")
+
         # 2. really filter nodes
-        ex_,t_ = self.mk_selected_exec_tree_rec2(t, hostmask_pat, gupidmask_pat)
+        ex_,t_ = self.mk_selected_exec_tree_rec2(t, hostmask_pat,
+                                                 gupidmask_pat, targetmask_pat)
         if t_ is not None:
             ex__,_ = self.set_exec_idx_rec(t_, 0, 0, ex_)
             assert (ex__ == ex_), (ex__, ex_)
@@ -325,7 +346,8 @@ class session_state:
         self.last_term_status = {}
         return (ex_,t_)
 
-    def mk_selected_exec_tree_rec2(self, tgt, hostmask_pat, gupidmask_pat):
+    def mk_selected_exec_tree_rec2(self, tgt, hostmask_pat, gupidmask_pat,
+                                   targetmask_pat):
         """
         like mk_selected_exec_tree_rec, but select nodes whose names match pat
         """
@@ -339,19 +361,21 @@ class session_state:
             C = 0
             for child in tgt.children:
                 c,t = self.mk_selected_exec_tree_rec2(child, hostmask_pat, 
-                                                      gupidmask_pat)
+                                                      gupidmask_pat,
+                                                      targetmask_pat)
                 if t is not None:
                     T.append(t)
                     C = C + c
             if tgt.eflag and hostmask_pat.match(tgt.hostname) \
-                    and gupidmask_pat.match(tgt.name):
+                    and gupidmask_pat.match(tgt.name) \
+                    and targetmask_pat.match(tgt.target_label):
                 ef = 1
                 C = C + 1
             else:
                 ef = 0
             if C > 0:
-                return (C, gxpm.target_tree(tgt.name, tgt.hostname, ef, None,
-                                            tgt.eenv, T))
+                return (C, gxpm.target_tree(tgt.name, tgt.hostname, tgt.target_label,
+                                            ef, None, tgt.eenv, T))
             else:
                 return (0, None)
 
@@ -395,8 +419,8 @@ class session_state:
             else:
                 ef = 0
             if C > 0:
-                return (C, gxpm.target_tree(tgt.name, tgt.hostname, ef, None,
-                                            tgt.eenv, T))
+                return (C, gxpm.target_tree(tgt.name, tgt.hostname, tgt.target_label,
+                                            ef, None, tgt.eenv, T))
             else:
                 return (0, None)
 
@@ -415,8 +439,8 @@ class session_state:
                     T.append(t)
                     C = C + c
             return (C + 1,
-                    gxpm.target_tree(ptree.name, ptree.hostname, 1, None,
-                                     ptree.eenv, T))
+                    gxpm.target_tree(ptree.name, ptree.hostname, ptree.target_label,
+                                     1, None, ptree.eenv, T))
 
     def set_exec_idx_rec(self, tgt, exec_idx, all_idx, num_execs):
         all_idx = all_idx + 1
@@ -666,6 +690,8 @@ class e_cmd_opts(opt.cmd_opts):
         self.withhostnegmask = ("s", None)
         self.withgupidmask = ("s", None)
         self.withgupidnegmask = ("s", None)
+        self.withtargetmask = ("s", None)
+        self.withtargetnegmask = ("s", None)
         self.timeout = ("f", None)
         self.notify_proc_exit = ("i", None)
         self.persist = ("i", None)
@@ -682,6 +708,8 @@ class e_cmd_opts(opt.cmd_opts):
         self.H = "withhostnegmask"
         self.g = "withgupidmask"
         self.G = "withgupidnegmask"
+        self.t = "withtargetmask"
+        self.T = "withtargetnegmask"
 
     def postcheck_up_or_down(self, arg, F, opt):
         fields = string.split(arg, ":", 1)
@@ -1123,6 +1151,8 @@ class interpreter_opts(opt.cmd_opts):
         self.withhostnegmask = ("s", None)  # matches everything
         self.withgupidmask = ("s", None)  # matches everything
         self.withgupidnegmask = ("s", None)  # matches everything
+        self.withtargetmask = ("s", None)  # matches everything
+        self.withtargetnegmask = ("s", None)  # matches everything
         self.timeout = ("f", None)
         self.notify_proc_exit = ("i", -1)
         self.persist = ("i", 0)
@@ -1136,6 +1166,8 @@ class interpreter_opts(opt.cmd_opts):
         self.H = "withhostnegmask"
         self.g = "withgupidmask"
         self.G = "withgupidnegmask"
+        self.t = "withtargetmask"
+        self.T = "withtargetnegmask"
 
     def postcheck(self):
         self.withmask = self.safe_atoi(self.withmask, self.withmask)
@@ -3060,8 +3092,7 @@ session will cease.
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
         self.cleanup_session_file(self.session_file)
         if len(args) == 0 or args[0] != "--session_only":
-            # tgt = gxpm.target_tree(".*", ".*", 1, 0, None, None)
-            tgt = gxpm.target_tree(".*", ".*", 1, 0, gxpm.exec_env(), None)
+            tgt = gxpm.target_tree(".*", ".*", ".*", 1, 0, gxpm.exec_env(), None)
             tid = self.send_action(tgt, None, gxpm.action_quit(),
                                    self.opts.persist,
                                    self.opts.keep_connection)
@@ -3089,7 +3120,9 @@ session will cease.
                                                self.opts.withhostmask,
                                                self.opts.withhostnegmask,
                                                self.opts.withgupidmask,
-                                               self.opts.withgupidnegmask)
+                                               self.opts.withgupidnegmask,
+                                               self.opts.withtargetmask,
+                                               self.opts.withtargetnegmask)
         if ex == -1: return cmd_interpreter.RET_NOT_RUN
         if trimmed and isinstance(tgt, gxpm.target_tree):
             tgt.set_eflag(1)
@@ -3473,6 +3506,12 @@ Options: (for e, mw, and ep):
   --withgupidnegmask,-G HOSTMASK
     execute on a set of nodes whose gupid (shown by gxpc stat) 
     do not match regexp HOSTMASK
+  --withtargetmask,-t HOSTMASK
+    execute on a set of nodes whose target name (shown by gxpc stat) 
+    match regexp HOSTMASK
+  --withtargetnegmask,-T HOSTMASK
+    execute on a set of nodes whose target name (shown by gxpc stat) 
+    do not match regexp HOSTMASK
   --up FD0[:FD1]
     collect output from FD0 of CMD, and output them to FD1 of gxpc.
     if :FD1 is omitted, it is treated as if FD1 == FD0
@@ -3715,6 +3754,10 @@ See Also:
             self.opts.withgupidmask = opts.withgupidmask
         if opts.withgupidnegmask is not None:
             self.opts.withgupidnegmask = opts.withgupidnegmask
+        if opts.withtargetmask is not None:
+            self.opts.withtargetmask = opts.withtargetmask
+        if opts.withtargetnegmask is not None:
+            self.opts.withtargetnegmask = opts.withtargetnegmask
         if opts.timeout is not None:
             self.opts.timeout = opts.timeout
         if opts.notify_proc_exit is not None:
@@ -3754,8 +3797,11 @@ See Also:
         hostnegmask = self.opts.withhostnegmask
         gupidmask = self.opts.withgupidmask
         gupidnegmask = self.opts.withgupidnegmask
+        targetmask = self.opts.withtargetmask
+        targetnegmask = self.opts.withtargetnegmask
         ex,tgt = self.session.select_exec_tree(mask, hostmask, hostnegmask,
-                                               gupidmask, gupidnegmask)
+                                               gupidmask, gupidnegmask,
+                                               targetmask, targetnegmask)
         if ex == -1: return cmd_interpreter.RET_NOT_RUN
 
         got_sigint = 0
@@ -3792,8 +3838,7 @@ See Also:
             assert res != cmd_interpreter.RECV_CONTINUE
             if res == cmd_interpreter.RECV_INTERRUPTED:
                 got_sigint = 1
-                # tgt = gxpm.target_tree(".*", ".*", 1, 0, None, None)
-                tgt = gxpm.target_tree(".*", ".*", 1, 0, gxpm.exec_env(), None)
+                tgt = gxpm.target_tree(".*", ".*", ".*", 1, 0, gxpm.exec_env(), None)
                 rid = None          # all
                 self.send_action(tgt, tid,
                                  gxpm.action_sig(rid, "INT"),
@@ -4150,11 +4195,11 @@ See Also:
         else:
             exec_flag = 0
         if len(children) > 0:
-            return gxpm.target_tree(ptree.name, ptree.hostname, exec_flag, 
-                                    0, ptree.eenv, children)
+            return gxpm.target_tree(ptree.name, ptree.hostname, ptree.target_label,
+                                    exec_flag, 0, ptree.eenv, children)
         elif exec_flag == 1:
-            return gxpm.target_tree(ptree.name, ptree.hostname, exec_flag, 
-                                    0, ptree.eenv, [])
+            return gxpm.target_tree(ptree.name, ptree.hostname,ptree.target_label,
+                                    exec_flag, 0, ptree.eenv, [])
         else:
             return None
 

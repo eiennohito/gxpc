@@ -35,7 +35,11 @@ module TMLIB
   end
 
   def loadlib(libname)
-    TMLIB.dlload libname
+    begin
+      TMLIB.dlload libname
+    rescue RuntimeError
+      die("could not load #{libname}, (try 'gxpc explore -a lib=/full/path/to/libtorque.so' or gxpc export LD_LIBRARY_PATH=/where/libtorque/is/found")
+    end
     TMLIB.typealias('tm_task_id', 'unsigned int')
     TMLIB.typealias('tm_node_id', 'int')
     TMLIB.typealias('tm_event_t', 'int')

@@ -61,4 +61,7 @@
 
 	* tmsub,tmsub.rb
 	added support for obtaining resources via TORQUE psched API.
+	* gxpc.py (cmd_interpreter) :
+	added -t and -T to global and e options, to allow hosts to be 
+	selected based on their target labels used in explore time.
 	

@@ -38,10 +38,10 @@ class exec_env:
         return ("cwd=%s, env=%s" % (self.cwd, self.env))
 
 class target_tree:
-    # def __init__(self, name, eflag, exec_idx, cwd, env, children):
-    def __init__(self, name, hostname, eflag, exec_idx, eenv, children):
+    def __init__(self, name, hostname, target_label, eflag, exec_idx, eenv, children):
         self.name = name
         self.hostname = hostname
+        self.target_label = target_label
         self.eflag = eflag
         self.exec_idx = exec_idx
         # self.cwd = cwd
@@ -78,8 +78,9 @@ class target_tree:
             eenv_show = "None"
         else:
             eenv_show = self.eenv.show()
-        return ("target_tree(%s, %s, %s, %s, %s, %s)" \
-                % (self.name, self.hostname, self.eflag, self.exec_idx,
+        return ("target_tree(%s, %s, %s, %s, %s, %s, %s)" \
+                % (self.name, self.hostname, self.target_label,
+                   self.eflag, self.exec_idx,
                    eenv_show, cs))
 
     def set_eflag(self, flag):
@@ -97,8 +98,8 @@ def merge_target_tree(tgt1, tgt2):
             name_dictionary[child.name] = merge_target_tree(name_dictionary[child.name], child)
         else:
             name_dictionary[child.name] = child
-    return target_tree(tgt1.name, tgt1.hostname, eflag, 
-                       None, tgt1.eenv, name_dictionary.values())
+    return target_tree(tgt1.name, tgt1.hostname, tgt1.target_label,
+                       eflag, None, tgt1.eenv, name_dictionary.values())
 
 
 class xxx_synchronize_message:
