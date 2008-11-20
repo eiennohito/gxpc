@@ -1138,6 +1138,7 @@ class interpreter_opts(opt.cmd_opts):
         opt.cmd_opts.__init__(self)
         self.help = (None, 0)
         self.verbosity = ("i", 1)
+        self.root_target_name = ("s", None)
         self.create_session = ("i", 0)
         self.session = ("s", None)
         self.create_daemon = ("i", 0)
@@ -2024,13 +2025,15 @@ class cmd_interpreter:
             gxpd_py = gxpd.get_this_file()
             os.setpgrp()
             os.close(0)
-            os.execvp(sys.executable, 
-                      [ sys.executable, gxpd_py,
-                        "--created_explicitly", 
-                        ("%d" % create_daemon_explicit),
-                        "--no_stdin",
-                        "--redirect_stdout",
-                        "--redirect_stderr" ])
+            argv = [ sys.executable, gxpd_py,
+                     "--created_explicitly", 
+                     ("%d" % create_daemon_explicit),
+                     "--no_stdin",
+                     "--redirect_stdout",
+                     "--redirect_stderr" ]
+            if self.opts.root_target_name is not None:
+                argv = argv + [ "--target_label", self.opts.root_target_name ]
+            os.execvp(argv[0], argv)
         else:
             return pid
         

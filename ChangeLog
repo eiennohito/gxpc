@@ -64,4 +64,13 @@
 	* gxpc.py (cmd_interpreter) :
 	added -t and -T to global and e options, to allow hosts to be 
 	selected based on their target labels used in explore time.
-	
+
+2008-11-20 Taura
+	* xmake (xmake_server.record_state)
+	generate many html files when the state file gets too large.
+	list of all jobs is also generated as a separate text file.
+2008-11-20 Taura
+	* gxpc.py (cmd_interpreter.create_daemon)
+	added --root_target_name option with which you can specify
+	the target name of the root daemon (as if the daemon has been
+	reached by that name). 
