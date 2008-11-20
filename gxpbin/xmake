@@ -148,7 +148,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.parallelism_image = ("s", "parallelism.png")
         self.gnuplot_err = ("s", "gnuplot.err")
         self.max_records = ("i", 10000)
-        self.max_records_in_page = ("i", 5)
+        self.max_records_in_page = ("i", 500)
         self.local_exec_cmd = ("s", None) 
         #
         self.conf = ("s", "~/gxpc_make.conf")
