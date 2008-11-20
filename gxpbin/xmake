@@ -147,8 +147,8 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.parallelism_terminal = ("s", "png") # gnuplot type
         self.parallelism_image = ("s", "parallelism.png")
         self.gnuplot_err = ("s", "gnuplot.err")
-        self.max_records = ("i", 200)
-        self.max_records_in_page = ("i", 10)
+        self.max_records = ("i", 10000)
+        self.max_records_in_page = ("i", 5)
         self.local_exec_cmd = ("s", None) 
         #
         self.conf = ("s", "~/gxpc_make.conf")
@@ -932,38 +932,6 @@ td.man_working {
        server.gxpc_pid, server.tid, gxpc_status,
        server.gxpc_fd))
 
-    def gen_recent_works(self, cur_time):
-        works = self.server.works
-        if self.opts.max_records >= 0:
-            works = works[-self.opts.max_records:]
-        return self.gen_works_aux("Recent Jobs", works, cur_time)
-
-    def gen_failed_works(self, cur_time):
-        works = []
-        for w in self.server.works:
-            if w.status is not None and w.status != 0: # None and non-zero int
-                works.append(w)
-        if self.opts.max_records >= 0:
-            works = works[-self.opts.max_records:]
-        return self.gen_works_aux("Failed Jobs", works, cur_time)
-
-    def gen_long_works(self, cur_time):
-        t_works = []
-        for w in self.server.works:
-            if len(w.runs) == 0: continue
-            time_start = w.runs[-1].time_start
-            if time_start is None: continue
-            time_end = w.runs[-1].time_end
-            if time_end is None: time_end = cur_time
-            t_works.append((time_start - time_end, w))
-        t_works.sort()
-        if self.opts.max_records >= 0:
-            t_works = t_works[:self.opts.max_records]
-        works = []
-        for t,w in t_works:
-            works.append(w)
-        return self.gen_works_aux("Long Jobs", works, cur_time)
-
     def mk_lnk(self, f, from_dir):
         real_f = os.path.realpath(f)
         real_from_dir = os.path.realpath(from_dir)
@@ -1038,11 +1006,40 @@ td.man_working {
             cmds_.append(self.modify_cmd(cmd))
         return cmds_
     
+    def gen_heading_aux(self, label, states, jobs_txt, jobs_txt_sz, idx):
+        wp = cStringIO.StringIO()
+        wp.write((r'''<a name="%s">
+<h1>%s (%d/%d)</h1>
+<a href="#">page top</a><br>
+''' % (label, label, idx+1, len(states))))
+        if idx - 1 >= 0:
+            wp.write(('<a href="%s#%s">prev</a> ' % (states[idx - 1], label)))
+        if idx + 1 < len(states):
+            wp.write(('<a href="%s#%s">next</a> ' % (states[idx + 1], label)))
+        for i in range(len(states)):
+            wp.write('<a href="%s#%s">%d</a> ' % (states[i], label, i + 1))
+        wp.write("<br>")
+        if jobs_txt is not None:
+            wp.write(('<a href="%s">all jobs (%d bytes)</a> ' 
+                      % (jobs_txt, jobs_txt_sz)))
+        return wp.getvalue()
+
+    
+    def gen_failed_heading(self, states, jobs_txt, jobs_txt_sz, idx):
+        return self.gen_heading_aux("Failed Jobs", 
+                                    states, jobs_txt, jobs_txt_sz, idx)
+
+    def gen_long_heading(self, states, jobs_txt, jobs_txt_sz, idx):
+        return self.gen_heading_aux("Long Jobs", 
+                                    states, jobs_txt, jobs_txt_sz, idx)
+
+    def gen_recent_heading(self, states, jobs_txt, jobs_txt_sz, idx):
+        return self.gen_heading_aux("Recent Jobs", 
+                                    states, jobs_txt, jobs_txt_sz, idx)
+
     def gen_works_aux(self, label, works, cur_time):
-        header = (r'''<a name="%s">
-<h1>%s</h1>
-<a href="#">page top</a><br><br>
-<table class="works">
+        wp = cStringIO.StringIO()
+        wp.write(r'''<table class="works">
 <tr>
 <td>idx</td>
 <td>command</td>
@@ -1052,54 +1049,92 @@ td.man_working {
 <td>executed by</td>
 <td>turn around time</td>
 <td>status</td>
-</tr>
-''' % (label,label))
+</tr>''')
+        for w in works:
+            queued_t = time.ctime(w.req_time + self.server.start_t)
+            run = w.runs[-1]
+            s = run.time_start
+            e = run.time_end
+            start_t = "<br>"
+            end_t = "<br>"
+            elapsed = "<br>"
+            man = "<br>"
+            if s is not None:
+                man = run.man.name
+                start_t = time.ctime(s + self.server.start_t)
+                if e is not None:
+                    end_t = time.ctime(e + self.server.start_t)
+                    elapsed = "%.2f" % (e - s)
+                else:
+                    elapsed = "%.2f" % (cur_time - s)
+            cls,sts = w.show_status()
+            cmds = string.join(self.modify_cmds(w.cmds), "<br><br>")
+            wp.write(('<tr>'
+                      '<td>%d</td> '
+                      '<td>%s</td> '
+                      '<td>%s</td> '
+                      '<td>%s</td> '
+                      '<td>%s</td> '
+                      '<td>%s</td> '
+                      '<td>%s</td> '
+                      '<td class="%s">%s</td> '
+                      '</tr>\n'
+                      % (w.idx, cmds,
+                         queued_t, start_t, end_t,
+                         man, elapsed, cls, sts)))
+        wp.write('</table>\n')
+        return wp.getvalue()
 
-        pages = []
-        max_records_in_page = self.opts.max_records_in_page
-        for begin in range(0, len(works), max_records_in_page):
-            end = min(begin + max_records_in_page, len(works))
-            wp = cStringIO.StringIO()
-            wp.write(header)
-            for w in works[begin:end]:
-                queued_t = time.ctime(w.req_time + self.server.start_t)
-                run = w.runs[-1]
-                s = run.time_start
-                e = run.time_end
-                start_t = "<br>"
-                end_t = "<br>"
-                elapsed = "<br>"
-                man = "<br>"
-                if s is not None:
-                    man = run.man.name
-                    start_t = time.ctime(s + self.server.start_t)
-                    if e is not None:
-                        end_t = time.ctime(e + self.server.start_t)
-                        elapsed = "%.2f" % (e - s)
-                    else:
-                        elapsed = "%.2f" % (cur_time - s)
-                cls,sts = w.show_status()
-                cmds = string.join(self.modify_cmds(w.cmds), "<br><br>")
-                wp.write(('<tr>'
-                          '<td>%d</td> '
-                          '<td>%s</td> '
-                          '<td>%s</td> '
-                          '<td>%s</td> '
-                          '<td>%s</td> '
-                          '<td>%s</td> '
-                          '<td>%s</td> '
-                          '<td class="%s">%s</td> '
-                          '</tr>\n'
-                          % (w.idx, cmds,
-                             queued_t, start_t, end_t,
-                             man, elapsed, cls, sts)))
-            wp.write('</table>\n')
-            pages.append(wp.getvalue())
-        return pages
+    def chunk_list(self, L, g):
+        LL = []
+        for i in range(0, len(L), g):
+            LL.append(L[i:i+g])
+        return LL
+
+    def get_recent_works(self, cur_time):
+        works = self.server.works
+        if self.opts.max_records >= 0:
+            works = works[-self.opts.max_records:]
+        return self.chunk_list(works, self.opts.max_records_in_page)
+
+    def get_failed_works(self, cur_time):
+        works = []
+        for w in self.server.works:
+            if w.status is not None and w.status != 0: # None and non-zero int
+                works.append(w)
+        if self.opts.max_records >= 0:
+            works = works[-self.opts.max_records:]
+        return self.chunk_list(works, self.opts.max_records_in_page)
+
+    def get_long_works(self, cur_time):
+        t_works = []
+        for w in self.server.works:
+            if len(w.runs) == 0: continue
+            time_start = w.runs[-1].time_start
+            if time_start is None: continue
+            time_end = w.runs[-1].time_end
+            if time_end is None: time_end = cur_time
+            t_works.append((time_start - time_end, w))
+        t_works.sort()
+        if self.opts.max_records >= 0:
+            t_works = t_works[:self.opts.max_records]
+        works = []
+        for t,w in t_works:
+            works.append(w)
+        return self.chunk_list(works, self.opts.max_records_in_page)
+
+    def gen_recent_table(self, works, cur_time):
+        return self.gen_works_aux("Recent Jobs", works, cur_time)
+
+    def gen_failed_table(self, works, cur_time):
+        return self.gen_works_aux("Failed Jobs", works, cur_time)
+
+    def gen_long_table(self, works, cur_time):
+        return self.gen_works_aux("Long Jobs", works, cur_time)
 
     def gen_works_in_comments(self, cur_time):
         wp = cStringIO.StringIO()
-        wp.write('<!--\n')
+        # wp.write('<!--\n')
         wp.write(('idx\t'
                   'command\t'
                   'queued at\t'
@@ -1139,7 +1174,7 @@ td.man_working {
                       % (w.idx, cmds,
                          queued_t, start_t, end_t,
                          man, elapsed, sts)))
-        wp.write('-->\n')
+        # wp.write('-->\n')
         return wp.getvalue()
     
     def gen_men(self, cur_time):
@@ -1224,8 +1259,9 @@ plot '-' with boxes
         self.LOG("getting vmstat stat\n")
         return self.run_cmd("vmstat")
 
-    def gen_table_of_contents(self, cur_time):
-        return (r'''<a name="Table of Contents">
+    def gen_table_of_contents(self, states, jobs_txt, jobs_txt_sz, cur_time):
+        wp = cStringIO.StringIO()
+        wp.write((r'''<a name="Table of Contents">
 <h1>Contents</h1>
 <ul>
 <li><a href="#System Stats">System States</a>
@@ -1233,13 +1269,19 @@ plot '-' with boxes
 <li><a href="#Parallelism">Parallelism</a>
 <li>Jobs
 <ul>
+  <li><a href="%s">All Jobs in txt (%d bytes)</a>
   <li><a href="#Failed Jobs">Failed Jobs</a>
   <li><a href="#Long Jobs">Long Jobs</a>
   <li><a href="#Recent Jobs">Recent Jobs</a>
 </ul>
 <li><a href="#Worker States">Worker States</a>
-</ul>
-''')
+''' % (jobs_txt, jobs_txt_sz)))
+        wp.write('<li>')
+        for i in range(len(states)):
+            wp.write('<a href="%s">%d</a> ' % (states[i], i + 1))
+        wp.write('<br>\n')
+        wp.write('</ul>')
+        return wp.getvalue()
 
     def gen_stat(self, cur_time):
         uptime = self.run_uptime()
@@ -1268,6 +1310,7 @@ plot '-' with boxes
 ''' % (self.opts.parallelism_gpl, self.opts.gnuplot_err, 
        self.opts.parallelism_image, self.opts.parallelism_image))
 
+
     def gen_elapsed_time(self, cur_time):
         dt = self.cur_time() - cur_time
         return ("<br>(took %.3f sec to generate up to this point)<br>" % dt)
@@ -1291,60 +1334,88 @@ plot '-' with boxes
         if ok:
             self.LOG("OK, successfully renamed\n")
     
-    def gen_state_files(self, state, n):
+
+    def gen_state_filenames(self, state, n):
+        """
+        /foo/bar/state.html 
+        --> job_txt = /foo/bar/state.txt
+            states = [ /foo/bar/state.html,
+                       /foo/bar/state_2.html,
+                       /foo/bar/state_3.html ]
+        """
+        dirname,basename = os.path.split(state)
+        base_ext = string.rsplit(basename, ".", 1)
+        if len(base_ext) == 1:
+            [ base ] = base_ext
+            ext = ""
+        else:
+            [ base,ext ] = base_ext
+            ext = ".%s" % ext
+        jobs_txt = os.path.join(dirname, ("%s.txt" % base))
+
         states = []
         for i in range(n):
-            dirname,basename = os.path.split(state)
-            base_ext = string.rsplit(basename, ".", 1)
             if i > 0:
-                if len(base_ext) == 1:
-                    basename = ("%s_%d" % (base_ext, i))
-                else:
-                    [ base,ext ] = base_ext
-                    basename = ("%s_%d.%s" % (base, i, ext))
+                basename = ("%s_%d%s" % (base, i + 1, ext))
             states.append(os.path.join(dirname, basename))
-        return  states
+        return jobs_txt,states
 
     def record_state(self, finished):
         if self.opts.state == "": return
         state = os.path.join(self.opts.state_dir, self.opts.state)
         self.LOG("generating state file (%s)\n" % state)
         cur_time = self.cur_time()
+        # -------- count work and determine no. of pages -------- 
+        failed_works = self.get_failed_works(cur_time)
+        long_works = self.get_long_works(cur_time)
+        recent_works = self.get_recent_works(cur_time)
+        n_pages = max(len(failed_works), len(long_works), len(recent_works))
+        # -------- generate all filenames --------
+        jobs_txt,states = self.gen_state_filenames(state, n_pages)
+        # -------- generate all works and get its size --------
+        jobs = self.gen_works_in_comments(cur_time)
+        jobs_txt_sz = len(jobs)
+
         # generate fixed part
         # -------- header/trailer --------
         header,trailer = self.gen_header_trailer(finished)
         # -------- index --------
-        index = self.gen_table_of_contents(cur_time)
+        index = self.gen_table_of_contents(states, jobs_txt, jobs_txt_sz, 
+                                           cur_time)
         # -------- load avg and vmstat --------
         stat = self.gen_stat(cur_time)
         # -------- basic info --------
         basic_info = self.gen_basic_info(cur_time)
         # -------- parallelism --------
         parallelism = self.gen_parallelism(cur_time)
-        # work
-        failed_works = self.gen_failed_works(cur_time)
-        long_works = self.gen_long_works(cur_time)
-        recent_works = self.gen_recent_works(cur_time)
         # -------- men state --------
         men = self.gen_men(cur_time)
-        # -------- all works in comments --------
-        comments = self.gen_works_in_comments(cur_time)
 
-        n = max(len(failed_works),len(long_works),len(recent_works))
-        states = self.gen_state_files(state, n)
-        for i in range(n):
+        for i in range(n_pages):
             tmp,wp = self.mk_temp(states[i])
             wp.write(header)
             wp.write(index)
             wp.write(stat)
             wp.write(basic_info)
             wp.write(parallelism)
-            if i < len(failed_works): wp.write(failed_works[i])
-            if i < len(long_works):   wp.write(long_works[i])
-            if i < len(recent_works): wp.write(recent_works[i])
+            # ---- failed jobs ----
+            wp.write(self.gen_failed_heading(states, jobs_txt, jobs_txt_sz, i))
+            if i < len(failed_works):
+                wp.write(self.gen_failed_table(failed_works[i], cur_time))
+            # ---- long jobs ----
+            wp.write(self.gen_long_heading(states, jobs_txt, jobs_txt_sz, i))
+            if i < len(long_works):
+                wp.write(self.gen_long_table(long_works[i], cur_time))
+            # ---- recent jobs ----
+            wp.write(self.gen_recent_heading(states, jobs_txt, jobs_txt_sz, i))
+            if i < len(recent_works):
+                wp.write(self.gen_recent_table(recent_works[i], cur_time))
             wp.write(trailer)
             wp.close()
             self.paranoia_rename(tmp, states[i])
+        tmp,wp = self.mk_temp(jobs_txt)
+        wp.write(jobs)
+        self.paranoia_rename(tmp, jobs_txt)
         dt = self.cur_time() - cur_time
         self.LOG(("took %.3f sec to generate state file (%s)\n"
                   % (dt, state)))
