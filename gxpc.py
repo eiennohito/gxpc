@@ -947,17 +947,21 @@ class targets_parser(hosts_parser_base):
                 sign = -1
             else:
                 # "10-20" or "10"
-                m = re.match("(?P<a>\d+)(-(?P<b>\d+))?", f)
+                m = re.match("(?P<a>\d+)((?P<m>-+)(?P<b>\d+))?", f)
                 if m is None:
                     return None         # parse error
                 else:
                     # "10-20" -> a = 10, b = 20
                     # "10"    -> a = 10, b = 10
+                    m_str = m.group("m") # -, --, ...
                     a_str = m.group("a")
                     b_str = m.group("b")
                     if b_str is None: b_str = a_str
                     a = string.atoi(a_str)
-                    b = string.atoi(b_str)
+                    if len(m_str) > 1:
+                        b = string.atoi(b_str) - 1
+                    else:
+                        b = string.atoi(b_str)
                     # a-b represents [a,b]. 
                     for x in range(a, b + 1):
                         x_str = "%d" % x
