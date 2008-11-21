@@ -957,6 +957,7 @@ class targets_parser(hosts_parser_base):
                     a_str = m.group("a")
                     b_str = m.group("b")
                     if b_str is None: b_str = a_str
+                    if m_str is None: m_str = "-"
                     a = string.atoi(a_str)
                     if len(m_str) > 1:
                         b = string.atoi(b_str) - 1
