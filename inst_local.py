@@ -533,9 +533,9 @@ class installer(expectd.expectd):
             body = ('%s -c "import os; exec(os.read(0, %d));" '
                     % (python, stub_sz))
             if len(P) == 0:
-                p = ('if type %s > /dev/null; then %s ;' % (python, body))
+                p = ('if type %s > /dev/null; then exec %s ;' % (python, body))
             else:
-                p = ('elif type %s > /dev/null; then %s ;' % (python, body))
+                p = ('elif type %s > /dev/null; then exec %s ;' % (python, body))
             P.append(p)
         if len(P) > 0: 
             p = (' else echo no python interpreter found "(%s)" 1>&2 ; fi'
