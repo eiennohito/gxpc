@@ -1,7 +1,12 @@
 import fcntl,os,re,socket,string,sys
 
-# include '..' into PYTHONPATH
-import ioman
+try:
+    import ioman
+    # gxp3 directory is in your PYTHONPATH
+except ImportError,e:
+    # gxp3 directory not in your PYTHONPATH
+    # perhaps run as a standalone program
+    ioman = None
 
 class ifconfig:
     """
@@ -11,7 +16,7 @@ class ifconfig:
     def __init__(self):
         self.v4ip_pat_str = "(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})"
         self.v4ip_p = re.compile(self.v4ip_pat_str)
-        self.ifconfig_list = [ "LANG=C /sbin/ifconfig -a 2> /dev/null" ]
+        self.ifconfig_cmds = [ "LANG=C /sbin/ifconfig -a 2> /dev/null" ]
 
     def parse_ip_addr(self, addr):
         """
@@ -25,15 +30,7 @@ class ifconfig:
         except ValueError,e:
             return None
 
-    def is_global_ip_addr(self, addr):
-        a,b,c,d = self.parse_ip_addr(addr)
-        if a == 192 and b == 168: return 0
-        if a == 172 and 16 <= b < 32: return 0
-        if a == 10: return 0
-        if a == 127: return 0
-        return 1
-
-    def is_local_ip_addr(self, addr):
+    def is_localhost_ip_addr(self, addr):
         if addr == "127.0.0.1":
             return 1
         else:
@@ -47,7 +44,7 @@ class ifconfig:
         return 0
 
     def is_global_ip_addr(self, addr):
-        if self.is_local_ip_addr(addr): return 0
+        if self.is_localhost_ip_addr(addr): return 0
         if self.is_private_ip_addr(addr): return 0
         return 1
 
@@ -119,17 +116,18 @@ class ifconfig:
         patterns = [ re.compile("inet addr:([\d|\.]+)"),
                      re.compile("inet ([\d|\.]+)") ]
         addrs = []
-        for c in self.ifconfig_list:
+        for c in self.ifconfig_cmds:
             r = os.popen(c)
-            # blocking=1
-            pr = ioman.primitive_channel_fd(r.fileno(), 1)
-            # ifconfig_out = r.read()
-            ifconfig_outs = []
-            while 1:
-                l,err,msg = pr.read(1000)
-                if l <= 0: break
-                ifconfig_outs.append(msg)
-            ifconfig_out = string.join(ifconfig_outs, "")
+            if ioman is None:
+                ifconfig_out = r.read()
+            else:
+                pr = ioman.primitive_channel_fd(r.fileno(), 1)
+                ifconfig_outs = []
+                while 1:
+                    l,err,msg = pr.read(1000)
+                    if l <= 0: break
+                    ifconfig_outs.append(msg)
+                ifconfig_out = string.join(ifconfig_outs, "")
             for p in patterns:
                 found = p.findall(ifconfig_out)
                 if len(found) > 0: break
@@ -151,15 +149,33 @@ class ifconfig:
             return []
         return ip_addrs
         
-    def apply_filter(self, ip, addr_filters):
-        if addr_filters is not None:
-            for s,addr_filter in addr_filters:
-                if re.match(addr_filter, ip):
-                    return s
-        return 1
-
-    def sort_addrs(self, ip_addrs, addr_filters):
+    def get_addr_prio(self, ip, prio):
         """
+        prio: list of compiled regexps.
+        return the first index of regexp in prio
+        that match ip. if none match, return the 
+        length of the list.
+        hereby we give priority to ip
+        """
+        i = 0
+        for sign,regexp in prio:
+            if regexp in ("p", "P"):
+                m = self.is_private_ip_addr(ip)
+            elif regexp in ("g", "G"):
+                m = self.is_global_ip_addr(ip)
+            elif regexp in ("l", "L"):
+                m = self.is_localhost_ip_addr(ip)
+            else:
+                m = regexp.match(ip)
+            if (sign and m) or (sign == 0 and not m): return i
+            i = i + 1
+        return len(prio)
+
+    def sort_addrs(self, ip_addrs, addrs_prio):
+        """
+        addrs_prio is a list of regexps that will be
+        matched against ip_addrs
+
         1. remove duplicates.
         2. remove loopback addrs (127.0.0.1).
         3. sort IP addresses.
@@ -167,39 +183,25 @@ class ifconfig:
         """
         a = {}
         for ip in ip_addrs:
-            if self.apply_filter(ip, addr_filters):
-                a[ip] = 1
+            a[ip] = 1
         to_sort = []
-        a_keys = a.keys()
-        a_keys.sort()
-        for ip in a_keys:
-            if self.is_local_ip_addr(ip):
-                # exclude '127.0.0.1'
-                continue
-            elif self.is_private_ip_addr(ip):
-                # put addrs like '192.168.XX.XX' at the end
-                to_sort.append((1, len(to_sort), ip))
+        for ip in a.keys():
+            # p1 : primary priority
+            # p2 : secondary priority (127.0.0.1 has a lower prio)
+            # p3 : ip string itself (to avoid non-determinism)
+            p1 = self.get_addr_prio(ip, addrs_prio)
+            if self.is_localhost_ip_addr(ip):
+                p2 = 1
             else:
-                # put global ip addrs first
-                to_sort.append((0, len(to_sort), ip))
+                p2 = 0
+            to_sort.append((p1, p2, ip))
         to_sort.sort()
         sorted_ip_addrs = []
         for _,_,ip in to_sort:
             sorted_ip_addrs.append(ip)
         return sorted_ip_addrs
 
-    def compile_addr_filters(self, addr_filter_strings):
-        addr_filters = []
-        for addr_filter_string in addr_filter_strings:
-            if addr_filter_string[0:1] == "-":
-                addr_filters.append((0, re.compile(addr_filter_string[1:])))
-            elif addr_filter_string[0:1] == "+":
-                addr_filters.append((1, re.compile(addr_filter_string[1:])))
-            else:
-                addr_filters.append((1, re.compile(addr_filter_string)))
-        return addr_filters
-
-    def get_my_addrs(self, addr_filter_strings):
+    def get_my_addrs_aux(self):
         """
         get my ip address the clients are told to connect to.
 
@@ -209,25 +211,52 @@ class ifconfig:
            -REGEXP
            REGEXP   (equivalent to +REGEXP)
         """
-        addr_filters = self.compile_addr_filters(addr_filter_strings)
-
         # look at /proc/net/dev on Linux
         A = self.get_my_addrs_by_proc_net_dev()
-        if len(A) > 0: return self.sort_addrs(A, addr_filters)
+        if len(A) > 0: return A
         # use ifconfig command
         A = self.get_my_addrs_by_ifconfig()
-        if len(A) > 0: return self.sort_addrs(A, addr_filters)
+        if len(A) > 0: return A
         # second by looking up my hostname
         A = self.get_my_addrs_by_lookup()
-        if len(A) > 0: return self.sort_addrs(A, addr_filters)
+        if len(A) > 0: return A
         return []
 
-the_ifconfig_obj = ifconfig()
+    def get_my_addrs(self, addr_prio):
+        addrs = self.get_my_addrs_aux()
+        return self.sort_addrs(addrs, addr_prio)
 
-def get_my_addrs(addr_filters=None):
-    if addr_filters is None: addr_filters = []
-    return the_ifconfig_obj.get_my_addrs(addr_filters)
+    def compile_prio(self, addr_prio_str):
+        prio = []
+        for pat in string.split(addr_prio_str, ","):
+            pat = string.strip(pat)
+            if pat == "": continue
+            if pat[0] == "+":
+                sign = 1
+                pat = pat[1:]
+            elif pat[0] == "-":
+                sign = 0
+                pat = pat[1:]
+            else:
+                sign = 1
 
-if __name__ == "__main__":
-    sys.stdout.write("%s\n" % string.join(get_my_addrs(sys.argv[1:]), " "))
-    
+            if pat in ("p", "P", "g", "G", "l", "L"):
+                c = pat
+            else:
+                try:
+                    c = re.compile(pat)
+                except re.error,e:
+                    msg = ("invalid addr_prio %s in %s %s"
+                           % (pat, addr_prio_str, e.args))
+                    return None,msg
+            prio.append((sign, c))
+        return prio,None
+
+ifobj = ifconfig()
+
+def get_my_addrs(addr_prio):
+    return ifobj.get_my_addrs(addr_prio)
+
+def compile_prio(addr_prio_str):
+    return ifobj.compile_prio(addr_prio_str)
+

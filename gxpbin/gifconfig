@@ -1,0 +1,28 @@
+#!/usr/bin/env python
+
+import socket,string,sys
+
+import ifconfig
+
+def Ws(s):
+    sys.stdout.write(s)
+
+def Es(s):
+    sys.stderr.write(s)
+
+
+def main():
+    host = socket.gethostname()
+    prio_str = ""
+    if len(sys.argv) > 1:
+        prio_str = sys.argv[1]
+    prio,msg = ifconfig.compile_prio(prio_str)
+    if prio is None:
+        Es("%s: %s\n" % (host, msg))
+        return 1
+    addrs = ifconfig.get_my_addrs(prio)
+    Ws("%s: %s\n" % (host, string.join(addrs, " ")))
+
+if __name__ == "__main__":
+    sys.exit(main())
+

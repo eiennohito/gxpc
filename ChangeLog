@@ -74,3 +74,12 @@
 	added --root_target_name option with which you can specify
 	the target name of the root daemon (as if the daemon has been
 	reached by that name). 
+
+2008-11-20 Taura
+	* ifconfig.py
+	* gxpbin/ifconfig.py
+	* gxpbin/bcp
+	* gxpbin/qsub_wrap
+	* gxpbin/gifconfig
+	Unified several slightly different versions of ifconfig.py 
+	into one. Also add a standalone program gifconfig

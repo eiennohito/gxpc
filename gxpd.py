@@ -407,7 +407,7 @@ class gxpd(ioman.ioman):
         ioman.set_log_filename("log-%s" % self.gupid)
 
         # hogehoge ----------------------
-        self.my_addrs = ifconfig.get_my_addrs() # ugly
+        self.my_addrs = ifconfig.get_my_addrs("") # ugly
         self.upgrade_listen_channel = None
         # hogehoge ----------------------
 

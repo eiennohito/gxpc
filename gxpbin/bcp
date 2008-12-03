@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
 import errno,os,random,re,select,socket,string,sys,time
-import opt
+import ifconfig,opt
+
 
 dbg=1
 
@@ -12,210 +13,6 @@ def Ws(s):
 def Es(s):
     sys.stderr.write(s)
     sys.stderr.flush()
-    
-class ifconfig:
-    """
-    ifconfig().get_my_addrs() will return a list of
-    IP addresses of this host
-    """
-    def __init__(self):
-        self.v4ip_pat_str = "(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})"
-        self.v4ip_p = re.compile(self.v4ip_pat_str)
-        self.ifconfig_list = [ "LANG=C /sbin/ifconfig -a 2> /dev/null" ]
-
-    def parse_ip_addr(self, addr):
-        """
-        '12.34.56.78' --> (12,34,56,78)
-        """
-        m = re.match(self.v4ip_pat_str, addr)
-        if m is None: return None
-        A,B,C,D = m.group(1,2,3,4)
-        try:
-            return string.atoi(A),string.atoi(B),string.atoi(C),string.atoi(D)
-        except ValueError,e:
-            return None
-
-    def is_global_ip_addr(self, addr):
-        a,b,c,d = self.parse_ip_addr(addr)
-        if a == 192 and b == 168: return 0
-        if a == 172 and 16 <= b < 32: return 0
-        if a == 10: return 0
-        if a == 127: return 0
-        return 1
-
-    def is_local_ip_addr(self, addr):
-        if addr == "127.0.0.1":
-            return 1
-        else:
-            return 0
-
-    def is_private_ip_addr(self, addr):
-        a,b,c,d = self.parse_ip_addr(addr)
-        if a == 192 and b == 168: return 1
-        if a == 172 and 16 <= b < 32: return 1
-        if a == 10: return 1
-        return 0
-
-    def is_global_ip_addr(self, addr):
-        if self.is_local_ip_addr(addr): return 0
-        if self.is_private_ip_addr(addr): return 0
-        return 1
-
-    def in_same_private_subnet(self, P, Q):
-        """
-        true when (1) both P and Q are private, and (2) they belong
-        to the same subnets.
-        """
-        if self.is_private_ip_addr(P) == 0: return 0
-        if self.is_private_ip_addr(Q) == 0: return 0
-        a,b,c,d = self.parse_ip_addr(P)
-        A,B,C,D = self.parse_ip_addr(Q)
-        if a == 192 and b == 168     and A == 192 and B == 168: return 1
-        if a == 172 and 16 <= b < 32 and A == 172 and 16 <= B < 32: return 1
-        if a == 10 and A == 10: return 1
-        return 0
-
-    def guess_connectable(self, P, Q):
-        """
-        P : address, Q : endpoint name.
-        (e.g.,
-        P = '133.11.238.3',
-        Q = ('tcp', (('157.82.246.104', '192.168.1.254'), 59098))
-        )
-        """
-        # consider * -> private is allowed
-        # Qas is like ('157.82.246.104', '192.168.1.254')
-        proto, (Qas, Qp) = Q            
-        Qa = Qas[0]
-        if self.is_global_ip_addr(Qa): return 1
-        # consider global -> private is blocked
-        if self.is_global_ip_addr(P): return 0
-        if self.in_same_private_subnet(P, Qa): return 1
-        return 0
-
-    def get_my_addrs_by_ifconfig(self, hint=None):
-        patterns = [ re.compile("inet addr:([\d|\.]+)"),
-                     re.compile("inet ([\d|\.]+)") ]
-        addrs = []
-        for c in self.ifconfig_list:
-            r = os.popen(c)
-            # blocking=1
-            # pr = ioman.primitive_channel_fd(r.fileno(), 1)
-            # ifconfig_out = r.read()
-            if 0:
-                ifconfig_outs = []
-                while 1:
-                    l,err,msg = pr.read(1000)
-                    if l <= 0: break
-                    ifconfig_outs.append(msg)
-                ifconfig_out = string.join(ifconfig_outs, "")
-            ifconfig_out = r.read()
-            for p in patterns:
-                found = p.findall(ifconfig_out)
-                if len(found) > 0: break
-            for addr in found:
-                if self.parse_ip_addr(addr) is not None:
-                    addrs.append(addr)
-            # ??? we got:
-            # "close failed: [Errno 9] Bad file descriptor"
-            r.close()
-            # pr.close()
-            if len(addrs) > 0: return addrs
-        return []
-
-    def get_my_addrs_by_lookup(self, hint=None):
-        if hint is None:
-            hostname = socket.gethostname()
-        else:
-            hostname = hint
-        try:
-            can_name,aliases,ip_addrs = socket.gethostbyname_ex(hostname)
-        except socket.error,e:
-            return []
-        return ip_addrs
-        
-    def sort_addrs_x(self, ip_addrs):
-        """
-        1. remove duplicates.
-        2. remove loopback addrs (127.0.0.1).
-        3. sort IP addresses.
-           global addrs first
-        """
-        a = {}
-        for ip in ip_addrs:
-            a[ip] = 1
-        to_sort = []
-        for ip in a.keys():
-            if self.is_local_ip_addr(ip):
-                # exclude '127.0.0.1'
-                continue
-            elif self.is_private_ip_addr(ip):
-                # put addrs like '192.168.XX.XX' at the end
-                to_sort.append((1, len(to_sort), ip))
-            else:
-                # put global ip addrs first
-                to_sort.append((0, len(to_sort), ip))
-        to_sort.sort()
-        sorted_ip_addrs = []
-        for _,_,ip in to_sort:
-            sorted_ip_addrs.append(ip)
-        return sorted_ip_addrs
-
-    def get_addr_prio(self, ip, prio):
-        """
-        prio: list of compiled regexps.
-        return the first index of regexp in prio
-        that match ip. if none match, return the 
-        length of the list
-        """
-        i = 0
-        for regexp in prio:
-            if regexp.match(ip): return i
-            i = i + 1
-        return len(prio)
-
-    def sort_addrs(self, ip_addrs, addrs_prio):
-        """
-        addrs_prio is a list of regexps that will be
-        matched against ip_addrs
-
-        1. remove duplicates.
-        2. remove loopback addrs (127.0.0.1).
-        3. sort IP addresses.
-           global addrs first
-        """
-        a = {}
-        for ip in ip_addrs:
-            a[ip] = 1
-        to_sort = []
-        for ip in a.keys():
-            # p1 : primary priority
-            # p2 : secondary priority (127.0.0.1 has a lower prio)
-            # p3 : ip string itself (to avoid non-determinism)
-            p1 = self.get_addr_prio(ip, addrs_prio)
-            if self.is_local_ip_addr(ip):
-                p2 = 1
-            else:
-                p2 = 0
-            to_sort.append((p1, p2, ip))
-        to_sort.sort()
-        sorted_ip_addrs = []
-        for _,_,ip in to_sort:
-            sorted_ip_addrs.append(ip)
-        return sorted_ip_addrs
-
-    def get_my_addrs(self, addrs_prio, hint=None):
-        """
-        get my ip address the clients are told to connect to.
-        """
-        # first by ifconfig
-        A = self.get_my_addrs_by_ifconfig(hint=hint)
-        if len(A) > 0: return self.sort_addrs(A, addrs_prio)
-        # second by looking up my hostname
-        A = self.get_my_addrs_by_lookup(hint=hint)
-        if len(A) > 0: return self.sort_addrs(A, addrs_prio)
-        return []
-
     
 class bcp_cmd_opts(opt.cmd_opts):
     def __init__(self):
@@ -393,7 +190,7 @@ class ring_connector:
         ss.listen(10)
         self.ss = ss
         self.host = socket.gethostname()
-        ip_addrs = ifconfig().get_my_addrs(self.opts.connect_prio)
+        ip_addrs = ifconfig.get_my_addrs(self.opts.connect_prio)
         self.ip_addr = ip_addrs[0]
         _,self.port = ss.getsockname()
 
