@@ -40,18 +40,11 @@ class bcp_cmd_opts(opt.cmd_opts):
                     " fixed to %d\n" % (self.max_pkt_sz, self.min_pkt_sz,
                                         self.min_pkt_sz)))
             self.max_pkt_sz = self.min_pkt_sz
-        # "10.1,10.2" --> [ re.compile("10.1"), re.compile("10.2") ] 
-        prio = []
-        for addr in string.split(self.connect_prio, ","):
-            addr = string.strip(addr)
-            if addr == "": continue
-            try:
-                c = re.compile(addr)
-            except re.error,e:
-                Es(("bcp : invalid arg to --connect_prio. bad regexp "
-                    "'%s' in %s %s\n" % (addr, self.connect_prio, e.args)))
-                return -1
-            prio.append(c)
+        # "10.1,10.2" --> [ re.compile("10.1"), re.compile("10.2") ]
+        prio,msg = ifconfig.compile_prio(self.connect_prio)
+        if prio is None:
+            Es("bcp : %s\n" %  msg)
+            return -1
         self.connect_prio = prio
         return 0
 
