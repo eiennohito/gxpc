@@ -521,7 +521,7 @@ class qsub_wrap_server_cmd_opts(cmd_opts):
         self.leave_output = (None, 0)
         self.export     = ("s*", [])
         self.qarg       = ("s*", [])
-        self.addr       = ("s*", [])
+        self.addr       = ("s", "")
         self.hostname   = ("s", None)
         self.dbg        = ("i", 0)
         # historical stuff
@@ -540,6 +540,13 @@ class qsub_wrap_server_cmd_opts(cmd_opts):
             [ var, val ] = var_val
             exports.append((var, val))
         self.export = exports
+
+        prio,msg = compile_prio(self.addr)
+        if prio is None:
+            Es("qsub_wrap : %s\n" %  msg)
+            return -1
+        self.addr = prio
+        return 0
             
 class torque_system_option:
     """
