@@ -646,8 +646,8 @@ class n1ge_system_option:
     def __init__(self):
         self.name = "n1ge"
         self.qsub_pattern = re.compile(".*Your job (?P<job_id>\d+) .* has been submitted", re.DOTALL)
-        self.qstat_trust_status = 1
-        self.qstat_pattern = None
+        self.qstat_trust_status = 0
+        self.qstat_pattern = "\njob_number:\s+%job_id%"
         self.qstat_job_id_flag = "-j"
         self.qsub_stdout_flag = "-sgeout"
         self.qsub_stderr_flag = "-sgeerr"
