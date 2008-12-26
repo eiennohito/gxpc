@@ -1390,6 +1390,7 @@ plot '-' with boxes
         parallelism = self.gen_parallelism(cur_time)
         # -------- men state --------
         men = self.gen_men(cur_time)
+        
 
         for i in range(n_pages):
             tmp,wp = self.mk_temp(states[i])
@@ -1402,14 +1403,21 @@ plot '-' with boxes
             wp.write(self.gen_failed_heading(states, jobs_txt, jobs_txt_sz, i))
             if i < len(failed_works):
                 wp.write(self.gen_failed_table(failed_works[i], cur_time))
+                wp.write(self.gen_elapsed_time(cur_time))
             # ---- long jobs ----
             wp.write(self.gen_long_heading(states, jobs_txt, jobs_txt_sz, i))
             if i < len(long_works):
                 wp.write(self.gen_long_table(long_works[i], cur_time))
+                wp.write(self.gen_elapsed_time(cur_time))
             # ---- recent jobs ----
             wp.write(self.gen_recent_heading(states, jobs_txt, jobs_txt_sz, i))
             if i < len(recent_works):
                 wp.write(self.gen_recent_table(recent_works[i], cur_time))
+                wp.write(self.gen_elapsed_time(cur_time))
+            # ---- worker stats ----
+            if i == 0:
+                wp.write(men)
+                wp.write(self.gen_elapsed_time(cur_time))
             wp.write(trailer)
             wp.close()
             self.paranoia_rename(tmp, states[i])
@@ -1502,13 +1510,19 @@ class xmake_server:
         # and the main thread receives it from rfd
         self.child_rfd = None
         self.child_wfd = None
+        self.n_sigchild_written = None
+        self.n_sigchild_read = None
         # pid of GNU make process
         self.make_pid = None
         self.make_status = None
         # list of all works 
         self.works = None
+        self.shots_todo = None
+        self.shots = None
+        self.matches = None
         # dict of all men (man name -> man)
         self.men = None
+        self.local_man = None
         # list of free men
         # multiple entries for multi-core men
         self.free_men = None
@@ -1524,6 +1538,8 @@ class xmake_server:
         # execs[dispatch_id] = exec_state
         self.execs = None
         # self.translator = work_translator(self)
+        self.interrupted = None
+        self.hostname = None
 
     def safe_int(self, x):
         try:
@@ -2019,9 +2035,55 @@ class xmake_server:
         else:
             new_shots_todo.reverse()
         self.shots_todo = new_shots_todo
+        if self.logfp:
+            self.LOG("%d job matches found\n" % len(M))
         return M
                     
     def dispatch(self):
+        """
+        dispatch some works, assuming there is a free worker
+        and a work to execute.
+
+        gxpc e -g <worker> --tid <tid> --keep_connection 0 '<cmd>'
+
+        """
+        if self.opts.no_dispatch_after is not None \
+               and self.cur_time() > self.opts.no_dispatch_after:
+            if self.logfp:
+                self.LOG(("do not dispatch work after %.3f\n"
+                          % self.opts.no_dispatch_after))
+            return 0
+        matches = self.find_matches()
+        self.matches = self.matches + matches
+        _,p = self.parallelism[-1]
+        n = 0
+        while len(self.matches) > 0:
+            shot,man = self.matches.pop(0)
+            cur_time = self.cur_time()
+            shot.shot(cur_time, self.opts.emulate)
+            n = n + 1
+            self.n_state_changes = self.n_state_changes + 1
+            self.parallelism.append((cur_time, p + n))
+            self.shots[shot.id] = shot
+            # check if a job is returning
+            # may be too much overhead
+            if n % 1000 == 0:
+                try:
+                    RR = []
+                    RR,_,_ = select.select([ self.gxpc_fd ], [], [], 0.0)
+                except select.error,e:
+                    if e.args[0] == errno.EINTR:
+                        if self.logfp:
+                            self.LOG("select interrupted\n")
+                if len(RR) > 0: break
+            if self.n_sigchild_written - self.n_sigchild_read > 50:
+                break
+        if self.logfp:
+            self.LOG("%d jobs dispatched\n" % n)
+        return n
+
+
+    def dispatch_xxxxxxxxxxxxx(self):
         """
         dispatch some works, assuming there is a free worker
         and a work to execute.
@@ -2114,9 +2176,9 @@ class xmake_server:
             t > self.next_record_time_2):
             self.rec.record_state(finished)
             self.last_record_time = self.cur_time()
-            time_to_next_1 = max((t - self.last_record_time) * 50.0,
+            time_to_next_1 = max((self.last_record_time - t) * 20.0,
                                  self.opts.update_interval_1)
-            time_to_next_2 = max((t - self.last_record_time) * 50.0,
+            time_to_next_2 = max((self.last_record_time - t) * 20.0,
                                  self.opts.update_interval_2)
             if self.last_record_time < 10.0:
                 # heuristics to update more eagerly in the beginning
@@ -2159,7 +2221,9 @@ class xmake_server:
         if self.logfp:
             self.LOG("sigchld handler %d\n" % self.child_wfd)
         try:
-            os.write(self.child_wfd, "x")
+            x = os.write(self.child_wfd, "x")
+            assert x == 1
+            self.n_sigchild_written = self.n_sigchild_written + 1
         except OSError,e:
             if e.args[0] == errno.EBADF:
                 if self.logfp:
@@ -2176,6 +2240,8 @@ class xmake_server:
         r,w = os.pipe()
         self.child_rfd = r
         self.child_wfd = w
+        self.n_sigchild_written = 0
+        self.n_sigchild_read = 0
         signal.signal(signal.SIGCHLD, self.sigchld)
 
     def handle_child_death(self):
@@ -2187,18 +2253,28 @@ class xmake_server:
         it will know a child terminates, and handles it.
         
         """
+        w = self.n_sigchild_written
+        r = self.n_sigchild_read
         if self.logfp:
-            self.LOG("handling child death\n")
+            self.LOG("handling child death (w=%d,r=%d)\n" % (w, r))
+        x = w - r
+        # I don't know why, but it really happens that
+        # written < read.
+        if x <= 0: x = 1
+
+        x = 100
         try:
-            a = os.read(self.child_rfd, 1)
+            a = os.read(self.child_rfd, x)
         except IOError,e:
             if e.args[0] == errno.EINTR:
+                if self.logfp:
+                    self.LOG("read interrupted\n")
                 return
             else:
                 raise
         if self.logfp:
             self.LOG("got %s from child_rfd\n" % a)
-        assert a == "x", a
+        self.n_sigchild_read = self.n_sigchild_read + len(a)
         pids = []
         while 1:
             try:
@@ -2231,6 +2307,8 @@ class xmake_server:
                 if self.logfp:
                     self.LOG("it is another job\n")
             self.n_state_changes = self.n_state_changes + 1
+        if self.logfp:
+            self.LOG("%d children reaped\n" % len(pids))
                 
     def close_socket(self):
         if self.so:
@@ -2293,6 +2371,7 @@ class xmake_server:
         self.works = []                 # list of works
         self.shots_todo = []            # shots to do
         self.shots = {}                 # shots in progress (pid/rid -> )
+        self.matches = []
         self.men = {}                   # list of free men
         self.local_man = Man(local_man_name, len(self.men), 1, self.cur_time())
         self.men[local_man_name] = self.local_man
@@ -2343,8 +2422,7 @@ class xmake_server:
             else:
                 self.prepare_cleanup()
         # loop while make is still alive
-        while self.dispatch():
-            pass
+        n_dispatched_jobs = self.dispatch()
         # wait until we receive something
         R = [ self.child_rfd ]
         if self.so: R.append(self.so)
@@ -2359,7 +2437,9 @@ class xmake_server:
             timeout = int_at - cur_time
         else:
             timeout = nr - cur_time
-        if timeout < 1.0: timeout = 1.0
+        if timeout < 0.0: timeout = 0.0
+        if n_dispatched_jobs == 0 and timeout < 1.0:
+            timeout = 1.0
         if self.logfp:
             self.LOG("select(%d, timeout=%.2f)\n" % (len(R), timeout))
         try:
