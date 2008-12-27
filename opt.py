@@ -135,11 +135,15 @@ class cmd_opts:
                 else:                   # want arg (-f file)
                     short_opts.append("%s:" % o)
             else:
+                if o[-2:] == "__": 
+                    oo = o[:-2]
+                else:
+                    oo = o
                 typ,default = getattr(self, o)
                 if typ is None:         # no arg   (--help)
-                    long_opts.append("%s" % o)
+                    long_opts.append("%s" % oo)
                 else:                   # want arg (--file file)
-                    long_opts.append("%s=" % o)
+                    long_opts.append("%s=" % oo)
         return string.join(short_opts),long_opts
             
     def Es(self, s):
@@ -162,7 +166,12 @@ class cmd_opts:
             field = getattr(self, o[1:])
         else:                           # --help
             field = o[2:]
-        typ,val = getattr(self, field)
+        if hasattr(self, field):
+            typ,val = getattr(self, field)
+        else:
+            field = ("%s__" % field)
+            typ,val = getattr(self, field)
+
         # type check
         if typ is None:
             x = 1

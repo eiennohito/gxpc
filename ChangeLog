@@ -83,3 +83,8 @@
 	* gxpbin/gifconfig
 	Unified several slightly different versions of ifconfig.py 
 	into one. Also add a standalone program gifconfig
+
+2008-12-27 Taura
+	* gxpc.py
+	Remove 'as' field from use_cmd_opts so it works Python 2.6.
+	

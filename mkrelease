@@ -4,6 +4,8 @@
 # (i.e., if VERSION=04, it means version 3.04 HAS BEEN released)
 VERSION=04
 
+# taura -> ttaauu
+
 if [ ! $# -eq 1 ]; then
   echo "Usage: $0 YOUR_SOURCEFORGE_ACCOUNT"
   exit 1
