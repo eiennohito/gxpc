@@ -1112,7 +1112,7 @@ class use_cmd_opts(opt.cmd_opts):
         #   None : flag
         opt.cmd_opts.__init__(self)
         self.delete = (None, 0)         # delete flag
-        self.as = ("s", "")             # --as
+        self.as__ = ("s", "")             # --as
         self.d = "delete"
 
 class rsh_cmd_opts(opt.cmd_opts):
@@ -1415,7 +1415,7 @@ class cmd_interpreter:
         if full:
             try:
                 session = pickler.load(fp)
-            except cPickle.UnpicklingError,e:
+            except pickler.UnpicklingError,e:
                 Es("%s\n" % (e.args,))
                 fp.close()
                 return None
@@ -2665,9 +2665,9 @@ See Also:
                 [ method, src, target ] = opts.args
             else:
                 return cmd_interpreter.RET_NOT_RUN
-            if opts.as != "": method = ("%s_as" % method)
+            if opts.as__ != "": method = ("%s_as" % method)
             if opts.delete:
-                item = (method, opts.as, src, target)
+                item = (method, opts.as__, src, target)
                 if item in session.edges:
                     session.edges.remove(item)
                     session.set_dirty()
@@ -2677,17 +2677,17 @@ See Also:
                     return cmd_interpreter.RET_NOT_RUN
             else:
                 if self.session.login_methods.has_key(method):
-                    item = (method, opts.as, src, target)
+                    item = (method, opts.as__, src, target)
                     if item in session.edges:
-                        if opts.as == "":
+                        if opts.as__ == "":
                             edge_str = "use %s %s %s" % (method,src,target)
                         else:
-                            edge_str = "use --as %s %s %s %s\n" % (method,opts.as, src,target)
+                            edge_str = "use --as %s %s %s %s\n" % (method,opts.as__, src,target)
 
                         Es("gxpc use: ignore duplicated use clause: %s\n" \
                            % edge_str)
                     else:
-                        session.edges.insert(0, (method, opts.as, src, target))
+                        session.edges.insert(0, (method, opts.as__, src, target))
                         session.set_dirty()
                 else:
                     Es("gxpc use: no rsh-like method called '%s.' "
