@@ -88,3 +88,28 @@
 	* gxpc.py
 	Remove 'as' field from use_cmd_opts so it works Python 2.6.
 	
+2008-12-29 Taura
+	* gxpbin/qsub_wrap
+	* gxpbin/qsub_wrap_client
+	Fixed the problem that started occurring in T2K Kyoto recently.
+	qsub on T2K kyoto started not working. There were two (or three)
+	reasons.
+	1. qsub on T2K Kyoto changed. It used to output job id to stdout, 
+	but now	to stderr. Thus qsub_wrap failed to obtain its job id. 
+	qsub_wrap now reads both stdout and stderr (first stdout, and 
+	then stderr only when it failed to get it from the former). 
+	2. qsub_wrap has recently changed to make it work on T2K Tokyo. 
+	Before it used to generate a small qsub batch script file that
+	invokes 'qsub_wrap --connect_to ... ', assuming the compute node 
+	can access qsub_wrap file. This does not hold when the submitting 
+	node and the compute node do not share the GXP3 top directory 
+	(like in the case GXP3 is in /tmp). So it was 
+	changed so that the batch script contains every necessary code
+	(more precisely it contains a big 'cat <<EOF ... EOF' 
+	command to emit	the qsub_wrap client script on the fly).
+	This change, however, made the generated batch script big, 
+	and it seems to	hit the limit of the system (well, it's 
+	just about 32KB...). I wish the system handles this size, but 
+	I worked around the limitation by triming the generated script. 
+	A separate qsub_wrap_client file is the result.
+	

@@ -850,6 +850,8 @@ qsub_wrap hostname
         stderr_output = self.readall(stderr)
         qid,status = os.waitpid(pid, 0)
         assert pid == qid, (pid, qid, status)
+        if dbg>=2:
+            Es("%s : status = %s %s\n" % (self.cmd, status, args))
         if os.WIFEXITED(status):
             return os.WEXITSTATUS(status),stdout_output,stderr_output
         else:
@@ -950,99 +952,9 @@ qsub_wrap hostname
         Es("%s : could not make temporary script in %s\n" % (self.cmd, directory))
         return None,None,None,None,None
 
-    def run_qsub_process_x(self, addr, port, hello):
-        """
-        run qsub and obtain its job id
-        """
-        if self.opt.taskset and self.opt.taskset != "0":
-            if self.opt.taskset == "1":
-                taskset = "taskset"
-            else:
-                taskset = self.opt.taskset
-            taskset = "--taskset %s" % taskset
-        else:
-            taskset = ""
-
-        client_cmd = self.opt.args[0]
-        base64_client_cmd = base64.encodestring("%r" % client_cmd)
-        script_content = ("%s --connect_to %s:%s --hello %s %s "
-                          "--base64cmd '%s'\n" 
-                          % (self.cmd, addr, port, 
-                             hello, taskset, base64_client_cmd))
-        
-        args = [ self.opt.qsub ] + self.opt.qarg
-	# generate script
-        script,qsub_client,wp,stdout,stderr = self.mk_tmp_files()
-        if wp is None: return None
-        assert type(script) is types.StringType
-        wp.write(script_content)
-        wp.close()
-        os.chmod(script, 0755)
-        if dbg>=2:
-            Es("%s : script file %s created\n" % (self.cmd, script))
-        # arrange them to be finally removed 
-        if self.opt.leave_output == 0:
-            self.files_to_remove.append(script)
-            self.files_to_remove.append(stdout)
-            self.files_to_remove.append(stderr)
-        self.script_filename = script
-        self.stdout_filename = stdout
-        self.stderr_filename = stderr
-        stdin_content = ""
-
-        # add "-o file -e file" thing
-        if self.sys_opt.qsub_stdout_flag is not None:
-            args.append(self.sys_opt.qsub_stdout_flag)
-            args.append(stdout)
-        if self.sys_opt.qsub_stderr_flag is not None:
-            args.append(self.sys_opt.qsub_stderr_flag)
-            args.append(stderr)
-        # the last argument to qsub is the script name
-        args.append(script)
-        # finally send the job
-        r,stdout_output,stderr_output = self.system(args, stdin_content,
-                                                    self.opt.export)
-
-        # Ws(stdout_output)
-        Es(stderr_output)
-        if r == 0:
-            # qsub says "Your job xxxx has been submitted", upon
-            # successful queueing
-            # m = self.qsub_pattern.match(stdout_output)
-            sys_opt,m = self.search_job_id_from_qsub_output(stdout_output)
-            if m is None and self.sys_opt is not None:
-                Es(("%s : %s (%s) : could not obtain job id from output (%s). "
-                    "perhaps no or wrong --sys argument?\n"
-                    "cmd = %s\n"
-                    % (self.cmd, self.hostname, self.connect_addr,
-                       string.strip(stdout_output), args)))
-                return None
-            elif m is None and self.sys_opt is None:
-                Es(("%s : %s (%s) : could not guess job id from output (%s).\n"
-                    "cmd = %s\n"
-                    % (self.cmd, self.hostname, self.connect_addr,
-                       string.strip(stdout_output), args)))
-                return None
-            # now we got a job_id
-            # set the name of the system that has done the right job
-            if self.sys_opt is None:
-                self.sys_opt = sys_opt
-                self.config_system_options(sys_opt)
-            self.job_id = m.group("job_id")
-            self.job_in_queue = 1
-            if dbg>=1:
-                Es(("%s : %s (%s) : job id = %s\n" 
-                    % (self.cmd, self.hostname, self.connect_addr,
-                       self.job_id)))
-            return self.job_id
-        else:
-            Es(("%s : %s (%s) : submission appears to have failed\n" 
-                "cmd = %s\n")
-               % (self.cmd, self.hostname, self.connect_addr, args))
-            return None
-
     def get_qsub_wrap_content(self):
-        fp = open(self.cmd, "rb")
+        cmd = "%s_client" % self.cmd
+        fp = open(cmd, "rb")
         content = fp.read()
         fp.close()
         return content
@@ -1106,13 +1018,17 @@ qsub_wrap hostname
         r,stdout_output,stderr_output = self.system(args, stdin_content,
                                                     self.opt.export)
 
-        # Ws(stdout_output)
+        if dbg>=2:
+            Es("%s : stdout: (%s)" % (self.cmd, stdout_output))
         Es(stderr_output)
+            
         if r == 0:
             # qsub says "Your job xxxx has been submitted", upon
             # successful queueing
             # m = self.qsub_pattern.match(stdout_output)
             sys_opt,m = self.search_job_id_from_qsub_output(stdout_output)
+            if m is None:
+                sys_opt,m = self.search_job_id_from_qsub_output(stderr_output)
             if m is None and self.sys_opt is not None:
                 Es(("%s : %s (%s) : could not obtain job id from output (%s). "
                     "perhaps no or wrong --sys argument?\n"
@@ -1139,9 +1055,9 @@ qsub_wrap hostname
                        self.job_id)))
             return self.job_id
         else:
-            Es(("%s : %s (%s) : submission appears to have failed\n" 
+            Es(("%s : %s (%s) : submission appears to have failed (status=%d)\n" 
                 "cmd = %s\n")
-               % (self.cmd, self.hostname, self.connect_addr, args))
+               % (self.cmd, self.hostname, self.connect_addr, r, args))
             return None
 
     def check_job_in_queue(self):
