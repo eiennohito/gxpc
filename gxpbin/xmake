@@ -555,6 +555,28 @@ class Run:
         self.time_start = None          # set by the first shot's shot
         self.time_end = None
 
+    def show_status(self):
+        """
+        for reporting
+        """
+        if self.status is None:
+            if self.man is None:
+                # not yet dispatched or in progress
+                return ("waiting","-")
+            else:
+                return ("running", ("by %s" % self.man.name))
+        elif os.WIFEXITED(self.status):
+            s = os.WEXITSTATUS(self.status)
+            if s == 0:
+                return ("success", ("exit %d" % s))
+            else:
+                return ("fail",  ("exit %d" % s))
+        elif os.WIFSIGNALED(self.status):
+            s = os.WTERMSIG(self.status)
+            return ("killed", ("killed %d" % s))
+        else:
+            return ("other", ("??? %d" % self.status))
+
     def xxx_abort(self, status, cur_time):
         self.time_end = cur_time
         self.status = status
@@ -585,7 +607,8 @@ class Run:
             # this happens when we reach the time limit and this work
             # must be aborted before dispatched to any man
             assert (status == self.server.status_time_limit), status
-        self.work.finish(status, man)
+        self.work.finish_or_retry(status, man)
+        # self.work.finish(status, man)
 
 class x_work_translator:
     def __init__(self, server):
@@ -690,7 +713,7 @@ class Work:
         self.status = None              # status if finished
         self.runs = []        # run records for the work. usually one
 
-    def show_status(self):
+    def xxx_show_status(self):
         """
         for reporting
         """
@@ -700,7 +723,7 @@ class Work:
                 # not yet dispatched or in progress
                 return ("waiting","-")
             else:
-                return ("running", ("by %s" % self.runs[0].man.name))
+                return ("running", ("by %s" % run.man.name))
         elif os.WIFEXITED(self.status):
             s = os.WEXITSTATUS(self.status)
             if s == 0:
@@ -738,15 +761,25 @@ class Work:
         # self.server.translator.modify_run(run)
         return run
 
+    def finish_or_retry(self, status, man):
+        server = self.server
+        if status == server.status_worker_dead:
+            # retry
+            msg = ("work '%s' will be retried\n" % string.join(self.cmds, " "))
+            Es("xmake: %s" % msg)
+            if server.logfp: server.LOG(msg)
+            server.shots_todo.append(self.make_run().shots[0])
+        else:
+            self.finish(status, man)
+
     def finish(self, status, man):
         # this means man has been working on something,
         # and it has just finished
         # send notification to mksh
         if self.status is not None:
             if self.server.logfp:
-                self.server.LOG(("warning: work finished twice %s, %s must have been dead\n"
-                                 % (string.join(self.cmds, " "), man.name)))
-            assert (man.live == 0), man.name
+                self.server.LOG(("warning: work finished twice %s\n"
+                                 % (string.join(self.cmds, " "))))
             return
         assert self.conn is not None
         msg = "%s\n" % os.WEXITSTATUS(status)
@@ -1099,6 +1132,61 @@ td.man_dead {
 </tr>''')
         for w in works:
             queued_t = time.ctime(w.req_time + self.server.start_t)
+            cmds = string.join(self.modify_cmds(w.cmds), "<br><br>")
+            i = 0
+            n_runs = len(w.runs)
+            for run in w.runs:
+                s = run.time_start
+                e = run.time_end
+                start_t = "<br>"
+                end_t = "<br>"
+                elapsed = "<br>"
+                man = "<br>"
+                if s is not None:
+                    man = run.man.name
+                    start_t = time.ctime(s + self.server.start_t)
+                    if e is not None:
+                        end_t = time.ctime(e + self.server.start_t)
+                        elapsed = "%.2f" % (e - s)
+                    else:
+                        elapsed = "%.2f" % (cur_time - s)
+                cls,sts = run.show_status()
+                wp.write('<tr>')
+                if i == 0:
+                    # first three columns are common in all runs
+                    wp.write(('<td rowspan=%d>%d</td> '
+                              '<td rowspan=%d>%s</td> '
+                              '<td rowspan=%d>%s</td> '
+                              % (n_runs, w.idx, 
+                                 n_runs, cmds, 
+                                 n_runs, queued_t)))
+                wp.write(('<td>%s</td> '
+                          '<td>%s</td> '
+                          '<td>%s</td> '
+                          '<td>%s</td> '
+                          '<td class="%s">%s</td> '
+                          % (start_t, end_t,
+                             man, elapsed, cls, sts)))
+                wp.write('</tr>\n')
+                i = i + 1
+        wp.write('</table>\n')
+        return wp.getvalue()
+
+    def xxx_gen_works_aux(self, label, works, cur_time):
+        wp = cStringIO.StringIO()
+        wp.write(r'''<table class="works">
+<tr>
+<td>idx</td>
+<td>command</td>
+<td>queued at</td>
+<td>started at</td>
+<td>finished at</td>
+<td>executed by</td>
+<td>turn around time</td>
+<td>status</td>
+</tr>''')
+        for w in works:
+            queued_t = time.ctime(w.req_time + self.server.start_t)
             run = w.runs[-1]
             s = run.time_start
             e = run.time_end
@@ -1193,34 +1281,34 @@ td.man_dead {
 
         for w in self.server.works:
             queued_t = time.ctime(w.req_time + self.server.start_t)
-            run = w.runs[-1]
-            s = run.time_start
-            e = run.time_end
-            start_t = ""
-            end_t = ""
-            elapsed = ""
-            man = ""
-            if s is not None:
-                man = run.man.name
-                start_t = time.ctime(s + self.server.start_t)
-                if e is not None:
-                    end_t = time.ctime(e + self.server.start_t)
-                    elapsed = "%.2f" % (e - s)
-                else:
-                    elapsed = "%.2f" % (cur_time - s)
-            cls,sts = w.show_status()
             cmds = string.join(w.cmds, " && ")
-            wp.write(('%d\t'
-                      '%s\t'
-                      '%s\t'
-                      '%s\t'
-                      '%s\t'
-                      '%s\t'
-                      '%s\t'
-                      '%s\n'
-                      % (w.idx, cmds,
-                         queued_t, start_t, end_t,
-                         man, elapsed, sts)))
+            for run in w.runs:
+                s = run.time_start
+                e = run.time_end
+                start_t = ""
+                end_t = ""
+                elapsed = ""
+                man = ""
+                if s is not None:
+                    man = run.man.name
+                    start_t = time.ctime(s + self.server.start_t)
+                    if e is not None:
+                        end_t = time.ctime(e + self.server.start_t)
+                        elapsed = "%.2f" % (e - s)
+                    else:
+                        elapsed = "%.2f" % (cur_time - s)
+                cls,sts = run.show_status()
+                wp.write(('%d\t'
+                          '%s\t'
+                          '%s\t'
+                          '%s\t'
+                          '%s\t'
+                          '%s\t'
+                          '%s\t'
+                          '%s\n'
+                          % (w.idx, cmds,
+                             queued_t, start_t, end_t,
+                             man, elapsed, sts)))
         # wp.write('-->\n')
         return wp.getvalue()
     
@@ -2005,6 +2093,7 @@ class xmake_server:
                       "local=%s stage_ins=%s stage_outs=%s resources=%s\n"
                       % (cmd, cmds, cwd, envs, attr.local,
                          attr.stage_ins, attr.stage_outs, attr.resources)))
+        # make a run and put the first shot of it into the todo list
         self.shots_todo.append(work.make_run().shots[0])
         self.works.append(work)
         self.n_state_changes = self.n_state_changes + 1
