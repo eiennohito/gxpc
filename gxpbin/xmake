@@ -86,9 +86,8 @@ This command line ensures the task hogehoge persists even if no
 processes are running.
 
 Meanwhile, GNU make invokes mksh like a regular shell, i.e., mksh -c
-COMMAND.  It will check if the COMMAND begins with '=' and if so, it
-connects to this (xmake) process and requests the command line to be
-dispatched.
+COMMAND.  It connects to this (xmake) process and requests the command
+line to be dispatched.
 
 xmake enques received command lines, selects a free worker for each,
 and once a worker is found, dispatches it with the following command.
@@ -159,6 +158,11 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.time_limit = ("s", None)
         self.no_dispatch_after = ("i", None)
         self.interrupt_at = ("i", None)
+        self.exit_status_worker_dead = ("i", 123)
+        self.exit_status_time_limit = ("i", 124)
+        self.exit_status_connect_failed = ("i", 125)
+        self.exit_status_server_dead = ("i", 126)
+        
         # in case you want to run GNU make with a different name
         self.make     = ("s", "make")
         self.stage_in = ("s", None)     # "./stage_in"
@@ -247,8 +251,23 @@ gxpc make options:
   --time_limit soft[:hard]
       soft specifies the time when make stops dispatching jobs. after this time,
       it only waits for outstanding workss to finish, and then throws away all
-      jobs (not dispatched) with exit status 124. hard specifies the time when
+      jobs (not dispatched) with exit status 124, or what you specify with --exit_status_time_limit. hard specifies the time when
       make kills (with SIGINT) works in progress.
+  --exit_status_worker_dead S
+      specifies the exit status, perceived by GNU make, for jobs that
+      are not completed because the worker is dead. default is 123.
+  --exit_status_time_limit S
+      specifies the exit status, perceived by GNU make, for jobs that
+      are not executed because time_limit (specified by --time_limit option)
+      reached. default is 124.
+  --exit_status_connect_failed S
+      specifies the exit status, perceived by GNU make, for jobs that
+      failed to executed because it somehow could not connect to xmake
+      (it should not normally happen). default is 125.
+  --exit_status_server_dead S
+      specifies the exit status, perceived by GNU make, for jobs that
+      failed to complete because xmake somehow died (it should not
+      normally happen). default is 126.
 
 SEM_SPECS:
   SEM_SPECS ::= SEM_SPEC[,SEM_SPEC]*
@@ -274,8 +293,13 @@ class Man:
         self.idx = idx                  # serial number
         self.capacity = capacity
         self.time = t                   # created
-        self.running = []               # shots this man is working on
-        self.runs = []                  # shots this man has worked on
+        self.live = 1                   # initially considered live
+        self.last_heartbeat_time = t    # last time at which I heard from him
+        self.running = []               # runs this man is working on
+        self.runs = []                  # runs this man has worked on
+
+    def set_heartbeat(self, t):
+        self.last_heartbeat_time = t
 
 class shot_id_counter:
     def __init__(self):
@@ -531,24 +555,37 @@ class Run:
         self.time_start = None          # set by the first shot's shot
         self.time_end = None
 
+    def xxx_abort(self, status, cur_time):
+        self.time_end = cur_time
+        self.status = status
+        man = self.man
+        _,p = self.server.parallelism[-1]
+        self.server.parallelism.append((cur_time, p - 1))
+        if self.server.logfp:
+            self.server.LOG("man %s now dead\n" % man.name)
+        self.work.finish(status, man)
+
     def finish(self, status, cur_time):
         self.time_end = cur_time
         self.status = status
         man = self.man
         # man is None if this shot is aborted
         if man:
-            self.server.free_men.append(man) # this man is now free
-            if self.server.logfp:
-                self.server.LOG("man %s now free\n" % man.name)
-            man.running.remove(self)
+            if man.live:
+                self.server.free_men.append(man) # this man is now free
+                if self.server.logfp:
+                    self.server.LOG("man %s now free\n" % man.name)
+                man.running.remove(self)
+            else:
+                if self.server.logfp:
+                    self.server.LOG("man %s now dead\n" % man.name)
+                if self in man.running:
+                    man.running.remove(self)
         else:
             # this happens when we reach the time limit and this work
             # must be aborted before dispatched to any man
-            assert os.WIFEXITED(status), status
-            assert (os.WEXITSTATUS(status) == 124), status
-        if self.work.status is None:
-            # this is the first time a run for the work has finished
-            self.work.finish(status, man)
+            assert (status == self.server.status_time_limit), status
+        self.work.finish(status, man)
 
 class x_work_translator:
     def __init__(self, server):
@@ -705,6 +742,13 @@ class Work:
         # this means man has been working on something,
         # and it has just finished
         # send notification to mksh
+        if self.status is not None:
+            if self.server.logfp:
+                self.server.LOG(("warning: work finished twice %s, %s must have been dead\n"
+                                 % (string.join(self.cmds, " "), man.name)))
+            assert (man.live == 0), man.name
+            return
+        assert self.conn is not None
         msg = "%s\n" % os.WEXITSTATUS(status)
         try:
             self.conn.send(msg)
@@ -858,6 +902,9 @@ td.man_free {
 }
 td.man_working {
   background-color:#ff8;
+}
+td.man_dead {
+  background-color:#f88;
 }
 -->
 </style>
@@ -1178,21 +1225,35 @@ td.man_working {
         return wp.getvalue()
     
     def gen_men(self, cur_time):
+        """
+        generate worker state
+        """
         wp = cStringIO.StringIO()
         men = self.server.men.items()
         men.sort()
         wp.write(r'''<a name="Worker States">
 <h1>Worker States</h1>
 <a href="#">page top</a><br><br>
+last_ping_time = %.3f<br>
 <table class="men">
-<tr><td class="men_header">worker name</td><td>jobs</td><td>status</td></tr>
-''')
+<tr><td class="men_header">worker name</td><td>jobs</td><td>last heard</td><td>status</td></tr>
+''' % self.server.pinger.last_ping_time)
         for name,man in men:
             n_running = len(man.running)
             if n_running == 0:
-                wp.write(('<tr><td>%s</td><td>%s</td><td class="man_free">-</td></tr>\n'
-                          % (name, len(man.runs))))
+                if man.live:
+                    cls = "man_free"
+                else:
+                    cls = "man_dead"
+                wp.write(('<tr><td>%s</td><td>%s</td>'
+                          '<td>%.3f</td><td class="%s">-</td></tr>\n'
+                          % (name, len(man.runs),
+                             man.last_heartbeat_time, cls)))
             else:
+                if man.live:
+                    cls = "man_working"
+                else:
+                    cls = "man_dead"
                 i = 0
                 for run in man.running:
                     cmds = string.join(run.work.cmds, "<br><br>")
@@ -1200,11 +1261,13 @@ td.man_working {
                         wp.write(('<tr>'
                                   '<td rowspan=%d>%s</td>'
                                   '<td rowspan=%d>%s</td>'
-                                  '<td class="man_working">%s</td>'
+                                  '<td rowspan=%d>%.3f</td>'
+                                  '<td class="%s">%s</td>'
                                   '</tr>\n'
                                   % (n_running, man.name,
                                      n_running, len(man.runs),
-                                     cmds)))
+                                     n_running, man.last_heartbeat_time,
+                                     cls, cmds)))
                     else:
                         wp.write(('<tr><td class="man_working">%s</td></tr>\n'
                                   % cmds))
@@ -1467,9 +1530,50 @@ plot '-' with boxes
         wp.close()
         self.paranoia_rename(tmp, state)
         dt = self.cur_time() - cur_time
-        self.LOG("took %.3f sec to generate state file (%s)\n" % (dt, state))
+        if self.server.logfp:
+            self.LOG("took %.3f sec to generate state file (%s)\n" % (dt, state))
 
     
+class Pinger:
+    def __init__(self, server):
+        self.server = server
+        self.id = 0
+        self.ping_pid = None
+        self.last_ping_time = 0
+        self.ping_interval = 5.0
+
+    def get_rid(self):
+        x = self.id
+        self.id = x + 1
+        return "z%d" % x
+        
+    def ping_all(self, cur_time):
+        if self.last_ping_time + self.ping_interval >= cur_time:
+            return 0
+        if self.server.logfp:
+            self.server.LOG("periodic ping to all workers\n")
+        if self.ping_pid is not None:
+            if self.server.logfp:
+                self.server.LOG(("ping (pid = %d) taking so much time,"
+                                 " trying to kill it\n" % self.ping_pid))
+            try:
+                os.kill(self.ping_pid, signal.SIGKILL)
+            except OSError,e:
+                if self.server.logfp:
+                    self.server.LOG("os.kill: %s\n" % (e.args,))
+            return 0
+        cmdx = [self.server.opts.gxpc, "--save_session", "0",
+                "e", "--tid", self.server.tid,
+                "--rid", self.get_rid(), "--keep_connection", "0", ":" ]
+        if self.server.logfp:
+            self.server.LOG("ping by '%s'\n" % string.join(cmdx, " "))
+        pid = os.fork()
+        if pid == 0:
+            self.server.close_fds()
+            os.execvp(cmdx[0], cmdx)
+        self.ping_pid = pid             # set to None in handle_child_death
+        self.last_ping_time = cur_time
+        return 1
 
 class xmake_server:
     """
@@ -1540,6 +1644,8 @@ class xmake_server:
         # self.translator = work_translator(self)
         self.interrupted = None
         self.hostname = None
+        #
+        self.pinger = Pinger(self)
 
     def safe_int(self, x):
         try:
@@ -1841,7 +1947,7 @@ class xmake_server:
             t = transformer % D
         except KeyError,e:
             key = e.args[0]
-            Es(("%s %s contains invalid keyword %s (ignored)\n"
+            Es(("xmake: %s %s contains invalid keyword %s (ignored)\n"
                 % (title, t, key)))
             return None
         return t
@@ -1852,12 +1958,12 @@ class xmake_server:
             t = transformer % D
         except KeyError,e:
             key = e.args[0]
-            Es(("%s %s contains invalid keyword %s (ignored)\n"
+            Es(("xmake: %s %s contains invalid keyword %s (ignored)\n"
                 % (title, t, key)))
             return None
         c = self.run_cmd(t)
         if c == "":
-            Es("%s %s returns empty string (ignored)\n" % (title, t))
+            Es("xmake: %s %s returns empty string (ignored)\n" % (title, t))
             return None
         else:
             return c
@@ -1903,8 +2009,6 @@ class xmake_server:
         self.works.append(work)
         self.n_state_changes = self.n_state_changes + 1
 
-
-
     def recv_works(self):
         while 1:
             try:
@@ -1947,12 +2051,13 @@ class xmake_server:
         # [ man_name, _, _, _, _, status ] = string.split(line)
         assert man_name != ""
         man = self.men.get(man_name)
+        cur_time = self.cur_time()
         if man is None:
             # the first msg from this man
             n = self.conf.get_cpu_count(man_name)
             if self.logfp:
                 self.LOG("new man %s joined with %d cpus\n" % (man_name, n))
-            man = Man(man_name, len(self.men), n, self.cur_time())
+            man = Man(man_name, len(self.men), n, cur_time)
             self.men[man_name] = man
             for i in range(n):
                 self.free_men.append(man)
@@ -1962,10 +2067,23 @@ class xmake_server:
             if shot:
                 assert shot.id == rid, (shot.id, rid)
                 self.handle_fin(shot, status)
+            elif rid[0:1] == "z": # ugly way to know this is a reply to ping
+                man.set_heartbeat(cur_time)
+                if man.live:
+                    if self.logfp:
+                        self.LOG(("a heartbeat from a healthy worker %s\n"
+                                  % man_name))
+                else:
+                    msg = ("a heartbeat from a worker %s who was once"
+                           " considered dead (ignored)\n"
+                           % man_name)
+                    if self.logfp: self.LOG(msg)
+                    Es("xmake: %s" % msg)
             else:
                 if self.logfp:
                     self.LOG("rid %s not found in shots\n" % rid)
-
+        self.n_state_changes = self.n_state_changes + 1
+            
     def handle_fin(self, shot, status):
         # a working process has just finished.
         self.release_resources(shot)
@@ -2016,8 +2134,11 @@ class xmake_server:
                 else:
                     for man in self.free_men:
                         self.free_men.remove(man)
-                        found = 1
-                        break           # found match for man
+                        if man.live:
+                            found = 1
+                            break           # found match for man
+                        else:
+                            Es("xmake: dead man %s found in free_men queue\n" % man.name)
                 if found:
                     if self.logfp:
                         self.LOG(("shot '%s' assignged %s\n"
@@ -2080,35 +2201,28 @@ class xmake_server:
                 break
         if self.logfp:
             self.LOG("%d jobs dispatched\n" % n)
+        
+        cur_time = self.cur_time()
+        self.check_all(cur_time)
+        self.pinger.ping_all(cur_time)
         return n
 
-
-    def dispatch_xxxxxxxxxxxxx(self):
-        """
-        dispatch some works, assuming there is a free worker
-        and a work to execute.
-
-        gxpc e -g <worker> --tid <tid> --keep_connection 0 '<cmd>'
-
-        """
-        if self.opts.no_dispatch_after is not None \
-               and self.cur_time() > self.opts.no_dispatch_after:
-            if self.logfp:
-                self.LOG(("do not dispatch work after %.3f\n"
-                          % self.opts.no_dispatch_after))
-            return 0
-        matches = self.find_matches()
-        if len(matches) == 0: return 0
-        cur_time = self.cur_time()
-        for shot,man in matches:
-            shot.shot(cur_time, self.opts.emulate)
-            self.shots[shot.id] = shot
-        # add parallelism
-        _,p = self.parallelism[-1]
-        n = len(matches)
-        self.parallelism.append((cur_time, p + n))
-        self.n_state_changes = self.n_state_changes + n
-        return 1
+    def check_all(self, cur_time):
+        men = self.men.items()
+        men.sort()
+        for name,man in men:
+            # local_man will never die
+            if man is not self.local_man and man.live \
+                   and man.last_heartbeat_time < self.pinger.last_ping_time \
+                   and man.last_heartbeat_time < cur_time - 30.0:
+                man.live = 0
+                Es("xmake: no response from worker %s, jobs thrown "
+                   "there will exit with %d\n"
+                   % (name, self.opts.exit_status_worker_dead))
+                for run in man.running[:]: # make a copy
+                    run.finish(self.status_worker_dead, cur_time)
+                    assert run not in man.running
+                assert len(man.running) == 0
 
     def run_persistent_e(self, tid):
         """
@@ -2167,25 +2281,26 @@ class xmake_server:
     
     def periodic(self, finished):
         self.show_state()
-        t = self.cur_time()
+        t0 = self.cur_time()
         if (finished or self.last_record_time is None
             or
-            (t > self.next_record_time_1
+            (t0 > self.next_record_time_1
              and self.n_state_changes > xmake_server.FAST_UPDATE_THRESHOLD)
             or
-            t > self.next_record_time_2):
+            t0 > self.next_record_time_2):
             self.rec.record_state(finished)
-            self.last_record_time = self.cur_time()
-            time_to_next_1 = max((self.last_record_time - t) * 20.0,
+            t1 = self.cur_time()
+            time_to_next_1 = max((t1 - t0) * 10.0,
                                  self.opts.update_interval_1)
-            time_to_next_2 = max((self.last_record_time - t) * 20.0,
+            time_to_next_2 = max((t1 - t0) * 10.0,
                                  self.opts.update_interval_2)
             if self.last_record_time < 10.0:
                 # heuristics to update more eagerly in the beginning
                 time_to_next_1 = min(3.0, time_to_next_1)
                 time_to_next_2 = min(3.0, time_to_next_2)
-            self.next_record_time_1 = self.last_record_time + time_to_next_1
-            self.next_record_time_2 = self.last_record_time + time_to_next_2
+            self.last_record_time = t1
+            self.next_record_time_1 = t1 + time_to_next_1
+            self.next_record_time_2 = t1 + time_to_next_2
             self.n_state_changes = 0
 
     def run_make(self):
@@ -2202,6 +2317,8 @@ class xmake_server:
         else:
             os.environ["MAKEFILES"] = "%s %s" % (xmake_mk, makefiles)
         os.environ["GXP_MAKELEVEL"] = "1"
+        os.environ["GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"] = ("%d" % self.opts.exit_status_connect_failed)
+        os.environ["GXP_MAKE_EXIT_STATUS_SERVER_DEAD"] = ("%d" % self.opts.exit_status_server_dead)
         if self.opts.local_exec_cmd is not None:
             os.environ["GXP_MAKE_LOCAL_EXEC_CMD"] = self.opts.local_exec_cmd
         pid = os.fork()
@@ -2303,6 +2420,10 @@ class xmake_server:
                 shot = self.shots[pid]
                 assert shot.id == pid, (shot.id, pid)
                 self.handle_fin(shot, status)
+            elif pid == self.pinger.ping_pid:
+                if self.logfp:
+                    self.LOG("it is a ping job\n")
+                self.pinger.ping_pid = None
             else:
                 if self.logfp:
                     self.LOG("it is another job\n")
@@ -2335,7 +2456,7 @@ class xmake_server:
 
     def abandon_all_shots_todo(self):
         cur_time = self.cur_time()
-        status = os.system("exit 124")
+        status = self.status_time_limit
         shots = self.shots.values()
         if self.logfp:
             self.LOG(("exiting %d outstanding processes\n"
@@ -2366,6 +2487,11 @@ class xmake_server:
         """
         main loop
         """
+        self.status_time_limit = os.system(("exit %d"
+                                            % self.opts.exit_status_time_limit))
+        self.status_worker_dead = os.system("exit %d"
+                                            % self.opts.exit_status_worker_dead)
+        
         self.mk_sigchld_handler() # register sig handler
         self.make_pid = self.run_make() # run GNU make
         self.works = []                 # list of works
@@ -2398,15 +2524,18 @@ class xmake_server:
             cur_time = self.cur_time()
             if int_at is not None and cur_time > int_at:
                 self.interrupted = 1
-                msg = ("hard limit %.3f reached. outstanding jobs will be killed with SIGINT. waiting jobs will exit with 124\n"
-                       % int_at)
+                msg = ("hard limit %.3f reached. outstanding jobs will"
+                       " be killed with SIGINT. waiting jobs will exit"
+                       " with %d\n" % (int_at, self.opts.exit_status_time_limit))
                 if self.logfp:
                     self.LOG(msg)
                 Es("xmake: %s" % msg)
-            elif nd_after is not None and cur_time > nd_after and len(self.shots) == 0:
+            elif nd_after is not None and \
+                     cur_time > nd_after and len(self.shots) == 0:
                 self.interrupted = 1
-                msg = ("soft limit %.3f reached. wait for outstanding jobs to finish. waiting jobs will exit with 124\n"
-                       % nd_after)
+                msg = ("soft limit %.3f reached. wait for outstanding"
+                       " jobs to finish. waiting jobs will exit with %d\n"
+                       % (nd_after, self.opts.exit_status_time_limit))
                 if self.logfp:
                     self.LOG(msg)
                 Es("xmake: %s" % msg)

@@ -5,9 +5,16 @@ def Es(s):
     sys.stderr.write(s)
 
 envs_to_pass = [ "MAKEFLAGS", "MAKELEVEL", "MAKEFILES",
-                 "GXP_MAKE_SO_NAME" ][0:4]
+                 "GXP_MAKE_SO_NAME",
+                 "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED",
+                 "GXP_MAKE_EXIT_STATUS_SERVER_DEAD" ]
 
 def submit(so_name, cmd):
+    key_cf = "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"
+    key_sd = "GXP_MAKE_EXIT_STATUS_SERVER_DEAD"
+    exit_status_connect_failed = int(os.environ.get(key_cf, "125"))
+    exit_status_server_dead = int(os.environ.get(key_sd, "126"))
+    
     cwd = translate_cwd()
     msgs = []
     msgs.append("%9d %s" % (len(cmd), cmd))
@@ -23,15 +30,16 @@ def submit(so_name, cmd):
         x = e.args[0]
         if x == errno.ECONNREFUSED or x == errno.ENOENT:
             # Es("mksh: could not connect to job scheduler %s\n" % (e.args,))
-            sys.exit(125)
+            sys.exit(exit_status_connect_failed)
         else:
             raise
     so.send(string.join(msgs, ""))
     so.shutdown(1)
     fd = so.fileno()
     os.dup2(fd, 0)
-    os.execvp("sh",
-              [ "sh", "-c", "if read x; then exit $x; else exit 126; fi" ])
+    cmd = ("if read x; then exit $x; else exit %d; fi"
+           % exit_status_server_dead)
+    os.execvp("sh", [ "sh", "-c", cmd ])
 
 local_pat = re.compile("(===+)")
 def submit_or_exec(so_name, cmd):
