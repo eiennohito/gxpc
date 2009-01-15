@@ -38,7 +38,8 @@ class exec_env:
         return ("cwd=%s, env=%s" % (self.cwd, self.env))
 
 class target_tree:
-    def __init__(self, name, hostname, target_label, eflag, exec_idx, eenv, children):
+    def __init__(self, name, hostname, target_label,
+                 eflag, exec_idx, eenv, children):
         self.name = name
         self.hostname = hostname
         self.target_label = target_label

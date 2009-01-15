@@ -118,12 +118,16 @@ seems 200KB - 300KB.
 dbg=0
 
 def Es(s):
-    sys.stderr.write(s)
-    sys.stderr.flush()
+    try:
+        os.write(2, s)
+    except IOError,e:
+        if e.args[0] != errno.EINTR: raise
 
 def Ws(s):
-    sys.stdout.write(s)
-    sys.stdout.flush()
+    try:
+        os.write(1, s)
+    except IOError,e:
+        if e.args[0] != errno.EINTR: raise
 
 class xmake_cmd_opts(opt.cmd_opts):
     def __init__(self):
@@ -156,13 +160,20 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.update_interval_2 = ("f", 20.0)
         self.auto_update_interval = ("i", 60.0)
         self.time_limit = ("s", None)
+        self.ping_timeout = ("f", 50.0)
+        self.ping_interval = ("f", 30.0)
+        
         self.no_dispatch_after = ("i", None)
         self.interrupt_at = ("i", None)
-        self.exit_status_worker_dead = ("i", 123)
-        self.exit_status_time_limit = ("i", 124)
+        self.exit_status_other = ("i", 119) # neither exited nor killed
+        self.exit_status_killed = ("i", 120)
+        self.exit_status_worker_died = ("i", 121)
+        self.exit_status_worker_left = ("i", 122)
+        self.exit_status_no_throw = ("i", 123)
+        self.exit_status_interrupt = ("i", 124)
         self.exit_status_connect_failed = ("i", 125)
-        self.exit_status_server_dead = ("i", 126)
-        
+        self.exit_status_server_died = ("i", 126)
+        self.ctl = (None, 0)
         # in case you want to run GNU make with a different name
         self.make     = ("s", "make")
         self.stage_in = ("s", None)     # "./stage_in"
@@ -205,6 +216,12 @@ class xmake_cmd_opts(opt.cmd_opts):
                 self.no_dispatch_after = no_dispatch_after
             if self.interrupt_at is None:
                 self.interrupt_at = interrupt_at
+        if self.ping_timeout < self.ping_interval + 10.0:
+            Es(("xmake: ping_timeout %.3f must be >= "
+                "ping_interval (%.3f) + 10, set to it"
+                % (self.ping_timeout, self.ping_interval)))
+            self.ping_timeout = self.ping_interval + 10.0
+
         
     def usage(self):
         u = r"""usage:
@@ -288,12 +305,16 @@ class Man:
     """
     a worker, or a man
     """
+    state_active = 0
+    state_leaving = 1
+    state_leave_now = 2
+    state_gone = 3
     def __init__(self, name, idx, capacity, t):
         self.name = name                # name
         self.idx = idx                  # serial number
         self.capacity = capacity
         self.time = t                   # created
-        self.live = 1                   # initially considered live
+        self.state = Man.state_active
         self.last_heartbeat_time = t    # last time at which I heard from him
         self.running = []               # runs this man is working on
         self.runs = []                  # runs this man has worked on
@@ -301,13 +322,42 @@ class Man:
     def set_heartbeat(self, t):
         self.last_heartbeat_time = t
 
+class make_rid_generator:
+    def __init__(self):
+        self.shot = "shot_%d"
+        self.shot_pat = re.compile("shot")
+        self.join = "join_%d"
+        self.join_pat = re.compile("join")
+        self.leave = "leave_%d"
+        self.leave_pat = re.compile("leave")
+        self.leave_now = "leave_now_%d"
+        self.leave_now_pat = re.compile("leave_now")
+        self.ping = "ping_%d"
+        self.ping_pat = re.compile("ping")
+        self.c = 0
+
+    def get_(self, template):
+        c = self.c
+        self.c = c + 1
+        return template % c
+    def get_shot_rid(self):
+        return self.get_(self.shot)
+    def get_join_rid(self):
+        return self.get_(self.join)
+    def get_leave_rid(self):
+        return self.get_(self.leave)
+    def get_leave_now_rid(self):
+        return self.get_(self.leave_now)
+    def get_ping_rid(self):
+        return self.get_(self.ping)
+
 class shot_id_counter:
     def __init__(self):
         self.c = 0
     def get(self):
         c = self.c
         self.c = c + 1
-        return "x%d" % c
+        return "%s%d" % (make_rid.shot, c)
 
 # terminology
 #
@@ -354,7 +404,14 @@ class Shot:
 
     this is the common ancestor of all shot classes.
     """
-    counter = shot_id_counter()
+
+    # ways in which shot/run/work finish
+    finish_reason_normal = 0            # a shot somehow finished
+    finish_reason_worker_died = 1 # the man working on this run has died
+    finish_reason_worker_left = 2 # the man working on this left by instruction (leave_now)
+    finish_reason_no_throw = 3 # not thrown due to timeout
+    finish_reason_interrupt = 4 # thrown and interrupted due to timeout
+
     def __init__(self, server, run, resources):
         self.server = server            # xmake_server object
         self.run = run                  # parent run object this shot is for
@@ -374,7 +431,7 @@ class Shot:
         if self.run.time_start is None:
             self.run.time_start = cur_time
 
-    def finish(self, status, cur_time):
+    def finish(self, finish_reason, status, cur_time):
         """
         called when this shot has finished with status at cur_time
         """
@@ -382,13 +439,14 @@ class Shot:
         run = self.run
         assert run.shots[0] is self, (self, run.shots)
         run.shots.pop(0)
-        if len(run.shots) == 0 or \
-                not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
-            # the entire run has finished
-            run.finish(status, cur_time)
-        else:
+
+        if len(run.shots) > 0 and status is not None and \
+               os.WIFEXITED(status) and os.WEXITSTATUS(status) == 0:
             # schedule the next shot in this run
             self.server.shots_todo.append(run.shots[0])
+        else:
+            # the entire run has finished
+            run.finish(finish_reason, status, cur_time)
 
 class shot_stage(Shot):
     def setup_redirect(self):
@@ -403,7 +461,7 @@ class shot_stage(Shot):
             cmd = self.cmd
         self.start_time = cur_time
         # build gxpc command line
-        cmdx = [self.server.opts.gxpc, "--save_session", "0",
+        cmdx = [self.server.opts.gxpc, "--withall", "--save_session", "0",
                 "e", "-g", self.run.man.name, 
                 "--dir", self.run.work.cwd ]
         for var_val in self.run.work.envs:
@@ -482,14 +540,15 @@ class shot_rexec(Shot):
         send gxpc command to the target man
         """
         Shot.shot(self, cur_time)
-        self.id = Shot.counter.get()
+        # self.id = Shot.counter.get()
+        self.id = self.server.rid_gen.get_shot_rid()
         if emulate:
             cmd = "exit 0"
         else:
             cmd = self.cmd
         self.start_time = cur_time
         # build gxpc command line
-        cmdx = [self.server.opts.gxpc, "--save_session", "0",
+        cmdx = [self.server.opts.gxpc, "--withall", "--save_session", "0",
                 "e", "-g", self.run.man.name, "--tid", self.server.tid,
                 "--rid", self.id, "--keep_connection", "0",
                 "--dir", self.run.work.cwd ]
@@ -543,6 +602,7 @@ class shot_lexec(Shot):
 
 
 class Run:
+    
     def __init__(self, server, work):
         """
         a work has been dispatched to man at time t
@@ -551,6 +611,7 @@ class Run:
         self.work = work                # the parent work this run is for
         self.man = None                 # set by find_matches
         self.shots = []                 # filled by make_run
+        self.finish_reason = None       # None if not finished
         self.status = None
         self.time_start = None          # set by the first shot's shot
         self.time_end = None
@@ -559,56 +620,59 @@ class Run:
         """
         for reporting
         """
-        if self.status is None:
+        if self.finish_reason is None:
+            # not yet finished by any shot
             if self.man is None:
                 # not yet dispatched or in progress
-                return ("waiting","-")
+                return ("job_waiting","-")
             else:
-                return ("running", ("by %s" % self.man.name))
-        elif os.WIFEXITED(self.status):
-            s = os.WEXITSTATUS(self.status)
-            if s == 0:
-                return ("success", ("exit %d" % s))
-            else:
-                return ("fail",  ("exit %d" % s))
-        elif os.WIFSIGNALED(self.status):
-            s = os.WTERMSIG(self.status)
-            return ("killed", ("killed %d" % s))
+                # somebody working on it
+                return ("job_running", ("by %s" % self.man.name))
+        elif self.finish_reason == Shot.finish_reason_worker_died:
+            return ("job_worker_died", "worker died")
+        elif self.finish_reason == Shot.finish_reason_worker_left:
+            return ("job_worker_left", "worker left")
+        elif self.finish_reason == Shot.finish_reason_no_throw:
+            return ("job_no_throw", "no throw")
+        elif self.finish_reason == Shot.finish_reason_interrupt:
+            return ("job_interrupt", "interrupt")
         else:
-            return ("other", ("??? %d" % self.status))
+            assert self.finish_reason == Shot.finish_reason_normal, self.finish_reason
+            assert self.status is not None
+            if os.WIFEXITED(self.status):
+                s = os.WEXITSTATUS(self.status)
+                if s == 0:
+                    return ("job_success", ("exit %d" % s))
+                else:
+                    return ("job_failed",  ("exit %d" % s))
+            elif os.WIFSIGNALED(self.status):
+                s = os.WTERMSIG(self.status)
+                return ("job_killed", ("killed %d" % s))
+            else:
+                return ("job_unknown", ("??? %s" % self.status))
 
-    def xxx_abort(self, status, cur_time):
+    # Run.finish
+    def finish(self, finish_reason, status, cur_time):
         self.time_end = cur_time
-        self.status = status
-        man = self.man
-        _,p = self.server.parallelism[-1]
-        self.server.parallelism.append((cur_time, p - 1))
-        if self.server.logfp:
-            self.server.LOG("man %s now dead\n" % man.name)
-        self.work.finish(status, man)
-
-    def finish(self, status, cur_time):
-        self.time_end = cur_time
+        self.finish_reason = finish_reason
         self.status = status
         man = self.man
         # man is None if this shot is aborted
         if man:
-            if man.live:
-                self.server.free_men.append(man) # this man is now free
-                if self.server.logfp:
-                    self.server.LOG("man %s now free\n" % man.name)
+            if self in man.running:
                 man.running.remove(self)
-            else:
-                if self.server.logfp:
-                    self.server.LOG("man %s now dead\n" % man.name)
-                if self in man.running:
-                    man.running.remove(self)
+            if man.state == Man.state_active:
+                self.server.free_men.append(man) # this man is now free
+                
+            if self.server.logfp:
+                self.server.LOG(("man %s in state %d finished a run\n"
+                                 % (man.name, man.state)))
         else:
             # this happens when we reach the time limit and this work
             # must be aborted before dispatched to any man
-            assert (status == self.server.status_time_limit), status
-        self.work.finish_or_retry(status, man)
-        # self.work.finish(status, man)
+            assert (finish_reason == Shot.finish_reason_no_throw
+                    or finish_reason == Shot.finish_reason_interrupt), finish_reason
+        self.work.finish_or_retry(finish_reason, status, man)
 
 class x_work_translator:
     def __init__(self, server):
@@ -710,31 +774,9 @@ class Work:
         self.stage_ins = stage_ins      # files to stage in
         self.stage_outs = stage_outs    # files to stage out
         self.resources = resources      # resource spec
+        self.finish_reason = None       # not None if finished
         self.status = None              # status if finished
         self.runs = []        # run records for the work. usually one
-
-    def xxx_show_status(self):
-        """
-        for reporting
-        """
-        if self.status is None:
-            run = self.runs[-1]
-            if run.man is None:
-                # not yet dispatched or in progress
-                return ("waiting","-")
-            else:
-                return ("running", ("by %s" % run.man.name))
-        elif os.WIFEXITED(self.status):
-            s = os.WEXITSTATUS(self.status)
-            if s == 0:
-                return ("success", ("exit %d" % s))
-            else:
-                return ("fail",  ("exit %d" % s))
-        elif os.WIFSIGNALED(self.status):
-            s = os.WTERMSIG(self.status)
-            return ("killed", ("killed %d" % s))
-        else:
-            return ("unknown", ("??? %d" % self.status))
 
     def make_run(self):
         """
@@ -761,28 +803,52 @@ class Work:
         # self.server.translator.modify_run(run)
         return run
 
-    def finish_or_retry(self, status, man):
+    def finish_or_retry(self, finish_reason, status, man):
         server = self.server
-        if status == server.status_worker_dead:
+        opts = server.opts
+        if self.finish_reason is not None:
+            if server.logfp:
+                server.LOG(("warning: work finished twice %s\n"
+                            % (string.join(self.cmds, " "))))
+            return
+
+        if finish_reason == Shot.finish_reason_worker_died:
+            status_to_send = opts.exit_status_worker_died
+            retry = 1
+        elif finish_reason == Shot.finish_reason_worker_left:
+            status_to_send = opts.exit_status_worker_left
+            retry = 1
+        elif finish_reason == Shot.finish_reason_no_throw:
+            status_to_send = opts.exit_status_no_throw
+            retry = 0
+        elif finish_reason == Shot.finish_reason_interrupt:
+            status_to_send = opts.exit_status_interrupt
+            retry = 0
+        else:
+            assert (finish_reason == Shot.finish_reason_normal), finish_reason
+            assert status is not None
+            retry = 0
+            if os.WIFEXITED(status):
+                status_to_send = os.WEXITSTATUS(status)
+            elif os.WIFSIGNALED(status):
+                status_to_send = opts.exit_status_killed
+            else:
+                status_to_send = opts.exit_status_other
+        
+        if retry:
             # retry
             msg = ("work '%s' will be retried\n" % string.join(self.cmds, " "))
             Es("xmake: %s" % msg)
             if server.logfp: server.LOG(msg)
             server.shots_todo.append(self.make_run().shots[0])
         else:
-            self.finish(status, man)
+            self.finish_reason = finish_reason
+            self.status = status
+            self.send_status(status_to_send, man)
 
-    def finish(self, status, man):
-        # this means man has been working on something,
-        # and it has just finished
-        # send notification to mksh
-        if self.status is not None:
-            if self.server.logfp:
-                self.server.LOG(("warning: work finished twice %s\n"
-                                 % (string.join(self.cmds, " "))))
-            return
+    def send_status(self, status_to_send, man):
         assert self.conn is not None
-        msg = "%s\n" % os.WEXITSTATUS(status)
+        msg = "%s\n" % status_to_send
         try:
             self.conn.send(msg)
             self.conn.close()
@@ -792,10 +858,6 @@ class Work:
                     % (e.args,)))
             else:
                 raise
-        self.conn = None
-        self.status = status
-        # self.server.translator.work_finished(self, man)
-
         
 local_man_name = "@local"
 
@@ -912,32 +974,50 @@ td {
   border-style:solid;
   border-width:1px;
 }
-td.running {
-  background-color:#ff8;
+td.job_unknown {
+  background-color:#888;
 }
-td.success {
+td.job_worker_died {
+  background-color:#c8c;
+}
+td.job_worker_left {
+  background-color:#c8f;
+}
+td.job_interrupt {
+  background-color:#f4c;
+}
+td.job_no_throw {
+  background-color:#f4f;
+}
+td.job_success {
   background-color:#cff;
 }
-td.fail {
-  background-color:#fc8;
+td.job_failed {
+  background-color:#ff8;
 }
-td.killed {
-  background-color:#fc8;
+td.job_killed {
+  background-color:#ff4;
 }
-td.unknown {
-  background-color:#fc8;
+td.job_running {
+  background-color:#ffc;
 }
-td.waiting {
-
+td.job_waiting {
+  background-color:#fff;
+}
+td.man_gone {
+  background-color:#c4c;
+}
+td.man_leave_now {
+  background-color:#c4f;
 }
 td.man_free {
-  background-color:#cff;
+  background-color:#fff;
+}
+td.man_leaving {
+  background-color:#ff4;
 }
 td.man_working {
-  background-color:#ff8;
-}
-td.man_dead {
-  background-color:#f88;
+  background-color:#ffc;
 }
 -->
 </style>
@@ -962,17 +1042,17 @@ td.man_dead {
 
     def status_to_str(self, status):
         if status is None:
-            return ("running","running")
+            return ("job_running","running") # abuse man's class
         elif os.WIFEXITED(status):
             s = os.WEXITSTATUS(status)
             if s == 0:
-                return ("success",("exit %d" % s))
+                return ("job_success",("exit %d" % s))
             else:
-                return ("fail",("exit %d" % s))
+                return ("job_failed",("exit %d" % s))
         elif os.WIFSIGNALED(status):
-            return ("killed", ("killed %d" % os.WTERMSIG(status)))
+            return ("job_killed", ("killed %d" % os.WTERMSIG(status)))
         else:
-            return ("unknown", ("unknown %s" % status))
+            return ("job_unknown", ("unknown %s" % status))
 
     def gen_basic_info(self, cur_time):
         server = self.server
@@ -1172,54 +1252,6 @@ td.man_dead {
         wp.write('</table>\n')
         return wp.getvalue()
 
-    def xxx_gen_works_aux(self, label, works, cur_time):
-        wp = cStringIO.StringIO()
-        wp.write(r'''<table class="works">
-<tr>
-<td>idx</td>
-<td>command</td>
-<td>queued at</td>
-<td>started at</td>
-<td>finished at</td>
-<td>executed by</td>
-<td>turn around time</td>
-<td>status</td>
-</tr>''')
-        for w in works:
-            queued_t = time.ctime(w.req_time + self.server.start_t)
-            run = w.runs[-1]
-            s = run.time_start
-            e = run.time_end
-            start_t = "<br>"
-            end_t = "<br>"
-            elapsed = "<br>"
-            man = "<br>"
-            if s is not None:
-                man = run.man.name
-                start_t = time.ctime(s + self.server.start_t)
-                if e is not None:
-                    end_t = time.ctime(e + self.server.start_t)
-                    elapsed = "%.2f" % (e - s)
-                else:
-                    elapsed = "%.2f" % (cur_time - s)
-            cls,sts = w.show_status()
-            cmds = string.join(self.modify_cmds(w.cmds), "<br><br>")
-            wp.write(('<tr>'
-                      '<td>%d</td> '
-                      '<td>%s</td> '
-                      '<td>%s</td> '
-                      '<td>%s</td> '
-                      '<td>%s</td> '
-                      '<td>%s</td> '
-                      '<td>%s</td> '
-                      '<td class="%s">%s</td> '
-                      '</tr>\n'
-                      % (w.idx, cmds,
-                         queued_t, start_t, end_t,
-                         man, elapsed, cls, sts)))
-        wp.write('</table>\n')
-        return wp.getvalue()
-
     def chunk_list(self, L, g):
         LL = []
         for i in range(0, len(L), g):
@@ -1233,10 +1265,23 @@ td.man_dead {
         return self.chunk_list(works, self.opts.max_records_in_page)
 
     def get_failed_works(self, cur_time):
+        """
+        return works that contain at least one failed run
+        """
         works = []
         for w in self.server.works:
-            if w.status is not None and w.status != 0: # None and non-zero int
-                works.append(w)
+            failed = 0
+            for r in w.runs:
+                if r.finish_reason is None:
+                    pass
+                elif r.finish_reason != Shot.finish_reason_normal:
+                    failed = 1
+                elif not os.WIFEXITED(r.status): # None and non-zero int
+                    failed = 1
+                elif os.WEXITSTATUS(r.status) != 0:
+                    failed = 1
+                if failed: break
+            if failed: works.append(w)
         if self.opts.max_records >= 0:
             works = works[-self.opts.max_records:]
         return self.chunk_list(works, self.opts.max_records_in_page)
@@ -1266,6 +1311,21 @@ td.man_dead {
 
     def gen_long_table(self, works, cur_time):
         return self.gen_works_aux("Long Jobs", works, cur_time)
+
+    def gen_legend(self):
+        wp = cStringIO.StringIO()
+        wp.write('<a name="Legend"><h1>Legend</h1>')
+        wp.write("<h2>Jobs</h2><table>\n")
+        for x in [ "success", "running", "failed", "killed", "waiting",
+                   "interrupt", "no_throw", 
+                   "worker_left", "worker_died", "unknown" ]:
+            wp.write('<tr><td class="job_%s">jobs %s</td></tr>' % (x, x))
+        wp.write("</table>\n")
+        wp.write("<h2>Workers</h2><table>\n")
+        for x in [ "free", "working", "leaving", "leave_now", "gone" ]:
+            wp.write('<tr><td class="man_%s">workers %s</td></tr>' % (x, x))
+        wp.write("</table>\n")
+        return wp.getvalue()
 
     def gen_works_in_comments(self, cur_time):
         wp = cStringIO.StringIO()
@@ -1328,20 +1388,25 @@ last_ping_time = %.3f<br>
 ''' % self.server.pinger.last_ping_time)
         for name,man in men:
             n_running = len(man.running)
-            if n_running == 0:
-                if man.live:
-                    cls = "man_free"
+            if man.state == Man.state_active:
+                if n_running:
+                    man_class = "man_working"
                 else:
-                    cls = "man_dead"
+                    man_class = "man_free"
+            elif man.state == Man.state_leaving:
+                man_class = "man_leaving"
+            elif man.state == Man.state_leave_now:
+                man_class = "man_leave_now"
+            else:
+                assert (man.state == Man.state_gone), man.state
+                man_class = "man_gone"
+            
+            if n_running == 0:
                 wp.write(('<tr><td>%s</td><td>%s</td>'
                           '<td>%.3f</td><td class="%s">-</td></tr>\n'
                           % (name, len(man.runs),
-                             man.last_heartbeat_time, cls)))
+                             man.last_heartbeat_time, man_class)))
             else:
-                if man.live:
-                    cls = "man_working"
-                else:
-                    cls = "man_dead"
                 i = 0
                 for run in man.running:
                     cmds = string.join(run.work.cmds, "<br><br>")
@@ -1355,10 +1420,10 @@ last_ping_time = %.3f<br>
                                   % (n_running, man.name,
                                      n_running, len(man.runs),
                                      n_running, man.last_heartbeat_time,
-                                     cls, cmds)))
+                                     man_class, cmds)))
                     else:
-                        wp.write(('<tr><td class="man_working">%s</td></tr>\n'
-                                  % cmds))
+                        wp.write(('<tr><td class="%s">%s</td></tr>\n'
+                                  % (man_class, cmds)))
                     i = i + 1
         wp.write('</table>\n')
         return wp.getvalue()
@@ -1418,6 +1483,7 @@ plot '-' with boxes
 <li><a href="#System Stats">System States</a>
 <li><a href="#Basic info">Basic info</a>
 <li><a href="#Parallelism">Parallelism</a>
+<li><a href="#Legend">Legend</a>
 <li>Jobs
 <ul>
   <li><a href="%s">All Jobs in txt (%d bytes)</a>
@@ -1550,6 +1616,8 @@ plot '-' with boxes
             wp.write(stat)
             wp.write(basic_info)
             wp.write(parallelism)
+            # ---- jobs legend ----
+            wp.write(self.gen_legend())
             # ---- failed jobs ----
             wp.write(self.gen_failed_heading(states, jobs_txt, jobs_txt_sz, i))
             if i < len(failed_works):
@@ -1579,63 +1647,16 @@ plot '-' with boxes
         self.LOG(("took %.3f sec to generate state file (%s)\n"
                   % (dt, state)))
 
-    def record_state_x(self, finished):
-        if self.opts.state == "": return
-        state = os.path.join(self.opts.state_dir, self.opts.state)
-        self.LOG("generating state file (%s)\n" % state)
-        tmp,wp = self.mk_temp(state)
-        cur_time = self.cur_time()
-        
-        header,trailer = self.get_header_trailer(finished)
-        # -------- header --------
-        wp.write(header)
-        # -------- index --------
-        self.write_table_of_contents(cur_time, wp)
-        # -------- load avg and vmstat --------
-        self.write_stat(cur_time, wp)
-        self.write_elapsed_time(cur_time, wp)
-        # -------- basic info --------
-        self.write_basic_info(cur_time, wp)
-        self.write_elapsed_time(cur_time, wp)
-        # -------- parallelism --------
-        self.write_parallelism(cur_time, wp)
-        self.write_elapsed_time(cur_time, wp)
-        # -------- work --------
-        self.write_failed_works(cur_time, wp)
-        self.write_elapsed_time(cur_time, wp)
-        self.write_long_works(cur_time, wp)
-        self.write_elapsed_time(cur_time, wp)
-        self.write_recent_works(cur_time, wp)
-        self.write_elapsed_time(cur_time, wp)
-        # -------- men state --------
-        self.write_men(cur_time, wp)
-        self.write_elapsed_time(cur_time, wp)
-        # -------- all works in comments --------
-        self.write_works_in_comments(cur_time, wp)
-        self.write_elapsed_time(cur_time, wp)
-        # -------- trailer --------
-        wp.write(trailer)
-        wp.close()
-        self.paranoia_rename(tmp, state)
-        dt = self.cur_time() - cur_time
-        if self.server.logfp:
-            self.LOG("took %.3f sec to generate state file (%s)\n" % (dt, state))
-
     
 class Pinger:
-    def __init__(self, server):
+    def __init__(self, server, interval):
         self.server = server
         self.id = 0
         self.ping_pid = None
         self.last_ping_time = 0
-        self.ping_interval = 5.0
+        self.ping_interval = interval
 
-    def get_rid(self):
-        x = self.id
-        self.id = x + 1
-        return "z%d" % x
-        
-    def ping_all(self, cur_time):
+    def ping_all_workers(self, cur_time):
         if self.last_ping_time + self.ping_interval >= cur_time:
             return 0
         if self.server.logfp:
@@ -1650,9 +1671,10 @@ class Pinger:
                 if self.server.logfp:
                     self.server.LOG("os.kill: %s\n" % (e.args,))
             return 0
-        cmdx = [self.server.opts.gxpc, "--save_session", "0",
+        rid = self.server.rid_gen.get_ping_rid()
+        cmdx = [self.server.opts.gxpc, "--withall", "--save_session", "0",
                 "e", "--tid", self.server.tid,
-                "--rid", self.get_rid(), "--keep_connection", "0", ":" ]
+                "--rid", rid, "--keep_connection", "0", ":" ]
         if self.server.logfp:
             self.server.LOG("ping by '%s'\n" % string.join(cmdx, " "))
         pid = os.fork()
@@ -1679,6 +1701,8 @@ class xmake_server:
         self.make_args = None
         # args this process takes (after '--')
         self.xmake_args = None
+        # args persistent e takes (after '---')
+        self.e_args = None
         # start time
         self.start_t = None
         # file object for the log
@@ -1733,7 +1757,7 @@ class xmake_server:
         self.interrupted = None
         self.hostname = None
         #
-        self.pinger = Pinger(self)
+        self.pinger = None
 
     def safe_int(self, x):
         try:
@@ -1751,21 +1775,25 @@ class xmake_server:
         """
         make_args = []
         xmake_args = []
-        args = (make_args, xmake_args)
+        e_args = []
+        args = make_args
         self.sys_argv = sys_argv
         for a in sys_argv[1:]:
             if a == "--":
-                # swap
-                args = (args[1],args[0])
+                # whatever comes after '--' is passed to xmake_args
+                args = xmake_args
+            elif a == "---":
+                # whatever comes after '---' is passed to initial e
+                args = e_args
             else:
-                args[0].append(a)
+                args.append(a)
         xmake_opts = xmake_cmd_opts()
         if xmake_opts.parse(xmake_args) == -1:
             return -1
         self.opts = xmake_opts
-        self.rec = xmake_state_recorder(xmake_opts, self)
         self.make_args = make_args
         self.xmake_args = xmake_args
+        self.e_args = e_args
 
     def mk_semaphores(self):
         """
@@ -1874,7 +1902,7 @@ class xmake_server:
             return None
         return dire
     
-    def mk_server_socket(self):
+    def xxx_mk_server_socket(self):
         """
         make a socket under the temporary directory.
         /tmp/xmake-tau/so<pid>-xxxxxxx.
@@ -1884,9 +1912,33 @@ class xmake_server:
         """
         dire = self.mk_tmp_dir()
         if dire is None: return None,None
-        name = os.path.join(dire,
-                            ("so%06d-%06d"
-                             % (os.getpid(), random.randint(0, 1000000))))
+        suffix = "%d_%06d" % (os.getpid(), random.randint(0, 1000000))
+        name = os.path.join(dire, ("so_%s" % suffix))
+        if self.logfp:
+            self.LOG("making server socket on %s\n" % name)
+        so = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        so.bind(name)
+        so.listen(self.opts.qlen)
+        os.chmod(name, 0600)
+        os.environ["GXP_MAKE_SO_NAME"] = name
+        if self.logfp:
+            self.LOG("server listening on %s\n" % name)
+        return so,name,suffix
+
+    def mk_server_socket(self):
+        """
+        make a socket under the temporary directory.
+        /tmp/xmake-tau/so<pid>-xxxxxxx.
+
+        set the name to GXP_MAKE_SO_NAME, to pass it to mksh 
+        (child of GNU make).
+        """
+        cookie = "%d-%06d" % (os.getpid(), random.randint(0, 1000000))
+        if self.session is None:
+            dire,base = None,None
+        else:
+            dire,base = os.path.split(self.session)
+        name = os.path.join(dire, ("xmake-%s-%s" % (cookie, base)))
         if self.logfp:
             self.LOG("making server socket on %s\n" % name)
         so = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -2141,36 +2193,49 @@ class xmake_server:
         assert man_name != ""
         man = self.men.get(man_name)
         cur_time = self.cur_time()
-        if man is None:
-            # the first msg from this man
-            n = self.conf.get_cpu_count(man_name)
-            if self.logfp:
-                self.LOG("new man %s joined with %d cpus\n" % (man_name, n))
-            man = Man(man_name, len(self.men), n, cur_time)
-            self.men[man_name] = man
-            for i in range(n):
-                self.free_men.append(man)
-            assert not self.shots.has_key(rid)
-        else:
+        if self.rid_gen.join_pat.match(rid): # run_persistent_e
+            if man is None:
+                # the first msg from this man
+                n = self.conf.get_cpu_count(man_name)
+                if self.logfp:
+                    self.LOG("new worker %s joined with %d cpus\n" % (man_name, n))
+                man = Man(man_name, len(self.men), n, cur_time)
+                self.men[man_name] = man
+                for i in range(n):
+                    self.free_men.append(man)
+                assert not self.shots.has_key(rid)
+        elif self.rid_gen.ping_pat.match(rid):
+            if man:
+                man.set_heartbeat(cur_time)
+                msg = ("worker %s in state %d replied to ping\n"
+                       % (man_name, man.state))
+                if self.logfp: self.LOG(msg)
+                if man.state > Man.state_leaving: Es("xmake: %s" % msg)
+        elif self.rid_gen.leave_now_pat.match(rid):
+            if man:
+                msg = ("worker %s in state %d will leave now\n"
+                       % (man_name, man.state))
+                if self.logfp: self.LOG(msg)
+                Es("xmake: %s" % msg)
+                if man.state < Man.state_leave_now:
+                    man.state = Man.state_leave_now
+        elif self.rid_gen.leave_pat.match(rid):
+            if man:
+                msg = ("worker %s in state %d will leave after current work\n"
+                       % (man_name, man.state))
+                if self.logfp: self.LOG(msg)
+                Es("xmake: %s" % msg)
+                if man.state < Man.state_leaving:
+                    man.state = Man.state_leaving
+        elif self.rid_gen.shot_pat.match(rid):
             shot = self.shots.get(rid)
             if shot:
                 assert shot.id == rid, (shot.id, rid)
                 self.handle_fin(shot, status)
-            elif rid[0:1] == "z": # ugly way to know this is a reply to ping
-                man.set_heartbeat(cur_time)
-                if man.live:
-                    if self.logfp:
-                        self.LOG(("a heartbeat from a healthy worker %s\n"
-                                  % man_name))
-                else:
-                    msg = ("a heartbeat from a worker %s who was once"
-                           " considered dead (ignored)\n"
-                           % man_name)
-                    if self.logfp: self.LOG(msg)
-                    Es("xmake: %s" % msg)
-            else:
-                if self.logfp:
-                    self.LOG("rid %s not found in shots\n" % rid)
+        else:
+            msg = "unknown rid %s\n" % rid
+            if self.logfp: self.LOG(msg)
+            Es("xmake: %s" % msg)
         self.n_state_changes = self.n_state_changes + 1
             
     def handle_fin(self, shot, status):
@@ -2182,7 +2247,7 @@ class xmake_server:
         cur_time = self.cur_time()
         _,p = self.parallelism[-1]
         self.parallelism.append((cur_time, p - 1))
-        shot.finish(int(status), cur_time)
+        shot.finish(Shot.finish_reason_normal, int(status), cur_time)
         
     def find_matches(self):
         fifo = 1
@@ -2223,11 +2288,12 @@ class xmake_server:
                 else:
                     for man in self.free_men:
                         self.free_men.remove(man)
-                        if man.live:
+                        if man.state == Man.state_active:
                             found = 1
                             break           # found match for man
                         else:
-                            Es("xmake: dead man %s found in free_men queue\n" % man.name)
+                            Es(("xmake: man %s in state %d found in "
+                                "free_men queue\n" % (man.name, man.state)))
                 if found:
                     if self.logfp:
                         self.LOG(("shot '%s' assignged %s\n"
@@ -2292,25 +2358,42 @@ class xmake_server:
             self.LOG("%d jobs dispatched\n" % n)
         
         cur_time = self.cur_time()
-        self.check_all(cur_time)
-        self.pinger.ping_all(cur_time)
+        self.check_worker_status(cur_time)
+        self.pinger.ping_all_workers(cur_time)
         return n
 
-    def check_all(self, cur_time):
+    def check_worker_status(self, cur_time):
+        """
+        check status of all workers
+        """
+        timeout = self.opts.ping_timeout
+        if timeout is None: timeout = float("inf") # never
         men = self.men.items()
         men.sort()
         for name,man in men:
-            # local_man will never die
-            if man is not self.local_man and man.live \
-                   and man.last_heartbeat_time < self.pinger.last_ping_time \
-                   and man.last_heartbeat_time < cur_time - 30.0:
-                man.live = 0
-                Es("xmake: no response from worker %s, jobs thrown "
-                   "there will exit with %d\n"
-                   % (name, self.opts.exit_status_worker_dead))
+            finish_reason = None
+            if man is self.local_man:
+                # local_man will never die
+                pass
+            elif man.state == Man.state_gone:
+                # no man die twice
+                pass
+            elif man.state == Man.state_leave_now:
+                finish_reason = Shot.finish_reason_worker_left
+            elif (man.last_heartbeat_time < self.pinger.last_ping_time
+                  and cur_time - man.last_heartbeat_time > timeout):
+                # we have pinged after hearing from this guy, but
+                # this guy has not responded for timeout sec.
+                finish_reason = Shot.finish_reason_worker_died
+            if finish_reason is not None:
+                man.state = Man.state_gone
+                Es("xmake: no response from worker %s\n" % name)
+                n = len(man.running)
                 for run in man.running[:]: # make a copy
-                    run.finish(self.status_worker_dead, cur_time)
+                    run.finish(finish_reason, None, cur_time)
                     assert run not in man.running
+                _,p = self.parallelism[-1]
+                self.parallelism.append((cur_time, p - n))
                 assert len(man.running) == 0
 
     def run_persistent_e(self, tid):
@@ -2327,8 +2410,10 @@ class xmake_server:
         # the parent immediately closes w0
         # net effect is gxpc immediately receives EOF from its stdin
         r0,w0 = os.pipe()
-        cmd = [ self.opts.gxpc, "e", "--tid", tid, "--persist", "1",
-                "--notify_proc_exit", ("%d" % w) ]
+        rid = self.rid_gen.get_join_rid()
+        cmd = ([ self.opts.gxpc ] + self.e_args
+               + [ "e", "--tid", tid, "--persist", "1",
+                   "--rid", rid, "--notify_proc_exit", ("%d" % w) ])
         pid = os.fork()
         if pid == 0:
             self.close_fds()
@@ -2345,17 +2430,6 @@ class xmake_server:
             os.close(w0)
             return cmd,pid,r
         
-    def xxmk_lnk(self, f, from_dir):
-        real_f = os.path.realpath(f)
-        real_from_dir = os.path.realpath(from_dir)
-        common = os.path.commonprefix(real_f, real_from_dir)
-        d,base = os.path.split(real_f)
-        relative_path = base
-        while not os.path.samefile(common, d):
-            d,base = os.path.split(d)
-            realative_path = os.path.join("..", realative_path)
-        return ('<a href="%s">%s</a>' % (relative_path, f))
-
     def show_state(self):
         if self.logfp:
             self.LOG(("%d/%d waiting/total jobs, "
@@ -2406,8 +2480,10 @@ class xmake_server:
         else:
             os.environ["MAKEFILES"] = "%s %s" % (xmake_mk, makefiles)
         os.environ["GXP_MAKELEVEL"] = "1"
-        os.environ["GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"] = ("%d" % self.opts.exit_status_connect_failed)
-        os.environ["GXP_MAKE_EXIT_STATUS_SERVER_DEAD"] = ("%d" % self.opts.exit_status_server_dead)
+        x = ("%d" % self.opts.exit_status_connect_failed)
+        os.environ["GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"] = x
+        x = ("%d" % self.opts.exit_status_server_died)
+        os.environ["GXP_MAKE_EXIT_STATUS_SERVER_DIED"] = x
         if self.opts.local_exec_cmd is not None:
             os.environ["GXP_MAKE_LOCAL_EXEC_CMD"] = self.opts.local_exec_cmd
         pid = os.fork()
@@ -2545,20 +2621,19 @@ class xmake_server:
 
     def abandon_all_shots_todo(self):
         cur_time = self.cur_time()
-        status = self.status_time_limit
         shots = self.shots.values()
         if self.logfp:
             self.LOG(("exiting %d outstanding processes\n"
                       % len(shots)))
         for shot in shots:
-            shot.finish(status, cur_time)
+            shot.finish(Shot.finish_reason_interrupt, None, cur_time)
         self.shots = {}
         if self.logfp:
             self.LOG(("exiting %d waiting processes\n"
                       % len(self.shots_todo)))
         while len(self.shots_todo) > 0:
             shot = self.shots_todo.pop(0)
-            shot.finish(status, cur_time)
+            shot.finish(Shot.finish_reason_no_throw, None, cur_time)
         
     def determine_exit_status(self):
         s = self.make_status
@@ -2572,15 +2647,43 @@ class xmake_server:
             os.waitpid(pid, 0)
             assert(0)
         
+
     def server_main(self):
+        if self.ensure_directory(self.opts.state_dir) == -1: return 1
+        if self.open_LOG() == -1: return 1
+        try:
+            return self.server_real_main()
+        finally:
+            # make sure we exit cleanly
+            self.periodic(1)
+            self.close_LOG()
+
+    def server_real_main(self):
         """
         main loop
         """
-        self.status_time_limit = os.system(("exit %d"
-                                            % self.opts.exit_status_time_limit))
-        self.status_worker_dead = os.system("exit %d"
-                                            % self.opts.exit_status_worker_dead)
-        
+        self.pinger = Pinger(self, self.opts.ping_interval)
+        self.rec = xmake_state_recorder(self.opts, self)
+        self.semaphores = self.mk_semaphores()
+        if self.semaphores is None: return 1
+        # when run by gxpc make, GXP_SESSION must be set to make sure
+        # children can attach the right session
+        self.so,self.so_name = self.mk_server_socket()
+        self.tid = "tid-%s" % os.path.basename(self.so_name)
+        if dbg>=2:
+            msg = ("to control, gxpc --save_session 0 e --tid %s"
+                   " --rid OPERATION --keep_connection 0\n")
+            Es("xmake: %s" % msg)
+            self.LOG(msg)
+        self.rid_gen = make_rid_generator()
+        self.gxpc_cmd,self.gxpc_pid,self.gxpc_fd = self.run_persistent_e(self.tid)
+        self.gxpc_partial_msg = ""
+        self.parallelism = [ (self.cur_time(), 0) ]
+        self.conf = xmake_server_conf()
+        self.conf.parse(os.path.expanduser(self.opts.conf))
+
+        # --------
+
         self.mk_sigchld_handler() # register sig handler
         self.make_pid = self.run_make() # run GNU make
         self.works = []                 # list of works
@@ -2594,6 +2697,7 @@ class xmake_server:
         self.interrupted = 0
         self.hostname = socket.gethostname()
         self.periodic(0)
+        # really, really, begin work
         while 1:
             try:
                 if self.server_iterate() == 0: break
@@ -2615,7 +2719,7 @@ class xmake_server:
                 self.interrupted = 1
                 msg = ("hard limit %.3f reached. outstanding jobs will"
                        " be killed with SIGINT. waiting jobs will exit"
-                       " with %d\n" % (int_at, self.opts.exit_status_time_limit))
+                       " with %d\n" % (int_at, self.opts.exit_status_interrupt))
                 if self.logfp:
                     self.LOG(msg)
                 Es("xmake: %s" % msg)
@@ -2624,7 +2728,7 @@ class xmake_server:
                 self.interrupted = 1
                 msg = ("soft limit %.3f reached. wait for outstanding"
                        " jobs to finish. waiting jobs will exit with %d\n"
-                       % (nd_after, self.opts.exit_status_time_limit))
+                       % (nd_after, self.opts.exit_status_no_throw))
                 if self.logfp:
                     self.LOG(msg)
                 Es("xmake: %s" % msg)
@@ -2686,28 +2790,82 @@ class xmake_server:
         Es("xmake: could not make a state directory %s\n" % dire)
         return -1
 
+    def check_process(self, pid):
+        # return 1 if pid exists
+        try:
+            os.kill(pid, 0)
+            return 1
+        except OSError,e:
+            if e.args[0] == errno.ESRCH: return 0
+            raise
+
+    def safe_remove_socket(self, so_name):
+        os.remove(so_name)
+
+    def find_xmake_sockets(self, pattern):
+        dire,base = os.path.split(self.session)
+        xmake_socket_pat = re.compile("xmake-(?P<pid>\d+)-\d+-%s" % base)
+        live_socks = []
+        for f in os.listdir(dire):
+            # check if f appears a xmake socket
+            m = xmake_socket_pat.match(f)
+            if m:
+                # if so, check if the process is still running
+                # (should normally be, but previous xmake may have died
+                # without cleaning up)
+                pid = self.safe_int(m.group("pid"))
+                if pid is None: continue
+                if self.check_process(pid):
+                    live_socks.append(f)
+                else:
+                    path = os.path.join(dire, f)
+                    if self.logfp:
+                        self.LOG("removing socket of apparently dead xmake %s\n" % path)
+                    self.safe_remove_socket(path)
+        return live_socks
+
+    def ctl_main(self):
+        # op and pattern should come from command lines
+        operations = self.opts.args
+        pattern = None
+        sockets = self.find_xmake_sockets(pattern)
+        if len(sockets) == 0:
+            Es("xmakectl: no xmake processes appear running\n")
+            return 1
+        elif len(sockets) > 1:
+            # todo: specify which
+            Es("xmakectl: multiple xmake processes appear running\n")
+            return 1
+        [ so ] = sockets
+        tid = "tid-%s" % so
+        for op in operations:
+            rid = op
+            cmd = ([ self.opts.gxpc, "--save_session", "0"  ]
+                   + self.e_args
+                   + [ "e", "--tid", tid, "--rid", rid,
+                       "--keep_connection", "0" ])
+            cmd = string.join(cmd, " ")
+            if dbg>=2:
+                Es("xmake: %s\n" % cmd)
+            status = os.system(cmd)
+            if os.WIFEXITED(status):
+                return os.WEXITSTATUS(status)
+            else:
+                return 1
+
     def main(self):
         if self.parse_args(sys.argv) == -1:
             return 1
         if self.opts.help:
             Es(self.opts.usage())
             return 1
-        if self.ensure_directory(self.opts.state_dir) == -1: return 1
-        if self.open_LOG() == -1: return 1
-        self.semaphores = self.mk_semaphores()
-        if self.semaphores is None: return 1
-        self.tid = "tid_make_%d_%d" % (os.getpid(), random.randint(0, 10000))
-        self.gxpc_cmd,self.gxpc_pid,self.gxpc_fd = self.run_persistent_e(self.tid)
-        self.gxpc_partial_msg = ""
-        self.so,self.so_name = self.mk_server_socket()
-        self.parallelism = [ (self.cur_time(), 0) ]
-        self.conf = xmake_server_conf()
-        self.conf.parse(os.path.expanduser(self.opts.conf))
-        try:
+        self.session = os.environ.get("GXP_SESSION")
+        if dbg>=2:
+            Es("xmake: session = %s\n" % self.session)
+        if self.opts.ctl:
+            return self.ctl_main()
+        else:
             return self.server_main()
-        finally:
-            self.periodic(1)
-            self.close_LOG()
             
 if __name__ == "__main__":
     sys.exit(xmake_server().main())

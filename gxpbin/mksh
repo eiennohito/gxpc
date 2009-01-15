@@ -7,11 +7,11 @@ def Es(s):
 envs_to_pass = [ "MAKEFLAGS", "MAKELEVEL", "MAKEFILES",
                  "GXP_MAKE_SO_NAME",
                  "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED",
-                 "GXP_MAKE_EXIT_STATUS_SERVER_DEAD" ]
+                 "GXP_MAKE_EXIT_STATUS_SERVER_DIED" ]
 
 def submit(so_name, cmd):
     key_cf = "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"
-    key_sd = "GXP_MAKE_EXIT_STATUS_SERVER_DEAD"
+    key_sd = "GXP_MAKE_EXIT_STATUS_SERVER_DIED"
     exit_status_connect_failed = int(os.environ.get(key_cf, "125"))
     exit_status_server_dead = int(os.environ.get(key_sd, "126"))
     
