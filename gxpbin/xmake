@@ -118,16 +118,20 @@ seems 200KB - 300KB.
 dbg=0
 
 def Es(s):
-    try:
-        os.write(2, s)
-    except IOError,e:
-        if e.args[0] != errno.EINTR: raise
+    while 1:
+        try:
+            os.write(2, s)
+            break
+        except OSError,e:
+            if e.args[0] != errno.EINTR: raise
 
 def Ws(s):
-    try:
-        os.write(1, s)
-    except IOError,e:
-        if e.args[0] != errno.EINTR: raise
+    while 1:
+        try:
+            os.write(1, s)
+            break
+        except OSError,e:
+            if e.args[0] != errno.EINTR: raise
 
 class xmake_cmd_opts(opt.cmd_opts):
     def __init__(self):
@@ -160,7 +164,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.update_interval_2 = ("f", 20.0)
         self.auto_update_interval = ("i", 60.0)
         self.time_limit = ("s", None)
-        self.ping_timeout = ("f", 50.0)
+        self.ping_timeout = ("f", 100.0)
         self.ping_interval = ("f", 30.0)
         
         self.no_dispatch_after = ("i", None)
@@ -1580,7 +1584,9 @@ plot '-' with boxes
     def record_state(self, finished):
         if self.opts.state == "": return
         state = os.path.join(self.opts.state_dir, self.opts.state)
-        self.LOG("generating state file (%s)\n" % state)
+        msg = ("generating state file (%s)\n" % state)
+        self.LOG(msg)
+        if finished: Es("xmake: %s" % msg)
         cur_time = self.cur_time()
         # -------- count work and determine no. of pages -------- 
         failed_works = self.get_failed_works(cur_time)
@@ -2357,9 +2363,6 @@ class xmake_server:
         if self.logfp:
             self.LOG("%d jobs dispatched\n" % n)
         
-        cur_time = self.cur_time()
-        self.check_worker_status(cur_time)
-        self.pinger.ping_all_workers(cur_time)
         return n
 
     def check_worker_status(self, cur_time):
@@ -2379,15 +2382,17 @@ class xmake_server:
                 # no man die twice
                 pass
             elif man.state == Man.state_leave_now:
+                Es("xmake: worker %s is told to leave now\n" % name)
                 finish_reason = Shot.finish_reason_worker_left
             elif (man.last_heartbeat_time < self.pinger.last_ping_time
                   and cur_time - man.last_heartbeat_time > timeout):
                 # we have pinged after hearing from this guy, but
                 # this guy has not responded for timeout sec.
+                Es(("xmake: worker %s not responding for %f sec\n"
+                    % (name, timeout)))
                 finish_reason = Shot.finish_reason_worker_died
             if finish_reason is not None:
                 man.state = Man.state_gone
-                Es("xmake: no response from worker %s\n" % name)
                 n = len(man.running)
                 for run in man.running[:]: # make a copy
                     run.finish(finish_reason, None, cur_time)
@@ -2773,9 +2778,15 @@ class xmake_server:
                     self.LOG("select interrupted\n")
             else:
                 raise
+        cur_time_after = self.cur_time()
         if self.so in RR: self.recv_works()
         if self.gxpc_fd in RR: self.recv_fins()
         if self.child_rfd in RR: self.handle_child_death()
+        if cur_time_after - cur_time > 1.0:
+            # if the server is very busy, it may be missing
+            # msgs that have come
+            self.check_worker_status(cur_time)
+        self.pinger.ping_all_workers(cur_time)
         return 1
 
     def ensure_directory(self, dire):
