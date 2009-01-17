@@ -930,6 +930,7 @@ class xmake_state_recorder:
     def __init__(self, opts, server):
         self.opts = opts
         self.server = server
+        self.make_link = 1
     
     def LOG(self, s):
         self.server.LOG(s)
@@ -1097,12 +1098,25 @@ td.man_working {
        server.gxpc_fd))
 
     def mk_lnk(self, f, from_dir):
+        """
+        make <a href=...> link to file f, assuming the base path
+        is from_dir.
+        e.g., f = /a/b/c/d and from_dir = /a/b, return c/d
+              f = /a/b/c/d and from_dir = /a/b/x, return ../c/d
+
+        we first get the common prefix of the two (/a/b of the above).
+        """
+        # say real_f = /a/b/c/d/e/f
         real_f = os.path.realpath(f)
+        # say real_from_dir = /a/b/x/y
         real_from_dir = os.path.realpath(from_dir)
+        # common = /a/b/
         common = os.path.commonprefix([real_f, real_from_dir])
         d = real_f
         base = ""
-        # d,base = os.path.split(real_f)
+        # we then compute path from common -> f (i.e., d/e/f part)
+        # and get the result in relative_path.
+        # start from f and go upstair until we reach common
         relative_path = base
         for i in range(100):
             assert i < 99, (0, f, from_dir, real_f, real_from_dir,
@@ -1113,7 +1127,13 @@ td.man_working {
                 if e.args[0] == errno.ENOENT: return f
                 raise
             d,base = os.path.split(d)
-            relative_path = os.path.join(base, relative_path)
+            if relative_path == "":
+                relative_path = base
+            else:
+                relative_path = os.path.join(base, relative_path)
+        # we then compute how many ../ must be put in front
+        # to reach common (/a/b) from from_dir (/a/b/x/y). i.e.,
+        # in this case it is ../.. 
         d = real_from_dir
         for i in range(100):
             assert i < 99, (1, f, from_dir, real_f, real_from_dir,
@@ -1128,6 +1148,11 @@ td.man_working {
         return ('<a href="%s">%s</a>' % (relative_path, f))
 
     def modify_cmd(self, cmd):
+        """
+        transform items in command line that appear to be
+        filenames into links
+        """
+        
         option_regexps = [ "\-\-[^ ]+=",
                            "[\+\-][^ ]{2}", "[\+\-][^ ]",
                            "" ]
@@ -1148,7 +1173,7 @@ td.man_working {
                     found = 0
                     files = []
                     for f in string.split(arg[m.end():], arg_splitter):
-                        if os.path.exists(f):
+                        if self.make_link and os.path.exists(f):
                             found = found + 1
                             files.append(self.mk_lnk(f, self.opts.state_dir))
                         else:
@@ -1215,6 +1240,11 @@ td.man_working {
 <td>status</td>
 </tr>''')
         for w in works:
+            if self.make_link:
+                if self.cur_time() - cur_time > 10.0:
+                    self.LOG(("generating state file taking > 10.0sec, "
+                              "linking to files disabled\n"))
+                    self.make_link = 0
             queued_t = time.ctime(w.req_time + self.server.start_t)
             cmds = string.join(self.modify_cmds(w.cmds), "<br><br>")
             i = 0
