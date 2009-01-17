@@ -2660,7 +2660,6 @@ class xmake_server:
             return self.server_real_main()
         finally:
             # make sure we exit cleanly
-            self.periodic(1)
             self.close_LOG()
 
     def server_real_main(self):
