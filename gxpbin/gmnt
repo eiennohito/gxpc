@@ -235,6 +235,16 @@ class Tree:
             if not len(todolist):
                 todolist = childlist
                 childlist = []
+        
+        # validity check
+        for n in self.nodes:
+            assert self.pmap.has_key(n) or self.cmap.has_key(n) or \
+            n in self.roots
+
+        for p, children in self.cmap.items():
+            for c in children:
+                assert self.pmap[c] == p
+        
         return
         
     def has_roots_only(self):
