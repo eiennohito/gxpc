@@ -22,6 +22,7 @@ import string
 import sys
 import textwrap
 import time
+import ifconfig
 
 from topology import TopParser
 
@@ -108,7 +109,13 @@ class Host:
 def get_my_host():
     h = socket.gethostname()
     f = socket.getfqdn()
-    i = socket.gethostbyname(f)
+    x,err = ifconfig.compile_prio("g, p")
+    if err is None:
+        i = ifconfig.get_my_addrs(x)[0]
+    else:
+        i = socket.gethostbyname(f)
+        es("%s* failed to get global ip address\n"
+			% h)
     idx = get_rank()
     return Host(h, f, i, idx)
 
