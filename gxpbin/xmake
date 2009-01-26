@@ -1964,17 +1964,30 @@ class xmake_server:
     def mk_server_socket(self):
         """
         make a socket under the temporary directory.
-        /tmp/xmake-tau/so<pid>-xxxxxxx.
+        the name is determined base on session name
+        so that gxpc makectl can find the right xmake
+        to talk to.
+        let's say session file looks like:
+
+          gxpsession-monako-tau-2009-01-26-22-55-12-28724-80926995
+
+        we get socket file under the name:
+
+          xmake-<pid>-2009-01-26-22-55-12-28724-80926995
 
         set the name to GXP_MAKE_SO_NAME, to pass it to mksh 
         (child of GNU make).
         """
-        cookie = "%d-%06d" % (os.getpid(), random.randint(0, 1000000))
+        # cookie = "%d-%06d" % (os.getpid(), random.randint(0, 1000000))
+        cookie = "%d" % os.getpid()
         if self.session is None:
-            dire,base = None,None
+            dire,basex = None,None
         else:
             dire,base = os.path.split(self.session)
-        name = os.path.join(dire, ("xmake-%s-%s" % (cookie, base)))
+            session_pat = re.compile("gxpsession-[^-]+-[^-]+-(.*)")
+            m = session_pat.match(base)
+            basex = m.group(1)
+        name = os.path.join(dire, ("xmake-%s-%s" % (cookie, basex)))
         if self.logfp:
             self.LOG("making server socket on %s\n" % name)
         so = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -2865,9 +2878,13 @@ class xmake_server:
         return live_socks
 
     def ctl_main(self):
+        """
+        main entry point of makectl
+        """
         # op and pattern should come from command lines
         operations = self.opts.args
         pattern = None
+        # search sockets to talk to
         sockets = self.find_xmake_sockets(pattern)
         if len(sockets) == 0:
             Es("xmakectl: no xmake processes appear running\n")
