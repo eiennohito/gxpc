@@ -6,8 +6,8 @@
 # This program can be distributed under the terms of the GNU GPL.
 # See the file COPYING.
 
-GMOUNT_VERSION = 0.2
-GMOUNT_DATE = "2009.01.17"
+GMOUNT_VERSION = 0.3
+GMOUNT_DATE = "2009.01.27"
 
 import errno
 import fcntl
@@ -33,12 +33,12 @@ PYTHON_VERSION_26 = '0x2060000'
 PYTHON_VERSION = hex(sys.hexversion)
 
 # colors
-COLOR_RED = 31
-COLOR_GREEN = 32
+COLOR_WARNING = COLOR_RED = 31
+COLOR_DEMO1 = COLOR_GREEN = 32
 COLOR_BROWN = 33
 COLOR_BLUE   = 34
-COLOR_MEGENTA = 35
-COLOR_CYAN = 36
+COLOR_DEMO2 = COLOR_MEGENTA = 35
+COLOR_EXEC = COLOR_CYAN = 36
 COLOR_WHITE = 37
 
 if sys.platform == "win32":
@@ -53,6 +53,14 @@ def ws(s):
 def es(s):
     sys.stderr.write(s)
     sys.stderr.flush()
+
+def runcmd(cmd):
+    fp = os.popen(cmd)
+    output = fp.read()
+    ret = fp.close()
+    if ret is None:
+        return output.strip()
+    return None
 
 def string_hash(s):
     hash = 0
@@ -301,6 +309,8 @@ class GridMount:
         self.fuse_opts =  []
         self.grouping = 'ip'
         self.fix_inter_dir = None
+        self.disable_lmount = False
+        self.force = False
         self.verbosity = 0
         self.verbose_color = False
         self.dryrun = False
@@ -425,7 +435,7 @@ class GridMount:
                     glst = map(lambda h:"%s (%s, %s)\n" % (h.h, h.f, h.i), v)
                     vs += "GROUP %s???\n" % k + "".join(glst)
                     
-            self.verbose(vs, COLOR_GREEN)
+            self.verbose(vs, COLOR_DEMO1)
         
         return groups
     
@@ -458,7 +468,7 @@ class GridMount:
 
         if self.verbosity >= 1 and self.show_tree:
             if self.verbose_color:
-                color = COLOR_MEGENTA
+                color = COLOR_DEMO2
             else:
                 color = 0
             self.verbose("make_tree: show tree structure", color)
@@ -517,6 +527,14 @@ class GridMount:
                 return 1
 
         fp.close()
+        
+        # check if umount is safe
+        busy = False
+        for dir in entry_to_umount:
+            busy = busy or self.check_busy(dir)
+        if busy and not self.force:
+            return 1
+            
         for dir in entry_to_umount:
             if self.fusermount_u(dir) == 0:
                 # cleanup intermediate directory
@@ -661,10 +679,21 @@ class GridMount:
             es("%s: error: mount point %s is not empty\n" % \
                (self.hostname, mountpoint))
             return 1
-        
-        tstr = " ".join(map(lambda (h,d):"%s:%s" % (h.i, d), targets))
-        vstr = " ".join(map(lambda (h,d):"%s:%s" % (h.h, d), targets))
-
+       
+        if self.disable_lmount:
+            tstr = " ".join(map(lambda (h,d):"%s:%s" % (h.i, d), targets))
+            vstr = " ".join(map(lambda (h,d):"%s:%s" % (h.h, d), targets))
+        else:
+            tstr = ""
+            vstr = ""
+            for h, d in targets:
+                if h == self.host:
+                    tstr += " %s:%s=l" % (h.i, d)
+                    vstr += " %s:%s=l" % (h.h, d)
+                else:
+                    tstr += " %s:%s" % (h.i, d)
+                    vstr += " %s:%s" % (h.h, d)
+                
         opts = []
         for o in self.sshfsm_opts:
             opts.append(o)
@@ -677,10 +706,10 @@ class GridMount:
         
         if self.verbosity >= 4:
             self.verbose("sshfsm_mount: os.system(sshfsm %s %s %s)" % \
-                         (tstr, mountpoint, ostr), COLOR_CYAN)
+                         (tstr, mountpoint, ostr), COLOR_EXEC)
         elif self.verbosity >= 3:
             self.verbose("sshfsm_mount: os.system(sshfsm %s %s ...)" % \
-                         (vstr, mountpoint), COLOR_CYAN)
+                         (vstr, mountpoint), COLOR_EXEC)
         
         if self.dryrun:
             r = os.system("which sshfsm > /dev/null")
@@ -690,15 +719,34 @@ class GridMount:
         if r != 0:
             if self.verbosity >= 3:
                 self.verbose("sshfsm_mount: failed, os.system(sshfsm %s %s ...)" % \
-                             (vstr, mountpoint), COLOR_RED)
+                             (vstr, mountpoint), COLOR_WARNING)
             es("%s: error: sshfsm mount failed\n" % self.hostname)
         return r
+    
+    def check_busy(self, mountpoint):
+        if self.verbosity >= 2:
+            self.verbose("check_busy: check if %s is in use" % mountpoint)
+        line = runcmd("fuser -m %s 2>&1" % mountpoint)
+        if line is not None:
+            procs = line.split()
+            procs.pop(0)   # remove mountpoint
+            for pnum in procs:
+                fp = open("/proc/%s/cmdline" % pnum, "r")
+                cmdline = fp.readline()
+                fp.close()
+                cmdline = cmdline.replace('\0', ' ')
+                es("%s: warning: %s is occupied by proc %s: %s\n" %
+                    (self.hostname, mountpoint, pnum, cmdline))
+            es("%s: please make sure umount is safe, or use "
+               "\"--force\" option\n" % self.hostname)
+            return True
+        return False
+
 
     def fusermount_u(self, mountpoint):
         if self.verbosity >= 2:
             self.verbose("fusermount_u: os.system(fusermount -u %s 2>&1)" % \
                         mountpoint)
-        
         if self.dryrun:
             return os.system("which fusermount > /dev/null")
         else:
@@ -798,9 +846,17 @@ def parse_argv(argv):
                       dest="fuse_opts", metavar="OPT=VAL",
                       default=[], help="fuse options (default: None)")
     
+    parser.add_option("--disable_lmount", action="store_true",
+                      dest="disable_lmount", default=False, 
+                      help="disable local mount in sshfs-mux")
+    
     parser.add_option("--disable_cache", action="store", type="string",
                       dest="disable_cache", metavar="fuse/sshfsm/all",
                       default='no', help="disable cache (default: off)")
+    
+    parser.add_option("--force", action="store_true",
+                      dest="force", default=False, 
+                      help="force to perform action")
     
     parser.add_option("--fix_inter_dir", action="store", type="string",
                       dest="fix_inter_dir", metavar="STRING",
