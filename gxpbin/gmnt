@@ -531,7 +531,12 @@ class GridMount:
         # check if umount is safe
         busy = False
         for dir in entry_to_umount:
-            busy = busy or self.check_busy(dir)
+            busy = busy or self.fuser_check(dir)
+        # check other nodes
+        self.broadcast("%s" % busy)
+        for i in range(self.size):
+            busy = busy or eval(self.receive())
+        
         if busy and not self.force:
             return 1
             
@@ -723,15 +728,25 @@ class GridMount:
             es("%s: error: sshfsm mount failed\n" % self.hostname)
         return r
     
-    def check_busy(self, mountpoint):
+    def fuser_check(self, mountpoint):
         if self.verbosity >= 2:
-            self.verbose("check_busy: check if %s is in use" % mountpoint)
+            self.verbose("fuser_check: check if %s is in use" % mountpoint)
         line = runcmd("fuser -m %s 2>&1" % mountpoint)
         if line is not None:
             procs = line.split()
             procs.pop(0)   # remove mountpoint
-            for pnum in procs:
-                fp = open("/proc/%s/cmdline" % pnum, "r")
+            for p in procs:
+                # fuser indicator:
+                # c: current directory
+                # e: running executable
+                # f: open file
+                # r: the root directory
+                # m: shared library
+                pnum = p.strip('cefrm')
+                try:
+                    fp = open("/proc/%s/cmdline" % pnum, "r")
+                except IOError:
+                    continue;
                 cmdline = fp.readline()
                 fp.close()
                 cmdline = cmdline.replace('\0', ' ')
