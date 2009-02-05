@@ -4284,9 +4284,12 @@ See Also:
         m_groups = m.groups()
         m_groupdict = m.groupdict()
         for i in range(len(m_groups)):
-            # replace %1% -> m_group(1)
-            # Es("applying %s -> %s\n" % (("%%%d%%" % i), m_groups[i]))
-            p = string.replace(p, ("%%%d%%" % i), m_groups[i])
+            # replace %1% -> m.group(1)
+            # we like to replace %1% with m.group(1)
+            # here, m_groups[i] == m.group(i+1)
+            j = i + 1
+            # Es("applying %s -> %s\n" % (("%%%d%%" % j), m_groups[i]))
+            p = string.replace(p, ("%%%d%%" % j), m_groups[i])
         for k,v in m_groupdict.items():
             # Es("applying %s -> %s\n" % (("%%%s%%" % k), v))
             p = string.replace(p, ("%%%s%%" % k), v)
