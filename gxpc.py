@@ -2253,7 +2253,7 @@ class cmd_interpreter:
             if e.args[0] == errno.EPIPE \
                or e.args[0] == errno.ECONNRESET \
                or e.args[0] == errno.EBADF: # closed just before
-                # Es("gxpc: warning: processes quit before receiving some msgs\n")
+                # Es("gxpc: warning: processes quit before receiving some msgs %s\n" % (e.args,))
                 return -1
             else:
                 raise

@@ -273,7 +273,7 @@ class gxpd_opts(opt.cmd_opts):
         self.target_label = ("s", "")
         self.listen = ("s", "unix:")
         self.created_explicitly = ("i", 0)
-        self.qlen = ("i", 10)
+        self.qlen = ("i", 1000)
         self.remove_self = (None, 0)
         self.no_stdin = (None, 0)
         self.redirect_stdout = (None, 0)
