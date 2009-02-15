@@ -181,7 +181,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         # in case you want to run GNU make with a different name
         self.make     = ("s", "make")
         self.stage_in = ("s", None)     # "./stage_in"
-        self.gxpc     = ("s", "gxpc")
+        self.gxpc     = ("s", None)
         self.qlen     = ("i", 10000)
         self.sem      = ("s*", [])
         self.emulate  = (None, 0)
@@ -225,7 +225,14 @@ class xmake_cmd_opts(opt.cmd_opts):
                 "ping_interval (%.3f) + 10, set to it"
                 % (self.ping_timeout, self.ping_interval)))
             self.ping_timeout = self.ping_interval + 10.0
-
+        if self.gxpc is None:
+            gxp_dir = os.environ.get("GXP_DIR")
+            if gxp_dir is None:
+                Es(("xmake: use --gxpc to speficy the full path of gxpc"
+                    " or set GXP_DIR environment variable\n"))
+                return -1
+            else:
+                self.gxpc = os.path.join(gxp_dir, "gxpc")
         
     def usage(self):
         u = r"""usage:
@@ -587,7 +594,7 @@ class shot_lexec(Shot):
         else:
             cmd = self.cmd
         self.start_time = cur_time
-        cmdx = [ "sh", "-c", cmd ]
+        cmdx = [ "/bin/sh", "-c", cmd ]
         if self.server.logfp:
             self.server.LOG(("locally executing %s (%s)\n" % (self.cmd, cmdx)))
         pid = os.fork()
