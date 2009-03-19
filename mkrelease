@@ -1,14 +1,4 @@
 #!/bin/bash
-#
-# How to make a release
-# (1) make sure ChangeLog looks good
-# (2) edit VERSION number below
-# (3) do not forget to commit THIS change
-# (4) ./mkrelease
-# (5) goto file release page 
-# (https://sourceforge.net/project/admin/editreleases.php?package_id=282790&group_id=233088)
-# see the bottom of this file
-#
 
 # convention. increase this number BEFORE you make a release
 # (i.e., if VERSION=04, it means version 3.04 HAS BEEN released)
