@@ -24,7 +24,7 @@ __all__ = ['KB', 'MB', 'GB', 'OPSET_META', 'OPSET_IO', 'parse_data_size',
            'OptionParserHelpFormatter'] 
 
 PFSB_VERSION = 0.7
-PFSB_DATE = "2009.02.26"
+PFSB_DATE = "2009.02.27"
 
 KB = 1024
 MB = 1048576
@@ -99,12 +99,20 @@ class DataGenerator:
         self.file = self.files[0]
         return self.files
 
-    def shuffle(self):
+    def shuffle(self, shuffle="random", round=1):
         if self.dirs is not None:
-            random.shuffle(self.dirs)
+            if shuffle == "random":
+                random.shuffle(self.dirs)
+            elif shuffle == "round":
+                for i in range(0, round):
+                    self.dirs.append(self.dirs.pop(0))
             self.dir = self.dirs[0]
         if self.files is not None:
-            random.shuffle(self.files)
+            if shuffle == "random":
+                random.shuffle(self.files)
+            elif shuffle == "round":
+                for i in range(0, round):
+                    self.files.append(self.files.pop(0))
             self.file = self.files[0]
     
     def clean(self):
@@ -122,8 +130,8 @@ class PyFileSystemBenchmark:
         self.cmd = None
         
         # configurable variables
-        self.mode = 'io'
-        self.wdir = '/tmp'
+        self.mode = "io"
+        self.wdir = "/tmp"
         self.opset = OPSET_IO
         self.opcnt = 10
         self.factor = 16
@@ -132,7 +140,8 @@ class PyFileSystemBenchmark:
         self.blksize = KB
         self.unit = "MB"
         self.sync = False
-        self.shuffle = False
+        self.shuffle = "random" 
+        self.round = 1
         self.closetime = True
         self.sleep = 0.0
         self.verbosity = 0
@@ -882,8 +891,9 @@ class PyFileSystemBenchmark:
     def inter_processing(self):
         if self.shuffle:
             if self.verbosity >=3:
-                self.verbose("inter_processing: self.data.shuffle()")
-            self.data.shuffle()
+                self.verbose("inter_processing: self.data.shuffle(%s, %d)" 
+                             % (self.shuffle, self.round))
+            self.data.shuffle(self.shuffle, self.round)
 
         if self.verbosity >= 3:
             self.verbose("inter_processing: time.sleep(%f)" % self.sleep)
@@ -1271,9 +1281,13 @@ def parse_argv(argv):
                 dest="sync", default=False,
                 help="synchronized I/O (default: disabled)")
     
-    parser.add_option("--shuffle", action="store_true",
-                dest="shuffle", default=False,
-                help="shuffle data (default: disabled)")
+    parser.add_option("--shuffle", action="store", type="string",
+                dest="shuffle", default="random",
+                help="shuffle: random/round (default: disabled)")
+    
+    parser.add_option("--round", action="store", type="int",
+                dest="round", default=1,
+                help="offset in round shuffle (default: 1)")
     
     parser.add_option("--sleep", action="store", type="float",
                 dest="sleep", metavar="SECONDS", default=0.0,
@@ -1311,7 +1325,7 @@ def parse_argv(argv):
             es("Unknown test operation\n")
             sys.exit(1)
 
-    opts.wdir = os.path.normpath(opts.wdir)
+    opts.wdir = os.path.abspath(opts.wdir)
     if opts.factor <= 0:
         es("warning: invalid factor %d\n" % opts.factor)
         sys.exit(1)
