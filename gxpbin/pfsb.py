@@ -140,7 +140,7 @@ class PyFileSystemBenchmark:
         self.blksize = KB
         self.unit = "MB"
         self.sync = False
-        self.shuffle = "random" 
+        self.shuffle = None 
         self.round = 1
         self.closetime = True
         self.sleep = 0.0
@@ -1282,7 +1282,7 @@ def parse_argv(argv):
                 help="synchronized I/O (default: disabled)")
     
     parser.add_option("--shuffle", action="store", type="string",
-                dest="shuffle", default="random",
+                dest="shuffle", default=None,
                 help="shuffle: random/round (default: disabled)")
     
     parser.add_option("--round", action="store", type="int",

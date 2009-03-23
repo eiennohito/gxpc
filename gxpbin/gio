@@ -543,7 +543,7 @@ def parse_argv(argv):
                       help="synchronized I/O (default: off)")
     
     parser.add_option("--shuffle", action="store", type="string",
-                dest="shuffle", default="random",
+                dest="shuffle", default=None,
                 help="shuffle data (default: disabled)")
     
     parser.add_option("--round", action="store", type="int",
@@ -557,8 +557,8 @@ def parse_argv(argv):
     parser.add_option("--keep", action="store_true",
                       dest="keep", default=False,
                       help="keep temparary files (default: disabled)")
-    
-    (opts, args) = parser.parse_args(argv)
+   	
+    opts, args = parser.parse_args(argv)
     
     opts.print_help = parser.print_help
 
