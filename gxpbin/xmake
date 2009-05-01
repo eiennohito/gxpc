@@ -1991,9 +1991,9 @@ class xmake_server:
             dire,basex = None,None
         else:
             dire,base = os.path.split(self.session)
-            session_pat = re.compile("gxpsession-[^-]+-[^-]+-(.*)")
+            session_pat = re.compile("(G|g)xpsession-[^-]+-[^-]+-(.*)")
             m = session_pat.match(base)
-            basex = m.group(1)
+            basex = m.group(2)
         name = os.path.join(dire, ("xmake-%s-%s" % (cookie, basex)))
         if self.logfp:
             self.LOG("making server socket on %s\n" % name)
