@@ -158,7 +158,8 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.max_records_in_page = ("i", 500)
         self.local_exec_cmd = ("s", None) 
         #
-        self.conf = ("s", "~/gxpc_make.conf")
+        # self.conf = ("s", "~/gxpc_make.conf")
+        self.conf = ("s*", [ "~/.gxpc_make.conf", "gxpc_make.conf" ])
         #
         self.update_interval_1 = ("f", 2.0)
         self.update_interval_2 = ("f", 20.0)
@@ -252,6 +253,9 @@ gxpc make options:
       (including xmake.log). created if not exist.
   --state FILE :
       write job/worker status to FILE (default: "state.html")
+  --conf FILE :
+      read FILE as the config file, in addition to ~/.gxpc_make.conf and
+      gxpc_make.conf in the current dir.
   --log FILE :
       write log to FILE (default: "xmake.log")
   --update_interval_1 T1 :
@@ -879,6 +883,19 @@ class xmake_server_conf:
         self.postprocess_cmds = []
         self.transform_cmds = []
         
+    def warn_deprecated_files(self):
+        f = os.path.expanduser("~/gxpc_make.conf")
+        if os.path.exists(f):
+            Es(r"""xmake: warning: config file ~/gxpc_make.conf is deprecated.
+New default config files are ~/.gxpc_make.conf and gxpc_make.conf in the
+current dir. Both are read (if exist) and the latter overrides the former.
+""")
+        
+    def parse_files(self, conf_files):
+        self.warn_deprecated_files()
+        for f in conf_files:
+            self.parse(os.path.expanduser(f))
+        
     def parse(self, conf_file):
         if os.path.exists(conf_file):
             try:
@@ -1209,15 +1226,18 @@ td.man_working {
 <a href="#">page top</a><br>
 ''' % (label, label, idx+1, len(states))))
         if idx - 1 >= 0:
-            wp.write(('<a href="%s#%s">prev</a> ' % (states[idx - 1], label)))
+            wp.write(('<a href="%s#%s">prev</a> '
+                      % (os.path.basename(states[idx - 1]), label)))
         if idx + 1 < len(states):
-            wp.write(('<a href="%s#%s">next</a> ' % (states[idx + 1], label)))
+            wp.write(('<a href="%s#%s">next</a> '
+                      % (os.path.basename(states[idx + 1]), label)))
         for i in range(len(states)):
-            wp.write('<a href="%s#%s">%d</a> ' % (states[i], label, i + 1))
+            wp.write(('<a href="%s#%s">%d</a> '
+                      % (os.path.basename(states[i]), label, i + 1)))
         wp.write("<br>")
         if jobs_txt is not None:
             wp.write(('<a href="%s">all jobs (%d bytes)</a> ' 
-                      % (jobs_txt, jobs_txt_sz)))
+                      % (os.path.basename(jobs_txt), jobs_txt_sz)))
         return wp.getvalue()
 
     
@@ -1533,10 +1553,11 @@ plot '-' with boxes
   <li><a href="#Recent Jobs">Recent Jobs</a>
 </ul>
 <li><a href="#Worker States">Worker States</a>
-''' % (jobs_txt, jobs_txt_sz)))
+''' % (os.path.basename(jobs_txt), jobs_txt_sz)))
         wp.write('<li>')
         for i in range(len(states)):
-            wp.write('<a href="%s">%d</a> ' % (states[i], i + 1))
+            wp.write(('<a href="%s">%d</a> '
+                      % (os.path.basename(states[i]), i + 1)))
         wp.write('<br>\n')
         wp.write('</ul>')
         return wp.getvalue()
@@ -1595,7 +1616,8 @@ plot '-' with boxes
 
     def gen_state_filenames(self, state, n):
         """
-        /foo/bar/state.html 
+        state : full path to state.html (e.g., /foo/bar/state.html)
+        return : full path to state.txt and other state_x.html's
         --> job_txt = /foo/bar/state.txt
             states = [ /foo/bar/state.html,
                        /foo/bar/state_2.html,
@@ -1683,6 +1705,7 @@ plot '-' with boxes
             wp.write(trailer)
             wp.close()
             self.paranoia_rename(tmp, states[i])
+        # generate state.txt
         tmp,wp = self.mk_temp(jobs_txt)
         wp.write(jobs)
         self.paranoia_rename(tmp, jobs_txt)
@@ -2734,7 +2757,7 @@ class xmake_server:
         self.gxpc_partial_msg = ""
         self.parallelism = [ (self.cur_time(), 0) ]
         self.conf = xmake_server_conf()
-        self.conf.parse(os.path.expanduser(self.opts.conf))
+        self.conf.parse_files(self.opts.conf)
 
         # --------
 

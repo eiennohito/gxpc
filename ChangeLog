@@ -1,2 +1,15 @@
 2009-03-19 Taura
 	* ChangeLog : for release 3.06 started
+2009-05-23 Taura
+	* gxpc.py : fixed a bug that slowly explores even after 
+	--chidren_hard_limit reached. For example, when we do
+	  	use ssh A B
+		explore --chilidren_hard_limit 10 B 100
+	the intended behavior is to grab 10 nodes and fail to
+	get the remaining 90 nodes. What happens was, however,
+	to get the remaining 90 very slowly (one after another).
+	On tsubame, this resulted in taking 20 mins to get 130
+	nodes and got killed by the admin. 
+2009-05-23 Taura
+	* gxpbin/xmake : fixed links from state.html -> state.txt
+	and other state_xx.html's

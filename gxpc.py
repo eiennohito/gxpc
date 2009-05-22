@@ -4345,7 +4345,8 @@ See Also:
                     return nid,t,cmd
         return None,None,None
 
-    def mk_explore_cmds(self, to_explore, aliases, max_ch, opts, ng_cache):
+    def mk_explore_cmds(self, to_explore, aliases,
+                        ch_soft_lim, ch_hard_lim, opts, ng_cache):
         """
         Make a dictionary of src -> commands, which says
         src host should issue commands to get new nodes.
@@ -4384,8 +4385,8 @@ See Also:
             # okay, now we get some appropriate target nodes for h
             blocked = []
             # ensure each node can add at least one child
-            max_ch2 = max(max_ch, len(h.children) + 1)
-            while len(h.children) < max_ch2 and len(to_explore) > 0:
+            max_ch = min(ch_hard_lim, max(ch_soft_lim, len(h.children) + 1))
+            while len(h.children) < max_ch and len(to_explore) > 0:
                 # get next target until h's children become too many
                 tgt = to_explore.pop(0)
                 # check if h is allowed to issue cmd to tgt
@@ -4449,11 +4450,13 @@ See Also:
         self.asend(gxpm.unparse(m))
         return 1
 
-    def explore_some(self, tid, pipes, to_explore, aliases, max_ch, opts, ng_cache):
+    def explore_some(self, tid, pipes, to_explore, aliases,
+                     ch_soft_lim, ch_hard_lim, opts, ng_cache):
         """
         build and send a single msg to explore some nodes
         """
-        C = self.mk_explore_cmds(to_explore, aliases, max_ch, opts, ng_cache)
+        C = self.mk_explore_cmds(to_explore, aliases,
+                                 ch_soft_lim, ch_hard_lim, opts, ng_cache)
         r = self.send_explore_msg(tid, pipes, C)
         return r
 
@@ -4787,7 +4790,8 @@ use.
                 iteration = iteration + 1
                 while ch_soft_lim <= ch_hard_lim and len(to_explore) > 0:
                     self.explore_some(tid, pipes, to_explore,
-                                      aliases, ch_soft_lim, opts, ng_cache)
+                                      aliases, ch_soft_lim, ch_hard_lim,
+                                      opts, ng_cache)
                     if len(self.exploring) > 0: break
                     if ch_soft_lim == ch_hard_lim: break
                     # ch_soft_lim = int(ch_soft_lim * 1.1) + 1
