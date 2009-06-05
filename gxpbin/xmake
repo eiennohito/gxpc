@@ -782,7 +782,8 @@ class Work:
         self.idx = idx                  # index
         self.req_time = req_time        # request time
         self.conn = conn                # connection to the mksh
-        self.envs = envs       # envs to pass [ "MAKEFLAGS=..", "MAKELEVEL=.." ]
+        self.envs = envs + [ ("GXP_MAKE_WORK_IDX=%d" % idx) ]
+        # envs to pass [ "MAKEFLAGS=..", "MAKELEVEL=.." ]
         self.cwd = cwd         # work dir
         self.cmds = cmds         # command
         self.local = local     # 1 or 0
