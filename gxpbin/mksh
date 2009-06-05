@@ -6,6 +6,7 @@ def Es(s):
 
 envs_to_pass = [ "MAKEFLAGS", "MAKELEVEL", "MAKEFILES",
                  "GXP_MAKE_SO_NAME",
+                 "GXP_MAKE_MKSH_PID",
                  "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED",
                  "GXP_MAKE_EXIT_STATUS_SERVER_DIED" ]
 
@@ -19,6 +20,7 @@ def submit(so_name, cmd):
     msgs = []
     msgs.append("%9d %s" % (len(cmd), cmd))
     msgs.append("%9d %s" % (len(cwd), cwd))
+    os.environ["GXP_MAKE_MKSH_PID"] = ("%d" % os.getpid())
     for var in envs_to_pass:
         if os.environ.has_key(var):
             varval = "%s=%s" % (var, os.environ[var])

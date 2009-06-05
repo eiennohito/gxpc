@@ -4800,7 +4800,8 @@ use.
                 # we tried twice and still no one exploring -> quit
                 if len(self.exploring) == 0: break
                 n = len(self.exploring)
-                b = max(0, min(n - opts.min_wait, n - int(opts.wait_factor * n)))
+                b = max(0, min(n - opts.min_wait, 
+                               n - int(opts.wait_factor * n)))
                 time_limit = self.timeout_to_limit(self.opts.timeout)
                 if opts.verbosity >= 1:
                     wait_start = time.time()
