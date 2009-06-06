@@ -2,16 +2,15 @@
 #
 # How to make a release
 # (1) make sure ChangeLog looks good
-# (2) edit VERSION number below
-# (3) do not forget to commit THIS change
-# (4) ./mkrelease
-# (5) goto file release page 
+# (2) edit RELEASE_NUMBER number below
+# (3) ./mkrelease
+# (4) goto file release page 
 # (https://sourceforge.net/project/admin/editreleases.php?package_id=282790&group_id=233088)
 # see the bottom of this file
 #
 
 # convention. increase this number BEFORE you make a release
-# (i.e., if VERSION=04, it means version 3.04 HAS BEEN released)
+# (i.e., if RELEASE_NUMBER=04, it means version 3.04 HAS BEEN released)
 RELEASE_NUMBER=3.05
 
 # taura -> ttaauu
@@ -26,7 +25,7 @@ DIR=gxp-${RELEASE_NUMBER}
 
 cvs up
 echo ${RELEASE_NUMBER} > RELEASE_NUMBER
-cvs ci -m "commit to make release ${RELEASE_NUMBER}"
+cvs ci -m "commit to make release ${RELEASE_NUMBER}" RELEASE_NUMBER mkrelease
 mkdir -p releases
 cd releases
 cvs -d :ext:${USER}@gxp.cvs.sourceforge.net:/cvsroot/gxp export -r HEAD gxp3
