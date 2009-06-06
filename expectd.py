@@ -1,3 +1,4 @@
+# Copyright (c) 2009 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2008 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2007 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2006 by Kenjiro Taura. All rights reserved.
@@ -12,6 +13,9 @@
 # code is granted, provided the above notices are retained, and
 # a notice that the code was modified is included with the above
 # copyright notice.
+#
+# $Header
+# $Name
 #
 
 import ioman,sys
@@ -208,3 +212,4 @@ def test1():
 if __name__ == "__main__":
     test1()
     
+# $Log

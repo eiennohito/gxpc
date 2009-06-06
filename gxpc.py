@@ -1,3 +1,4 @@
+# Copyright (c) 2009 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2008 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2007 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2006 by Kenjiro Taura. All rights reserved.
@@ -12,6 +13,9 @@
 # code is granted, provided the above notices are retained, and
 # a notice that the code was modified is included with the above
 # copyright notice.
+#
+# $Header
+# $Name
 #
 
 def prompt_():
@@ -2492,6 +2496,29 @@ Description:
         return 0
                 
     #
+    # help
+    #
+    def usage_version_cmd(self, full):
+        u = r"""Usage:
+  gxpc version
+"""
+        return u
+
+    def get_version(self):
+        gxp_dir = self.get_gxp_dir()
+        if gxp_dir is None: return None
+        release_number_file = os.path.join(gxp_dir, "RELEASE_NUMBER")
+        if not os.path.exists(release_number_file):
+            return None
+        fp = open(release_number_file, "rb")
+        version = fp.read().strip()
+        fp.close()
+        return version
+
+    def do_version_cmd(self, args):
+        version = self.get_version()
+        Ws("GXP version %s\n" % version)
+    #
     # makeman
     #
     def usage_makeman_cmd(self, full):
@@ -4969,3 +4996,4 @@ Options:
 if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
+# $Log

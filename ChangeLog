@@ -13,3 +13,6 @@
 2009-05-23 Taura
 	* gxpbin/xmake : fixed links from state.html -> state.txt
 	and other state_xx.html's
+2009-06-6 Taura
+	* gxpbin/xmake : defined GXP_MAKE_WORK_IDX and GXP_MAKE_MKSH_PID
+	in job environment
