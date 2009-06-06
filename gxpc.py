@@ -14,8 +14,8 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header
-# $Name
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.31 2009/06/06 13:53:26 ttaauu Exp $
+# $Name:  $
 #
 
 def prompt_():
@@ -4996,4 +4996,7 @@ Options:
 if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
-# $Log
+# $Log: gxpc.py,v $
+# Revision 1.31  2009/06/06 13:53:26  ttaauu
+# embed headers, revision numbers, and logs
+#
