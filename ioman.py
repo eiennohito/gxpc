@@ -10,6 +10,9 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.6 2009/06/06 14:06:23 ttaauu Exp $
+# $Name:  $
+#
 
 import errno,fcntl,os,random,re,select,signal,socket,string,sys
 import time,types
@@ -2557,3 +2560,8 @@ def test_recv_lines():
 if 0 and __name__ == "__main__":
     # just for test
     test_recv_msg()
+
+# $Log: ioman.py,v $
+# Revision 1.6  2009/06/06 14:06:23  ttaauu
+# added headers and logs
+#

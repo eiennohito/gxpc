@@ -1,3 +1,23 @@
+# Copyright (c) 2009 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2008 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2007 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2006 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2005 by Kenjiro Taura. All rights reserved.
+#
+# THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY 
+# EXPRESSED OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
+# 
+# Permission is hereby granted to use or copy this program
+# for any purpose,  provided the above notices are retained on all 
+# copies. Permission to modify the code and to distribute modified
+# code is granted, provided the above notices are retained, and
+# a notice that the code was modified is included with the above
+# copyright notice.
+#
+# $Header: /cvsroot/gxp/gxp3/ifconfig.py,v 1.3 2009/06/06 14:06:23 ttaauu Exp $
+# $Name:  $
+#
+
 import fcntl,os,re,socket,string,sys
 
 try:
@@ -260,3 +280,7 @@ def get_my_addrs(addr_prio):
 def compile_prio(addr_prio_str):
     return ifobj.compile_prio(addr_prio_str)
 
+# $Log: ifconfig.py,v $
+# Revision 1.3  2009/06/06 14:06:23  ttaauu
+# added headers and logs
+#

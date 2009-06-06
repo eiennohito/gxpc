@@ -1,3 +1,4 @@
+# Copyright (c) 2009 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2008 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2007 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2006 by Kenjiro Taura. All rights reserved.
@@ -13,6 +14,10 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
+# $Header: /cvsroot/gxp/gxp3/inst_remote.py,v 1.6 2009/06/06 14:06:23 ttaauu Exp $
+# $Name:  $
+#
+
 #
 # This is a program that is NOT supposed to run as is.
 # inst_local.py concatenates a string that encodes contents
@@ -183,3 +188,7 @@ def check_install_exec(first_script, first_args, second_script, second_args,
 #                      ("foo/xxx", "REG", 0644, "...") ],
 #         "INSTALL1234")
 
+# $Log: inst_remote.py,v $
+# Revision 1.6  2009/06/06 14:06:23  ttaauu
+# added headers and logs
+#

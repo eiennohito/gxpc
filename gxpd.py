@@ -1,3 +1,4 @@
+# Copyright (c) 2009 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2008 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2007 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2006 by Kenjiro Taura. All rights reserved.
@@ -12,6 +13,9 @@
 # code is granted, provided the above notices are retained, and
 # a notice that the code was modified is included with the above
 # copyright notice.
+#
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.8 2009/06/06 14:06:22 ttaauu Exp $
+# $Name:  $
 #
 
 enable_connection_upgrade = 0
@@ -2165,3 +2169,7 @@ def main():
 if __name__ == "__main__":
     main()
 
+# $Log: gxpd.py,v $
+# Revision 1.8  2009/06/06 14:06:22  ttaauu
+# added headers and logs
+#

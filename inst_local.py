@@ -1,3 +1,4 @@
+# Copyright (c) 2009 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2008 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2007 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2006 by Kenjiro Taura. All rights reserved.
@@ -13,6 +14,10 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.16 2009/06/06 14:06:23 ttaauu Exp $
+# $Name:  $
+#
+
 import base64,glob,os,random,signal,socket,stat,string
 import sys,time,types
 import ioman,expectd,opt
@@ -616,3 +621,7 @@ def main():
 if __name__ == "__main__":
     main()
 
+# $Log: inst_local.py,v $
+# Revision 1.16  2009/06/06 14:06:23  ttaauu
+# added headers and logs
+#

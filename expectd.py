@@ -14,8 +14,8 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header
-# $Name
+# $Header: /cvsroot/gxp/gxp3/expectd.py,v 1.5 2009/06/06 14:06:22 ttaauu Exp $
+# $Name:  $
 #
 
 import ioman,sys
@@ -212,4 +212,7 @@ def test1():
 if __name__ == "__main__":
     test1()
     
-# $Log
+# $Log: expectd.py,v $
+# Revision 1.5  2009/06/06 14:06:22  ttaauu
+# added headers and logs
+#

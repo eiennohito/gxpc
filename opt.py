@@ -13,6 +13,9 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
+# $Header: /cvsroot/gxp/gxp3/opt.py,v 1.4 2009/06/06 14:06:23 ttaauu Exp $
+# $Name:  $
+#
 
 import copy,getopt,os,string,sys,types
 
@@ -214,3 +217,7 @@ class cmd_opts:
     def copy(self):
         return copy.deepcopy(self)
 
+# $Log: opt.py,v $
+# Revision 1.4  2009/06/06 14:06:23  ttaauu
+# added headers and logs
+#

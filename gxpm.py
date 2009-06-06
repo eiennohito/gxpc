@@ -1,3 +1,4 @@
+# Copyright (c) 2009 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2008 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2007 by Kenjiro Taura. All rights reserved.
 # Copyright (c) 2006 by Kenjiro Taura. All rights reserved.
@@ -12,6 +13,9 @@
 # code is granted, provided the above notices are retained, and
 # a notice that the code was modified is included with the above
 # copyright notice.
+#
+# $Header: /cvsroot/gxp/gxp3/gxpm.py,v 1.5 2009/06/06 14:06:23 ttaauu Exp $
+# $Name:  $
 #
 
 def import_safe_pickler():
@@ -334,3 +338,7 @@ class syn:
         self.tid = tid
         self.event = event
 
+# $Log: gxpm.py,v $
+# Revision 1.5  2009/06/06 14:06:23  ttaauu
+# added headers and logs
+#

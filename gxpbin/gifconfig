@@ -1,4 +1,23 @@
 #!/usr/bin/env python
+# Copyright (c) 2009 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2008 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2007 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2006 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2005 by Kenjiro Taura. All rights reserved.
+#
+# THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY 
+# EXPRESSED OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
+# 
+# Permission is hereby granted to use or copy this program
+# for any purpose,  provided the above notices are retained on all 
+# copies. Permission to modify the code and to distribute modified
+# code is granted, provided the above notices are retained, and
+# a notice that the code was modified is included with the above
+# copyright notice.
+#
+# $Header: /cvsroot/gxp/gxp3/gxpbin/gifconfig,v 1.2 2009/06/06 14:06:26 ttaauu Exp $
+# $Name:  $
+#
 
 import socket,string,sys
 
@@ -26,3 +45,7 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 
+# $Log: gifconfig,v $
+# Revision 1.2  2009/06/06 14:06:26  ttaauu
+# added headers and logs
+#
