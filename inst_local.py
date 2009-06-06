@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.16 2009/06/06 14:06:23 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.17 2009/06/06 14:13:12 ttaauu Exp $
 # $Name:  $
 #
 
@@ -87,7 +87,6 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/gxpc",
                       "$GXP_DIR/gxpc.py",
                       "$GXP_DIR/ioman.py",
-                      "$GXP_DIR/opt.py", 
                       "$GXP_DIR/gxpd.py",
                       "$GXP_DIR/expectd.py",
                       "$GXP_DIR/ifconfig.py",
@@ -95,8 +94,9 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/inst_remote_stub.py",
                       "$GXP_DIR/inst_remote.py",
                       "$GXP_DIR/gxpm.py",
+                      "$GXP_DIR/opt.py",
                       "$GXP_DIR/gxpbin",
-                      "$GXP_DIR/gxpbin/opt.py",
+                      # "$GXP_DIR/gxpbin/opt.py",
                       # "$GXP_DIR/gxpbin/ifconfig.py",
                       "$GXP_DIR/gxpbin/bomb",
                       # "$GXP_DIR/gxpbin/acp",
@@ -622,6 +622,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.17  2009/06/06 14:13:12  ttaauu
+# fixed bug around moving gxpbin/{opt.py,mount_all} to obsolete/
+#
 # Revision 1.16  2009/06/06 14:06:23  ttaauu
 # added headers and logs
 #
