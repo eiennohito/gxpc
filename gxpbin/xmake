@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.41 2009/06/06 14:06:26 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.42 2009/06/11 22:02:12 ttaauu Exp $
 # $Name:  $
 #
 
@@ -185,8 +185,11 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.update_interval_2 = ("f", 20.0)
         self.auto_update_interval = ("i", 60.0)
         self.time_limit = ("s", None)
-        self.ping_timeout = ("f", 100.0)
-        self.ping_interval = ("f", 30.0)
+        # this apepars fragile
+        # self.ping_timeout = ("f", 100.0)
+        # self.ping_interval = ("f", 30.0)
+        self.ping_timeout = ("f", float("inf"))
+        self.ping_interval = ("f", float("inf"))
         
         self.no_dispatch_after = ("i", None)
         self.interrupt_at = ("i", None)
@@ -1135,7 +1138,7 @@ td.man_working {
        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(server.start_t)),
        server.cur_time(),
        len(server.shots_todo), len(server.works),
-       len(server.free_men), len(server.men),
+       len(server.free_men), server.n_remote_men(),
        server.xmake_args, server.make_args, 
        server.make_pid, mk_class, mk_status,
        server.so_name, 
@@ -2282,6 +2285,13 @@ class xmake_server:
         for line in lines:
             self.recv_fin(line)
 
+    def n_remote_men(self):
+        n = 0
+        for man in self.men.values():
+            if man is not self.local_man:
+                n = n + man.capacity
+        return n
+
     def recv_fin(self, line):
         """
         handle a message from gxpc saying a process has finished
@@ -2535,7 +2545,7 @@ class xmake_server:
                       "%d/%d free/total men, "
                       "socket = %s, make = %s, gxpc = %s, gxpc_fd = %s\n"
                       % (len(self.shots_todo), len(self.works),
-                         len(self.free_men), len(self.men),
+                         len(self.free_men), self.n_remote_men(),
                          self.so_name, self.make_pid,
                          self.gxpc_pid, self.gxpc_fd)))
 
@@ -3021,6 +3031,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.42  2009/06/11 22:02:12  ttaauu
+# *** empty log message ***
+#
 # Revision 1.41  2009/06/06 14:06:26  ttaauu
 # added headers and logs
 #
