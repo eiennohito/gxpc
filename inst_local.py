@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.17 2009/06/06 14:13:12 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.18 2009/06/17 23:50:36 ttaauu Exp $
 # $Name:  $
 #
 
@@ -113,6 +113,7 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/gxpbin/mksh",
                       "$GXP_DIR/gxpbin/qsub_wrap",
                       "$GXP_DIR/gxpbin/qsub_wrap_client",
+                      "$GXP_DIR/gxpbin/consub",
                       "$GXP_DIR/gxpbin/tmsub",
                       "$GXP_DIR/gxpbin/tmsub.rb",
                       # "$GXP_DIR/gxpbin/mount_all",
@@ -387,8 +388,8 @@ class installer(expectd.expectd):
         second_script = self.expand(O.second_script, None)
         second_args = self.expands(O.second_args_template, O.__dict__)
         gxp_top = os.environ["GXP_TOP"]
-        main = ("check_install_exec(%r, %r, %r, %r, %r, %r, %r, %r)"
-                % (first_script, first_args, second_script, second_args,
+        main = ("check_install_exec(%r, %r, %r, %r, %r, %r, %r, %r, %r)"
+                % (O.python, first_script, first_args, second_script, second_args,
                    O.target_prefix, gxp_top, inst_data, code))
         inst_remote_stub = self.read_file(self.expand(O.inst_remote_stub_file,
                                                       None))
@@ -622,6 +623,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.18  2009/06/17 23:50:36  ttaauu
+# experimental condor support
+#
 # Revision 1.17  2009/06/06 14:13:12  ttaauu
 # fixed bug around moving gxpbin/{opt.py,mount_all} to obsolete/
 #

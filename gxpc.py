@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.31 2009/06/06 13:53:26 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.32 2009/06/17 23:50:36 ttaauu Exp $
 # $Name:  $
 #
 
@@ -126,6 +126,7 @@ class login_method_configs:
         self.torque_n    = "qsub_wrap --sys torque %cmd% -- -l nodes=%nodes:-1%:ppn=%ppn:-1%"
         self.torque_host = "qsub_wrap --sys torque %cmd% -- -l host=%target%"
         self.torque_psched = "qsub_wrap --sys torque_psched %cmd% -- --node %target% --lib %lib:-libtorque.so%"
+        self.condor        = "qsub_wrap --sys condor %cmd%"
 
         self.nqs_hitachi = "qsub_wrap --sys nqs_hitachi %cmd%"
         self.nqs_fujitsu = "qsub_wrap --sys nqs_fujitsu %cmd%"
@@ -1931,7 +1932,7 @@ class cmd_interpreter:
                     # and --create_daemon doesn't say don't create
                     # -> create one
                     if opts.verbosity >= 1:
-                        Es("gxpc: no daemon found, create one\n")
+                        Es("gxpc: no daemon found, create one ('gxpc quit' to clean up)\n")
                     pid = self.create_daemon(opts.create_daemon)
                     # time.sleep(0.5)
                     if opts.verbosity >= 2:
@@ -4997,6 +4998,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.32  2009/06/17 23:50:36  ttaauu
+# experimental condor support
+#
 # Revision 1.31  2009/06/06 13:53:26  ttaauu
 # embed headers, revision numbers, and logs
 #

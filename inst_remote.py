@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_remote.py,v 1.6 2009/06/06 14:06:23 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_remote.py,v 1.7 2009/06/17 23:50:36 ttaauu Exp $
 # $Name:  $
 #
 
@@ -160,15 +160,23 @@ def install_files(prefix, gxp_top, data):
     # rename the temporary directory to something else
     return rename_dir(prefix, tmp_dir)
 
-def check_install_exec(first_script, first_args, second_script, second_args,
+def find_py(pythons):
+    for p in pythons:
+        if os.system("type %s > /dev/null" % p) == 0:
+            return p
+    assert 0
+    
+def check_install_exec(python_cmds, first_script, first_args, second_script, second_args,
                        prefix, gxp_top, data, code):
+    python_cmd = find_py(python_cmds)
     if data is None:
         if os.path.exists(first_script):
             # say installation finished
             os.write(1, ("%s OK\n" % code))
             # and exec
             # os.execvp(first_script, [ first_script ] + first_args)
-            os.execvp(sys.executable, [ sys.executable, first_script ] + first_args)
+            # os.execvp(sys.executable, [ sys.executable, first_script ] + first_args)
+            os.execvp(python_cmd, [ python_cmd, first_script ] + first_args)
         else:
             # say I want to data
             os.write(1, ("%s WD\n" % code))
@@ -179,7 +187,8 @@ def check_install_exec(first_script, first_args, second_script, second_args,
     # say installation finished
     os.write(1, ("%s OK\n" % code))
     script = second_script % { "inst_dir" : inst_dir }
-    os.execvp(sys.executable, [ sys.executable, script ] + second_args)
+    os.write(2, "executable = %s\n" % python_cmd)
+    os.execvp(python_cmd, [ python_cmd, script ] + second_args)
 
 
 # inst_local.py is supposed to append a string that invokes either
@@ -189,6 +198,9 @@ def check_install_exec(first_script, first_args, second_script, second_args,
 #         "INSTALL1234")
 
 # $Log: inst_remote.py,v $
+# Revision 1.7  2009/06/17 23:50:36  ttaauu
+# experimental condor support
+#
 # Revision 1.6  2009/06/06 14:06:23  ttaauu
 # added headers and logs
 #

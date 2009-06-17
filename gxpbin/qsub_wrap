@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.14 2009/06/06 14:06:26 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.15 2009/06/17 23:50:37 ttaauu Exp $
 # $Name:  $
 #
 
@@ -677,6 +677,24 @@ class n1ge_system_option:
         self.qdel = "qdel"
         # self.qsub_stdin = 0
         
+class condor_system_option:
+    """
+    condor
+    """
+    def __init__(self):
+        self.name = "condor"
+        self.qsub_pattern = re.compile(".* submitted to cluster (?P<job_id>\d+)", re.DOTALL)
+        self.qstat_trust_status = 0
+        self.qstat_pattern = "\n\s+%job_id%"
+        self.qstat_job_id_flag = None
+        self.qsub_stdout_flag = None
+        self.qsub_stderr_flag = None
+        self.qsub_shell_arg = []
+        self.qsub = "/home/tau/csub.py"
+        self.qstat = "condor_q"
+        self.qdel = "condor_rm"
+        # self.qsub_stdin = 0
+        
 class qsub_wrap_server:
     def usage(self):
 
@@ -739,6 +757,7 @@ qsub_wrap hostname
         self.sys_options = { "sge"    : sge_system_option(),
                              "torque" : torque_system_option(),
                              "torque_psched" : torque_psched_system_option(),
+                             "condor" : condor_system_option(),
                              "n1ge"   : n1ge_system_option(),
                              "nqs_hitachi" : nqs_hitachi_system_option(),
                              "nqs_fujitsu" : nqs_fujitsu_system_option() }
@@ -996,7 +1015,8 @@ qsub_wrap hostname
         client_cmd = self.opt.args[0]
         base64_client_cmd = base64.encodestring("%r" % client_cmd)
         qsub_wrap_content = self.get_qsub_wrap_content()
-        script_content = ("cat <<EOFEOFEOF > %s\n"
+        script_content = ("#!/bin/sh\n"
+                          "cat <<EOFEOFEOF > %s\n"
                           "%s\n"
                           "EOFEOFEOF\n"
                           "python %s --connect_to %s:%s --hello %s %s"
@@ -1171,11 +1191,11 @@ qsub_wrap hostname
                 
             if display:
                 if time_limit == "":
-                    Es("%s : %s (%s) : waiting for connection\n" \
-                       % (self.cmd, self.hostname, self.connect_addr))
+                    Es("%s : %s (%s:%d) : waiting for connection on %d\n" \
+                       % (self.cmd, self.hostname, self.connect_addr, self.port))
                 else:
-                    Es("%s : %s (%s) : waiting for connection (%.1f sec left)\n" \
-                       % (self.cmd, self.hostname, self.connect_addr,
+                    Es("%s : %s (%s) : waiting for connection on %d (%.1f sec left)\n" \
+                       % (self.cmd, self.hostname, self.connect_addr, self.port,
                           time_limit - cur_time))
             # calc how many secs to wait for clients to connect until next display
             next_time_limit = min(cur_time + check_queue_interval, time_limit)
@@ -1330,6 +1350,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: qsub_wrap,v $
+# Revision 1.15  2009/06/17 23:50:37  ttaauu
+# experimental condor support
+#
 # Revision 1.14  2009/06/06 14:06:26  ttaauu
 # added headers and logs
 #
