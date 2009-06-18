@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/consub,v 1.1 2009/06/17 23:50:37 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/consub,v 1.2 2009/06/18 00:32:18 ttaauu Exp $
 # $Name:  $
 #
 
@@ -37,9 +37,23 @@ def Es(s):
 #
 #
 
-def mk_condor_desriptor(shell_script, descriptor_file, descriptor_cmds):
+def build_client_env(vars):
+    V = [ "PATH", "PYTHONPATH", "HOME", "USER", "LOGNAME" ]
+    for v in vars:
+        if v not in V:
+            V.append(v)
+    E = []
+    for v in V:
+        val = os.environ.get(v)
+        if val is not None:
+            E.append("%s=%s" % (v, val))
+    return string.join(E, ";")
+
+def mk_condor_desriptor(shell_script, descriptor_file, descriptor_cmds, env):
     default_cmds = r"""universe = vanilla
-"""
+environment = %s
+""" % build_client_env(env)
+    
     mandatory_cmds = r"""transfer_executable = true
 when_to_transfer_output = ON_EXIT
 executable = %s
@@ -58,7 +72,7 @@ queue
 
 
 def condor_submit_sh(shell_script, condor_submit, condor_opts,
-                     descriptor_file, descriptor_cmds):
+                     descriptor_file, descriptor_cmds, env):
     """
     send a shell script via condor_submit.
     essentially, we feed condor_submit with the following.
@@ -103,7 +117,7 @@ def condor_submit_sh(shell_script, condor_submit, condor_opts,
         if dbg>=2:
             Ws("%s : condor_submit pid = %d\n" % (sys.argv[0], pid))
         descriptor = mk_condor_desriptor(shell_script, descriptor_file, 
-                                         descriptor_cmds)
+                                         descriptor_cmds, env)
         os.close(r)
         if dbg>=1:
             Ws((r"""%s : BEGIN descriptor sent to condor_submit:
@@ -122,9 +136,11 @@ class csub_cmd_opts(opt.cmd_opts):
         self.condor_submit = ("s", "condor_submit")
         self.descriptor_file = ("s", None)
         self.descriptor_cmd = ("s*", [])
+        self.env = ("s*", [])
         self.dbg = ("i", 0)
         self.f = "descriptor_file"
         self.x = "descriptor_cmd"
+        self.e = "env"
 
 def usage(argv):
     Es(r"""usage: 
@@ -163,7 +179,8 @@ def main():
     if opts is None: return 1
     dbg = opts.dbg
     status = condor_submit_sh(args[0], opts.condor_submit, condor_args,
-                              opts.descriptor_file, opts.descriptor_cmd)
+                              opts.descriptor_file, opts.descriptor_cmd,
+                              opts.env)
     if os.WIFEXITED(status):
         return os.WEXITSTATUS(status)
     else:
@@ -172,3 +189,7 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
     
+# $Log: consub,v $
+# Revision 1.2  2009/06/18 00:32:18  ttaauu
+# condor support
+#

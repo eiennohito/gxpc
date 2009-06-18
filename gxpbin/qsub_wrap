@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.15 2009/06/17 23:50:37 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.16 2009/06/18 00:32:18 ttaauu Exp $
 # $Name:  $
 #
 
@@ -690,7 +690,7 @@ class condor_system_option:
         self.qsub_stdout_flag = None
         self.qsub_stderr_flag = None
         self.qsub_shell_arg = []
-        self.qsub = "/home/tau/csub.py"
+        self.qsub = "consub"
         self.qstat = "condor_q"
         self.qdel = "condor_rm"
         # self.qsub_stdin = 0
@@ -1350,6 +1350,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: qsub_wrap,v $
+# Revision 1.16  2009/06/18 00:32:18  ttaauu
+# condor support
+#
 # Revision 1.15  2009/06/17 23:50:37  ttaauu
 # experimental condor support
 #
