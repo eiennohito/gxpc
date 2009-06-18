@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.32 2009/06/17 23:50:36 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.33 2009/06/18 16:45:27 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1932,7 +1932,7 @@ class cmd_interpreter:
                     # and --create_daemon doesn't say don't create
                     # -> create one
                     if opts.verbosity >= 1:
-                        Es("gxpc: no daemon found, create one ('gxpc quit' to clean up)\n")
+                        Es("gxpc: no daemon found, create one ('gxpc quit/help' to clean up/get help)\n")
                     pid = self.create_daemon(opts.create_daemon)
                     # time.sleep(0.5)
                     if opts.verbosity >= 2:
@@ -4998,6 +4998,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.33  2009/06/18 16:45:27  ttaauu
+# *** empty log message ***
+#
 # Revision 1.32  2009/06/17 23:50:36  ttaauu
 # experimental condor support
 #

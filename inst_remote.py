@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_remote.py,v 1.7 2009/06/17 23:50:36 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_remote.py,v 1.8 2009/06/18 16:45:27 ttaauu Exp $
 # $Name:  $
 #
 
@@ -164,21 +164,23 @@ def find_py(pythons):
     for p in pythons:
         if os.system("type %s > /dev/null" % p) == 0:
             return p
-    assert 0
+    os.write(2, "inst_remote.py : fatal error : could not find python executable in %s !\n" % pythons)
+    return None
     
-def check_install_exec(python_cmds, first_script, first_args, second_script, second_args,
-                       prefix, gxp_top, data, code):
+def check_install_exec(python_cmds, first_script, first_args, second_script,
+                       second_args, prefix, gxp_top, data, code):
     python_cmd = find_py(python_cmds)
+    if python_cmd is None: os._exit(1)
     if data is None:
         if os.path.exists(first_script):
             # say installation finished
             os.write(1, ("%s OK\n" % code))
             # and exec
-            # os.execvp(first_script, [ first_script ] + first_args)
             # os.execvp(sys.executable, [ sys.executable, first_script ] + first_args)
+            # changed because condor hides sys.executable
             os.execvp(python_cmd, [ python_cmd, first_script ] + first_args)
         else:
-            # say I want to data
+            # say I want data
             os.write(1, ("%s WD\n" % code))
             # wait for data
             data = eval(read_bytes(string.atoi(read_bytes(10))))
@@ -187,7 +189,7 @@ def check_install_exec(python_cmds, first_script, first_args, second_script, sec
     # say installation finished
     os.write(1, ("%s OK\n" % code))
     script = second_script % { "inst_dir" : inst_dir }
-    os.write(2, "executable = %s\n" % python_cmd)
+    # os.write(2, "executable = %s\n" % python_cmd)
     os.execvp(python_cmd, [ python_cmd, script ] + second_args)
 
 
@@ -198,6 +200,9 @@ def check_install_exec(python_cmds, first_script, first_args, second_script, sec
 #         "INSTALL1234")
 
 # $Log: inst_remote.py,v $
+# Revision 1.8  2009/06/18 16:45:27  ttaauu
+# *** empty log message ***
+#
 # Revision 1.7  2009/06/17 23:50:36  ttaauu
 # experimental condor support
 #
