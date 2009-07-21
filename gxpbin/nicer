@@ -207,6 +207,7 @@ class Env(object):
         #self.pcpu = 100.0 * self.nprocs
         
         self.stopflag = False
+        self.childStatus = 0
 
     
     def getopt(self,args):
@@ -383,22 +384,26 @@ class ProcManager:
             os.kill(pid, signal)
         except:
             Es("Error: Senfing signal %d to %d failed\n"%(signal, pid))
-
-            
     
     def waitpid(self, pid):
         if dbg >= 1: Es("Info: Waitpid %d\n"%(pid))
         try:
-            os.waitpid(pid, 0)#TODO: what does "0" mean?
+            qid,stat = os.waitpid(pid, 0)
         except:
             Es("Error: child process has already been dead\n")
-        
+        assert pid == qid, (pid, qid)
+        if pid == self.env.childPid:
+            env = self.env
+            if os.WIFEXITED(stat):
+                env.childStatus = os.WEXITSTATUS(stat)
+            elif os.WIFSIGNALED(stat):
+                env.childStatus = os.WTERMSIG(stat) + 128
 
     def launch(self, cmd, args):
         child = os.fork()
         if child == -1:
-                Es("Error: during fork()\n")
-                self.killall()
+            Es("Error: during fork()\n")
+            self.killall()
                 
         if child == 0:
             if os.setpgrp() == -1:
@@ -414,9 +419,9 @@ class ProcManager:
                 Es("      %s\n"%(str(e)))
             # Cannot reach here
             sys.exit(0)
-
         else:
             self.env.procs[child] = True
+            self.env.childPid = child
             #if not self.env.runnable:
             #    self.kill(-child, signal.SIGSTOP)
 
@@ -495,7 +500,8 @@ class Nicer:
         else:
             pids = self.ps.search(self.env.attach)
             if pids == []:
-                Es("Error: process named `%s' was not found\n"%(self.env.attach))
+                Es(("Error: process named `%s' was not found\n"
+                    % (self.env.attach)))
             for p in pids:
                 self.procman.attachTo(p)
         
@@ -548,7 +554,8 @@ class Nicer:
         self.procman.killall()
         if dbg >= 1:
             Es("Exitting\n")
-        sys.exit(0)
+        # sys.exit(0)
+        sys.exit(self.env.childStatus)
 
 
 def main():
