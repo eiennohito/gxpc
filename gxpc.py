@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.33 2009/06/18 16:45:27 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.34 2009/08/04 13:16:39 ttaauu Exp $
 # $Name:  $
 #
 
@@ -4402,6 +4402,8 @@ See Also:
         n_ng_nodes = 0                  # NG nodes
         
         while len(q) > 0 and len(to_explore) > 0:
+            # Es("len(q) = %d len(to_explore) = %d\n" % (len(q), len(to_explore)))
+            
             h = q.pop(0)
             if h.name is None: continue # this guy still in progress
             # children become candidate srcs
@@ -4413,7 +4415,8 @@ See Also:
             # okay, now we get some appropriate target nodes for h
             blocked = []
             # ensure each node can add at least one child
-            max_ch = min(ch_hard_lim, max(ch_soft_lim, len(h.children) + 1))
+            # max_ch = min(ch_hard_lim, max(ch_soft_lim, len(h.children) + 1))
+            max_ch = ch_soft_lim
             while len(h.children) < max_ch and len(to_explore) > 0:
                 # get next target until h's children become too many
                 tgt = to_explore.pop(0)
@@ -4485,6 +4488,7 @@ See Also:
         """
         C = self.mk_explore_cmds(to_explore, aliases,
                                  ch_soft_lim, ch_hard_lim, opts, ng_cache)
+        # Es("mk_explore_cmds -> %s\n" % C)
         r = self.send_explore_msg(tid, pipes, C)
         return r
 
@@ -4998,6 +5002,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.34  2009/08/04 13:16:39  ttaauu
+# *** empty log message ***
+#
 # Revision 1.33  2009/06/18 16:45:27  ttaauu
 # *** empty log message ***
 #
