@@ -16,3 +16,8 @@
 2009-06-6 Taura
 	* gxpbin/xmake : defined GXP_MAKE_WORK_IDX and GXP_MAKE_MKSH_PID
 	in job environment
+2009-08-5 Taura
+	* gxpc.py : fixed an explore bug that repeats obtaining nodes one at a time
+2009-08-5 Taura
+	* gxpbin/su_cmd : it finally became reliable
+
