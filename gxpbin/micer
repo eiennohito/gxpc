@@ -387,8 +387,8 @@ class Env(object):
         self.ignoreNice = 19      # Don't ignore any processes other than NI == 19
         self.poorUsers = []
         self.vipUsers = []
-        self.shortSleep = 1.0
-        self.longSleep = 8.0
+        self.shortSleep = 2.0
+        self.longSleep = 32.0
         # Assume the user is idle
         self.maxIdle = 10
 
