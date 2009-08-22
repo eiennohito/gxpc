@@ -274,7 +274,7 @@ class ProcReader:
                 if ppid == prev_ppid:
                     jiffies -= prev_jiffies
                     if jiffies < 0:
-                        if self.dbg >= self.DEBUG_ERROR:
+                        if (self.dbg >= self.DEBUG_DEBUG) or ((pid != -1) and (self.dbg >= self.DEBUG_ERROR)):
                             msg += "pid %d(%s) jiffies (%d) is smaller than zero\n" % (pid, self.users[pid], jiffies)
                         jiffies = 0
             pcpu = self.calc_pcpu(jiffies, passed_secs)
@@ -387,8 +387,8 @@ class Env(object):
         self.ignoreNice = 19      # Don't ignore any processes other than NI == 19
         self.poorUsers = []
         self.vipUsers = []
-        self.shortSleep = 2.0
-        self.longSleep = 32.0
+        self.shortSleep = 1.0
+        self.longSleep = 8.0
         # Assume the user is idle
         self.maxIdle = 10
 
@@ -404,6 +404,7 @@ class Env(object):
         # Assume ready to run if the condition is satisfied 'max_peeks' times
         self.peek = 0
         self.stopflag = False
+        self.childStatus = 0
 
     def getopt(self,args):
         try:
@@ -531,9 +532,16 @@ class ProcManager:
     def waitpid(self, pid):
         if self.dbg >= 1: Es("Info: Waitpid %d\n"%(pid))
         try:
-            os.waitpid(pid, 0)
+            qid,stat = os.waitpid(pid, 0)
         except:
             Es("Error: child process has already been dead\n")
+        assert pid == qid, (pid, qid)
+        if pid == self.env.childPid:
+            env = self.env
+            if os.WIFEXITED(stat):
+                env.childStatus = os.WEXITSTATUS(stat)
+            elif os.WIFSIGNALED(stat):
+                env.childStatus = os.WTERMSIG(stat) + 128
 
     def launch(self, cmd, args):
         child = os.fork()
@@ -556,6 +564,7 @@ class ProcManager:
             sys.exit(0)
         else:
             self.env.procs[child] = True
+            self.env.childPid = child
             #if not self.env.runnable:
             #    self.kill(-child, signal.SIGSTOP)
 
@@ -773,7 +782,7 @@ class Micer:
         self.procman.killall()
         if self.dbg >= 1:
             Es("Info: Exiting\n")
-        sys.exit(0)
+        sys.exit(self.env.childStatus)
 
 def main():
     micer = Micer()
