@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_remote.py,v 1.8 2009/06/18 16:45:27 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_remote.py,v 1.9 2009/09/06 20:05:46 ttaauu Exp $
 # $Name:  $
 #
 
@@ -167,8 +167,9 @@ def find_py(pythons):
     os.write(2, "inst_remote.py : fatal error : could not find python executable in %s !\n" % pythons)
     return None
     
-def check_install_exec(python_cmds, first_script, first_args, second_script,
-                       second_args, prefix, gxp_top, data, code):
+def check_install_exec(python_cmds, first_script, first_args, 
+                       second_script, second_args,
+                       prefix, gxp_top, data, code):
     python_cmd = find_py(python_cmds)
     if python_cmd is None: os._exit(1)
     if data is None:
@@ -200,6 +201,9 @@ def check_install_exec(python_cmds, first_script, first_args, second_script,
 #         "INSTALL1234")
 
 # $Log: inst_remote.py,v $
+# Revision 1.9  2009/09/06 20:05:46  ttaauu
+# lots of changes to avoid creating many dirs under ~/.gxp_tmp of the root host
+#
 # Revision 1.8  2009/06/18 16:45:27  ttaauu
 # *** empty log message ***
 #

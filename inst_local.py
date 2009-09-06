@@ -14,13 +14,15 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.18 2009/06/17 23:50:36 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.19 2009/09/06 20:05:46 ttaauu Exp $
 # $Name:  $
 #
 
 import base64,glob,os,random,signal,socket,stat,string
 import sys,time,types
-import ioman,expectd,opt
+import ioman,expectd,opt,this_file
+
+
 """
 This file is script which, when invoked, copies a specified
 set of files to a remote node and brings up a specified command
@@ -95,11 +97,9 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/inst_remote.py",
                       "$GXP_DIR/gxpm.py",
                       "$GXP_DIR/opt.py",
+                      "$GXP_DIR/this_file.py",
                       "$GXP_DIR/gxpbin",
-                      # "$GXP_DIR/gxpbin/opt.py",
-                      # "$GXP_DIR/gxpbin/ifconfig.py",
                       "$GXP_DIR/gxpbin/bomb",
-                      # "$GXP_DIR/gxpbin/acp",
                       "$GXP_DIR/gxpbin/bcp",
                       "$GXP_DIR/gxpbin/gifconfig",
                       "$GXP_DIR/gxpbin/psfind",
@@ -116,21 +116,11 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/gxpbin/consub",
                       "$GXP_DIR/gxpbin/tmsub",
                       "$GXP_DIR/gxpbin/tmsub.rb",
-                      # "$GXP_DIR/gxpbin/mount_all",
                       "$GXP_DIR/gxpbin/su_cmd",
                       "$GXP_DIR/gxpbin/gmnt",
                       "$GXP_DIR/gxpbin/topology.py",
                       "$GXP_DIR/gxpbin/gio",
                       "$GXP_DIR/gxpbin/pfsb.py",
-                      # "$GXP_DIR/gxpbin/gxp_sched_dev",
-                      # "$GXP_DIR/gxpbin/gxp_mom_dev",
-                      # "$GXP_DIR/gxpbin/sched_common.py",
-                      # "$GXP_DIR/gxpbin/gather",
-                      # "$GXP_DIR/gxpbin/make_sched.py",
-                      # "$GXP_DIR/gxpbin/make_mom.py",
-                      # "$GXP_DIR/gxpbin/xcp",
-                      # "$GXP_DIR/gxpbin/ucpw",
-                      # "$GXP_DIR/gxpbin/ucp_common.py",
                       ]
 
 #
@@ -148,11 +138,7 @@ default_inst_remote_stub_file = "$GXP_DIR/inst_remote_stub.py"
 
 # default_second_script = "$GXP_DIR/gxpd.py"
 default_second_script = "%(inst_dir)s/$GXP_TOP/gxpd.py"
-default_second_args_template = [ "--remove_self",
-                                 "--listen", "none:",
-                                 "--parent", "$GXP_GUPID",
-                                 "--target_label", "%(target_label)s",
-                                 "--root_gupid", "%(root_gupid)s" ]
+default_second_args_template = [ "--remove_self" ] + default_first_args_template
 
 #
 # Default timeout values
@@ -175,6 +161,7 @@ class inst_options(opt.cmd_opts):
         # ---------------- 
         # target label of the gxpd that eventually starts
         self.target_label = ("s", None)
+        self.created_explicitly = ("i", 0)
         # gupid of the root gxpd
         self.root_gupid = ("s", None)
         # sequence number
@@ -191,7 +178,7 @@ class inst_options(opt.cmd_opts):
         # (2) the command which is run to test if things have 
         # already been installed, so there is no need to install
         self.first_script = ("s", default_first_script)
-        self.first_args_template = ("s*", default_first_args_template)
+        self.first_args_template = ("s*", None)
         # (3) a string the remote node is supposed to say when
         # things brought up
         self.hello = ("s", default_hello)
@@ -205,14 +192,19 @@ class inst_options(opt.cmd_opts):
         self.inst_remote_stub_file = ("s", default_inst_remote_stub_file)
         # (7) script and arguments to eventually run after installation
         self.second_script = ("s", default_second_script)
-        self.second_args_template = ("s*", default_second_args_template)
+        self.second_args_template = ("s*", None)
         # (8) control timeout and verbosity
         self.hello_timeout = ("f", default_hello_timeout)
         self.install_timeout = ("f", default_install_timeout)
+        self.dont_wait = (None, 0)
         self.dbg = ("i", 0)
     def postcheck(self):
         if len(self.python) == 0:
             self.python.append(default_python)
+        if self.first_args_template is None:
+            self.first_args_template = default_first_args_template
+        if self.second_args_template is None:
+            self.second_args_template = default_second_args_template
 
 # -----------
 # installer
@@ -264,7 +256,7 @@ class installer(expectd.expectd):
         fp.close()
         return r
 
-    def subst_cmd3(self, cmd, rsh_template):
+    def subst_cmd(self, cmd, rsh_template):
         S = []
         for t in rsh_template:
             S.append(t % { "cmd" : cmd })
@@ -274,10 +266,15 @@ class installer(expectd.expectd):
         """
         true if this process is running the automatically installed gxpd
         """
-        flag = os.path.join(os.environ["GXP_DIR"], "REMOTE_INSTALLED")
+        gxp_dir = os.environ["GXP_DIR"]
+        flag = os.path.join(gxp_dir, "REMOTE_INSTALLED")
+        if dbg>=2: 
+            ioman.LOG("checking remote flag %s\n" % (gxp_dir, flag))
         if os.path.exists(flag):
+            if dbg>=2: ioman.LOG("exists, remotely installed\n")
             return 1
         else:
+            if dbg>=2: ioman.LOG("does not exit, locally installed\n")
             return 0
 
     def find_top_dirs(self, inst_files):
@@ -316,6 +313,7 @@ class installer(expectd.expectd):
         """
         top_dirs = self.find_top_dirs(inst_files)
         inst_data = []
+        inst_data_log = []
         for path in inst_files:
             path = self.expand(path, None)
             # path is like /home/tau/proj/gxp3/hoge
@@ -328,8 +326,11 @@ class installer(expectd.expectd):
                 content = base64.encodestring(self.read_file(path))
                 inst_data.append((inst_path,
                                   "REG", stat.S_IMODE(mode), content))
+                inst_data_log.append((inst_path,
+                                      "REG", stat.S_IMODE(mode), "..."))
             elif stat.S_ISDIR(mode):
                 inst_data.append((inst_path, "DIR", stat.S_IMODE(mode), None))
+                inst_data_log.append((inst_path, "DIR", stat.S_IMODE(mode), None))
             elif stat.S_ISFIFO(mode):
                 self.Em("inst_local.py:mk_program: %s: "
                         "fifo (ignored)\n" % path)
@@ -347,26 +348,9 @@ class installer(expectd.expectd):
                         "socket (ignored)\n" % path)
             else:
                 bomb()
-        return inst_data
+        return inst_data,inst_data_log
 
     def mk_program(self, O, code):
-        """
-        Return a string of python program which, when invoked without
-        argument, installs all inst_files 
-        under a randomly created directory under target_prefix.
-        For example, say target_prefix='target', 
-        src_files=[ 'abc', 'def' ], it will create
-        target/RANDOM_DIR/abc and target/RANDOM_DIR/def.
-        When successful, the program will write <code> into standard
-        out. The actual logic is taken from inst_remote_file.
-        """
-        inst_data = self.mk_installed_data(O.src_file)
-        main = "install(%r, %r, %r)" % (O.target_prefix, inst_data, code)
-        inst_remote = self.read_file(self.expand(O.inst_remote_file, None))
-        prog = ("%s\n%s\n" % (inst_remote, main))
-        return prog
-
-    def mk_program2(self, O, code):
 
         """
         Return a string of python program which, when invoked without
@@ -380,23 +364,46 @@ class installer(expectd.expectd):
         """
         # append main function to inst_remote_file (normally inst_remote.py)
         if self.remote_installed():
-            inst_data = None            # perhaps we need no install
+            inst_data,inst_data_LOG = None,None # perhaps we need no install
         else:
-            inst_data = self.mk_installed_data(O.src_file)
+            inst_data,inst_data_LOG = self.mk_installed_data(O.src_file)
+        # if dbg>=2: ioman.LOG("inst_data:\n%r\n" % inst_data)
         first_script = self.expand(O.first_script, None)
         first_args = self.expands(O.first_args_template, O.__dict__)
         second_script = self.expand(O.second_script, None)
         second_args = self.expands(O.second_args_template, O.__dict__)
         gxp_top = os.environ["GXP_TOP"]
+        if dbg>=2:
+            main_LOG = ("""
+check_install_exec(python=%r, 
+                   first_script=%r, 
+                   first_args=%r,
+                   second_script=%r, 
+                   second_args=%r, 
+                   target_prefix=%r,
+                   gxp_top=%r, 
+                   inst_data=%r, code=%r)
+""" % (O.python, first_script, first_args, 
+       second_script, second_args,
+       O.target_prefix, gxp_top, inst_data_LOG, code))
+
         main = ("check_install_exec(%r, %r, %r, %r, %r, %r, %r, %r, %r)"
-                % (O.python, first_script, first_args, second_script, second_args,
+                % (O.python, first_script, first_args, 
+                   second_script, second_args,
                    O.target_prefix, gxp_top, inst_data, code))
         inst_remote_stub = self.read_file(self.expand(O.inst_remote_stub_file,
                                                       None))
         inst_remote = self.read_file(self.expand(O.inst_remote_file, None))
         inst_remote_and_main = ("%s\n%s\n" % (inst_remote, main))
+        if dbg>=2:
+            inst_remote_and_main_LOG = ("%s\n%s\n" % (inst_remote, main_LOG))
         prog = ("%s%10d%s" % (inst_remote_stub,
                               len(inst_remote_and_main), inst_remote_and_main))
+        if dbg>=2: 
+            prog_LOG = ("%s%10d%s" % (inst_remote_stub,
+                                      len(inst_remote_and_main), inst_remote_and_main_LOG))
+            ioman.LOG(("string to feed cmd:\n-----\n%s\n-----\n" 
+                       % prog_LOG))
 	# wp = open("progprog", "wb")
 	# wp.write(prog)
 	# wp.close()
@@ -406,116 +413,17 @@ class installer(expectd.expectd):
         OK       = ioman.ch_event.OK
         begin_mark = "BEGIN_%s " % hello
         end_mark = " END_%s" % hello
-        if dbg>=2: self.Em("expect %s %s\n" % (begin_mark, timeout))
+        if dbg>=2: 
+            # self.Em
+            ioman.LOG("expect %s %s\n" % (begin_mark, timeout))
         s = self.expect([ begin_mark, ("TIMEOUT", timeout)], forward_err)
         if s != OK: return (s, None)
-        if dbg>=2: self.Em("expect %s %s\n" % (end_mark, 2.0))
+        if dbg>=2: 
+            # self.Em
+            ioman.LOG("expect %s %s\n" % (end_mark, 2.0))
         s = self.expect([ end_mark, ("TIMEOUT", 2.0)], forward_err)
         if s != OK: return (s, None)
         return (OK, self.ev.data[:-len(end_mark)])
-
-    def install(self, O):
-        OK       = ioman.ch_event.OK
-        EOF      = ioman.ch_event.EOF
-        IO_ERROR = ioman.ch_event.IO_ERROR
-        TIMEOUT  = ioman.ch_event.TIMEOUT
-        #
-        pythons = O.python
-        # -----------
-        # check if the remote system is ready without installation
-        if self.remote_installed():
-            # We first try to bring up the remote gxpd.py, hoping the 
-            # remote host has gxp in the same path as the local host does. 
-            # However, this introduces version inconsistency problem, 
-            # so we do this only when the local gxp is automatically 
-            # installed (copied under ~/.gxp_tmp) by the installer.
-            python = pythons[0]
-            script = self.expand(O.first_script, None)
-            args = self.expands(O.first_args_template, O.__dict__)
-            cmd = "%s %s %s" % (python, script, string.join(args, " "))
-            sub = self.subst_cmd3(cmd, O.rsh)
-
-            if dbg>=2: self.Em("First bring up %s\n" % sub)
-            self.spawn(sub)
-            s,g = self.expect_hello(O.hello, O.hello_timeout, 0)
-            if s != EOF: return g      # good he is ready
-            if dbg>=2: self.Em("First bring up NG (go installation)\n")
-            # if dbg>=2: self.Em("Killing %s\n" % self.proc.pid)
-            self.kill()
-            # if dbg>=2: self.Em("Waiting %s\n" % self.proc.pid)
-            self.wait(0)
-            # if dbg>=2: self.Em("Wait done\n")
-        # -----------
-        # failed (or not tried). we begin from something very simple 
-        # and proceed step by step. first check if we are able to login
-        # we run a command like 'ssh echo hello123456' and wait
-        # for the string hello123456 to come from its stdout
-        h = "hello%06d" % random.randint(0, 999999)
-        sub = self.subst_cmd3(("echo %s" % h), O.rsh)
-        if dbg>=2: self.Em("Login echo %s\n" % sub)
-        self.spawn(sub)
-        if self.expect([ "%s\n" % h, ("TIMEOUT", O.hello_timeout)], 1) != OK:
-            if dbg>=1: self.Em("Login echo NG\n")
-            return None
-        if dbg>=2: self.Em("Login echo OK\n")
-        self.wait(1)
-        # -----------
-        # OK, now we know we are able to login the remote node.
-        # Next, search for python interpter by running
-        # a command like
-        # 'ssh python -c ...; /usr/local/bin/python -c ...'
-        checks = []
-        check_py = (r"""exec %s -c 'import sys; """
-                    """print "%s",sys.hexversion'""")
-        for p in pythons:
-            checks.append(check_py % (p,p))
-            checks.append(";")
-        sub = self.subst_cmd3(string.join(checks, ""), O.rsh)
-        if dbg>=2: self.Em("Search for python %s\n" % sub)
-        self.spawn(sub)
-        if self.expect([("TIMEOUT", O.hello_timeout)], 1) != EOF \
-               or self.ev.data == "":
-            if dbg>=1: self.Em("Search for python NG\n")
-            return None
-        python = string.split(self.ev.data)[0]
-        if dbg>=2: self.Em("Search for python OK : %s\n" \
-                           % string.strip(self.ev.data))
-        assert python in pythons, (python, python)
-        self.wait(1)
-        # -----------
-        # OK, now we know we are able to run a good python 
-        # interpreter on the remote node. go ahead and
-        # install the program.
-        code = "INSTALL%09d" % random.randint(0, 999999999)
-        prog = self.mk_program(O, code)
-        sub = self.subst_cmd3(("%s -" % python), O.rsh)
-        if dbg>=2: self.Em("Install %s\n" % sub)
-        self.spawn(sub)
-        self.send(prog)
-        self.send_eof()
-        if self.expect([code, ("TIMEOUT",
-                               O.hello_timeout + O.install_timeout)], 1) != OK:
-            if dbg>=1: self.Em("Install NG\n")
-            return None
-        if self.expect([" OK\n", ("TIMEOUT", O.hello_timeout)], 1) != OK:
-            if dbg>=1: self.Em("Install NG\n")
-            return None
-        inst_dir = self.ev.data[:-4]
-        script = self.expand(O.second_script, { "inst_dir" : inst_dir })
-        if dbg>=2: self.Em("Install OK : '%s'\n" % script)
-        self.wait(1)
-        # -----------
-        # finally we are ready to run IT on the remote node
-        args = self.expands(O.second_args_template, O.__dict__)
-        cmd = "%s %s %s" % (python, script, string.join(args, " "))
-        sub = self.subst_cmd3(cmd, O.rsh)
-        if dbg>=2: self.Em("Bring up again %s\n" % sub)
-        self.spawn(sub)
-        s,g = self.expect_hello(O.hello, O.hello_timeout, 1)
-        if s == OK: return g
-        if dbg>=2: self.Em("Bring up again NG\n")
-        self.kill()
-        return None
 
     def mk_python_cmdline(self, pythons, stub_sz):
         """
@@ -555,51 +463,68 @@ class installer(expectd.expectd):
             P.append(p)
         return ("/bin/sh -c '%s'" % string.join(P, ""))
 
-    def install2(self, O):
-        OK       = ioman.ch_event.OK
-        EOF      = ioman.ch_event.EOF
-        IO_ERROR = ioman.ch_event.IO_ERROR
-        TIMEOUT  = ioman.ch_event.TIMEOUT
-        #
+    def spawn_gxpd(self, O):
+        """
+        run ssh, sh, qsub_wrap or whatever to eventually
+        spawn off new gxpd.py (locally or remotely).
+        """
         code = "INSTALL%09d" % random.randint(0, 999999999)
-        stub_sz,prog = self.mk_program2(O, code)
+        if dbg>=2: ioman.LOG("code = %s\n" % code)
+        stub_sz,prog = self.mk_program(O, code)
         python_cmd = self.mk_python_cmdline(O.python, stub_sz)
-        sub = self.subst_cmd3(python_cmd, O.rsh)
-        if dbg>=2: self.Em("Install and exec %s\n" % sub)
+        sub = self.subst_cmd(python_cmd, O.rsh)
+        if dbg>=2: 
+            ioman.LOG("cmd to exec:\n%s\n" % sub)
         self.spawn(sub)
         self.send(prog)
+        return code
+
+    def wait_gxpd_to_bring_up(self, O, code):
+        """
+        wait for gxpd to send a msg saying it has brought up
+        return None if it appears to have failed.
+        """
+        OK       = ioman.ch_event.OK
+        if dbg>=2: 
+            ioman.LOG("Wait for gxpd to send code [%s]\n" % code)
         if self.expect([code, ("TIMEOUT", O.hello_timeout)], 1) != OK:
-            if dbg>=1: self.Em("Install NG\n")
+            if dbg>=1: 
+                ioman.LOG("Install NG\n")
+                self.Em("Install NG\n")
             return None
+        if dbg>=2: 
+            ioman.LOG("Got code [%s]\n" % self.ev.data)
+            ioman.LOG("Wait for gxpd to send OK or WD\n")
         if self.expect([" OK\n", " WD\n",
                         ("TIMEOUT", O.hello_timeout)], 1) != OK:
-            if dbg>=1: self.Em("Install NG\n")
+            if dbg>=1: 
+                self.Em("Install NG\n")
+                ioman.LOG("Install NG\n")
             return None
         if self.ev.data[-4:] == " WD\n":
-            inst_data = self.mk_installed_data(O.src_file)
+            if dbg>=2: 
+                ioman.LOG("Got WD, send install data\n")
+            inst_data,inst_data_LOG = self.mk_installed_data(O.src_file)
             inst_data_str = "%r" % inst_data
             inst_data_msg = "%10d%s" % (len(inst_data_str), inst_data_str)
+            if dbg>=2: 
+                ioman.LOG(("inst_data_msg:-----\n%s-----\n"
+                           % inst_data_msg))
             self.send(inst_data_msg)
+        elif self.ev.data[-4:] == " OK\n":
+            if dbg>=2: 
+                ioman.LOG("Got OK, no need to send install data\n")
+        if dbg>=2: 
+            ioman.LOG("Wait for gxpd to send hello\n")
         s,g = self.expect_hello(O.hello, O.hello_timeout, 1)
         if s == OK: return g
-        if dbg>=2: self.Em("Bring up NG\n")
-        # self.kill()
+        if dbg>=1: 
+            ioman.LOG("Bring up NG\n")
+            self.Em("Bring up NG\n")
         return None
 
-    def show_argv(self, argv):
-        for a in argv:
-            self.Em("'%s' " % a)
-        self.Em("\n")
-
-    def main(self, argv):
-        global dbg
-        if dbg>=2: self.show_argv(argv)
-        O = inst_options()
-        if O.parse(argv[1:]) == -1: return
-        dbg = O.dbg
-        
-        ioman.set_log_filename("log-%s" % O.seq)
-        g = self.install2(O)
+    def wait_gxpd_to_finish(self, O, code):
+        g = self.wait_gxpd_to_bring_up(O, code)
         if g is not None:
             # say
             #  "Brought up on GUPID ACCESS_PORT TARGET_LABEL HOSTNAME\n"
@@ -607,14 +532,63 @@ class installer(expectd.expectd):
             #  "Brought up on hongo100-tau-2008-07-06-14-40-00-3878 None hongo hongo100\n"
             self.Wm("Brought up on %s %s\n" % (g, O.seq))
         else:
+            if dbg>=2:
+                ioman.LOG("gxpd did not bring up, killing the process with SIGINT\n")
             self.kill_x(signal.SIGINT)
             try:
                 time.sleep(2.0)
             except KeyboardInterrupt:
                 pass
+            if dbg>=2:
+                ioman.LOG("gxpd did not bring up, killing the process with SIGKILL\n")
             self.kill_x(signal.SIGKILL)
+        # self.Wm("WAIT suruyo---------n\n")
         self.wait(1)
         self.flush_outs()
+
+    def show_argv(self, argv):
+        for a in argv:
+            self.Em("'%s' " % a)
+        self.Em("\n")
+
+    def set_inst_environment(self):
+        if dbg>=2:
+            ioman.LOG("setting environment\n")
+        env = os.environ
+        if "GXP_DIR" not in env or "GXP_TOP" not in env:
+            if dbg>=2:
+                ioman.LOG("GXP_DIR or GXP_TOP not in environment, find them\n")
+            gxp_dir,err = this_file.get_this_dir()
+            if gxp_dir is None: 
+                self.Em("%s\n" % err)
+                return -1
+            prefix,gxp_top = os.path.split(gxp_dir)
+            env["GXP_DIR"] = gxp_dir
+            env["GXP_TOP"] = gxp_top
+        if "GXP_GUPID" not in env:
+            if dbg>=2:
+                ioman.LOG("GXP_GUPID not in environment, set it to default\n")
+            env["GXP_GUPID"] = "gupid"
+        if dbg>=2:
+            for v in [ "GXP_DIR", "GXP_TOP", "GXP_GUPID" ]:
+                ioman.LOG("%s : %s\n" % (v, env[v]))
+        
+
+    def main(self, argv):
+        global dbg
+        if dbg>=2: self.show_argv(argv)
+        O = inst_options()
+        if O.parse(argv[1:]) == -1: return
+        dbg = O.dbg
+        ioman.set_log_filename("log-%s" % O.seq)
+        self.set_inst_environment()
+        # spawn gxpd 
+        code = self.spawn_gxpd(O)
+        if O.dont_wait:
+            # do not wait for gxpd until its death
+            self.wait_gxpd_to_bring_up(O, code)
+        else:
+            self.wait_gxpd_to_finish(O, code)
 
 def main():
     installer().main(sys.argv)
@@ -623,6 +597,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.19  2009/09/06 20:05:46  ttaauu
+# lots of changes to avoid creating many dirs under ~/.gxp_tmp of the root host
+#
 # Revision 1.18  2009/06/17 23:50:36  ttaauu
 # experimental condor support
 #

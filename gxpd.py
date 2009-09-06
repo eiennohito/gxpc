@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.8 2009/06/06 14:06:22 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.9 2009/09/06 20:05:46 ttaauu Exp $
 # $Name:  $
 #
 
@@ -24,7 +24,7 @@ import errno,fcntl,os,random,re,select,signal,socket
 import stat,string,sys,time,types
 # import profile,pstats
 
-import ioman,gxpm,opt,ifconfig
+import ioman,gxpm,opt,ifconfig,this_file
 
 dbg=0
 
@@ -87,6 +87,8 @@ class parent_peer(gxp_peer_base):
         gxp_peer_base.__init__(self, name,
                                gxp_peer_base.STATE_LIVE, 1)
         # self.wch = None
+        # now no_stdin is always zero
+        assert no_stdin == 0
         if no_stdin == 0:
             pch0 = ioman.primitive_channel_fd(0, 1)
             ch0 = ioman.rchannel_process(pch0, self, None)
@@ -273,17 +275,18 @@ class gxpd_opts(opt.cmd_opts):
         #   l : list of strings
         #   None : flag
         opt.cmd_opts.__init__(self)
+        # gupid of parent gxpd.py
         self.parent = ("s", "")
+        # in which name it is explored
         self.target_label = ("s", "")
+        # address to listen to
         self.listen = ("s", "unix:")
+        # 1 if it is created with --create_session 1
         self.created_explicitly = ("i", 0)
         self.qlen = ("i", 1000)
         self.remove_self = (None, 0)
-        self.no_stdin = (None, 0)
-        self.redirect_stdout = (None, 0)
-        self.redirect_stderr = (None, 0)
         self.root_gupid = ("s", "")
-        
+        self.continue_after_close = (None, 0)
         # short version
         self.p = "parent"
         self.l = "listen"
@@ -352,7 +355,7 @@ class gxpd_profiler:
 def Es(s):
     os.write(2, s)
 
-def get_this_file():
+def get_this_file_xxx():
     g = globals()
     file = None
     if __name__ == "__main__" and \
@@ -394,7 +397,8 @@ class gxpd(ioman.ioman):
     EX_OSERR = 71
     EX_CONFIG = 78
 
-    def init(self):
+    def init(self, opts):
+        self.opts = opts
         # set of files that should be cleaned up on exit
         self.remove_on_exit = []
         self.quit = 0
@@ -449,9 +453,6 @@ class gxpd(ioman.ioman):
     def get_gxp_tmp(self):
         suffix = os.environ.get("GXP_TMP_SUFFIX", "default")
         return os.path.join("/tmp", ("gxp-%s-%s" % (self.user_name, suffix)))
-
-    def get_gxp_tmp_xxx(self):
-        return os.path.join("/tmp", ("gxp-%s" % self.user_name))
 
     def ensure_dir(self, directory):
         try:
@@ -553,11 +554,63 @@ class gxpd(ioman.ioman):
         ch = ioman.achannel(ioman.primitive_channel_socket(s, 1))
         self.add_rchannel(ch)
         self.listen_addrs.append(addr)
+        if dbg>=2:
+            ioman.LOG("listening on %s\n" % addr)
         return 0
 
-    def setup_parent_peer(self, name, no_stdin,
-                          redirect_stdout, redirect_stderr,
-                          created_explicitly):
+    def redirect_stdout_stderr(self):
+        # xp = open("/tmp/xxx", "wb")
+        # os.dup2(xp.fileno(), 2)
+        # if xp.fileno() > 2: xp.close()
+
+        opts = self.opts
+        if opts.created_explicitly:
+            oprefix = "Gxpout"
+            eprefix = "Gxperr"
+        else:
+            oprefix = "gxpout"
+            eprefix = "gxperr"
+        opath = os.path.join(self.get_gxp_tmp(),
+                             ("%s-%s" % (oprefix, self.gupid)))
+        epath = os.path.join(self.get_gxp_tmp(),
+                             ("%s-%s" % (eprefix, self.gupid)))
+        if dbg>=2:
+            ioman.LOG("redirecting stdout to %s\n" % opath)
+            ioman.LOG("redirecting stderr to %s\n" % epath)
+        op = open(opath, "wb")
+        os.chmod(opath, 0600)
+        os.dup2(op.fileno(), 1)
+        if op.fileno() > 1: op.close()
+        ep = open(epath, "wb")
+        os.chmod(epath, 0600)
+        os.dup2(ep.fileno(), 2)
+        if ep.fileno() > 2: ep.close()
+
+    def redirect_stdout_stderr_obsolete(self, opts):
+        if opts.redirect_stdout:
+            if opts.created_explicitly:
+                prefix = "Gxpout"
+            else:
+                prefix = "gxpout"
+            path = os.path.join(self.get_gxp_tmp(),
+                                ("%s-%s" % (prefix, self.gupid)))
+            fp = open(path, "wb")
+            os.chmod(path, 0600)
+            os.dup2(fp.fileno(), 1)
+            if fp.fileno() > 1: fp.close()
+        if opts.redirect_stderr:
+            if opts.created_explicitly:
+                prefix = "Gxperr"
+            else:
+                prefix = "gxperr"
+            path = os.path.join(self.get_gxp_tmp(),
+                                ("%s-%s" % (prefix, self.gupid)))
+            fp = open(path, "wb")
+            os.chmod(path, 0600)
+            os.dup2(fp.fileno(), 2)
+            if fp.fileno() > 2: fp.close()
+
+    def setup_parent_peer(self, opts):
         """
         Set up a data structure to talk to my parent. It is
         not necessarily the process that really `forked' me.
@@ -570,29 +623,13 @@ class gxpd(ioman.ioman):
         descriptors 0,1,2 are connected to the parent.
 
         """
-        if redirect_stdout:
-            if created_explicitly:
-                prefix = "Gxpout"
-            else:
-                prefix = "gxpout"
-            path = os.path.join(self.get_gxp_tmp(),
-                                ("%s-%s" % (prefix, self.gupid)))
-            fp = open(path, "wb")
-            os.chmod(path, 0600)
-            os.dup2(fp.fileno(), 1)
-            if fp.fileno() > 1: fp.close()
-        if redirect_stderr:
-            if created_explicitly:
-                prefix = "Gxperr"
-            else:
-                prefix = "gxperr"
-            path = os.path.join(self.get_gxp_tmp(),
-                                ("%s-%s" % (prefix, self.gupid)))
-            fp = open(path, "wb")
-            os.chmod(path, 0600)
-            os.dup2(fp.fileno(), 2)
-            if fp.fileno() > 2: fp.close()
-        parent = parent_peer(name, no_stdin)
+        # not useful anymore
+        # self.redirect_stdout_stderr(opts)
+        # opts.no_stdin
+        if dbg>=2:
+            ioman.LOG(("setup parent peer (name = %s)\n"
+                       % opts.parent))
+        parent = parent_peer(opts.parent, 0)
         for ch in parent.r_channels_rev.keys():
             self.add_rchannel(ch)
         for ch in parent.w_channels_rev.keys():
@@ -1727,7 +1764,15 @@ class gxpd(ioman.ioman):
                     if proc.upgrading_status == child_peer.upgrading_status_succeeded:
                         proc.discard()
                 self.check_proc_status(proc)
-            if proc.critical: self.quit = 1
+            # see mondai
+            if proc.critical: 
+                if dbg>=2:
+                    ioman.LOG(("this live gxp is critical (parent.name = %s)\n" 
+                               % self.parent.peer_name))
+                if self.opts.continue_after_close: # parent.peer_name == ""
+                    self.redirect_stdout_stderr()
+                else:
+                    self.quit = 1
 
     def parse_addr_spec(self, addr_spec):
         [ proto, host, addr, port ] = string.split(addr_spec, ":")
@@ -1993,17 +2038,13 @@ class gxpd(ioman.ioman):
             ap = self.open_upgrade_listen_socket()
         else:
             ap = None
-        if 0:
-            hogehoge = ("BEGIN_hogehoge %s %s END_hogehoge" 
-                        % (self.gupid, ap))
-        else:
-            hogehoge = ("BEGIN_hogehoge %s %s %s %s END_hogehoge" 
-                        % (self.gupid, ap, self.target_label, self.hostname))
+        hogehoge = ("BEGIN_hogehoge %s %s %s %s END_hogehoge" 
+                    % (self.gupid, ap, self.target_label, self.hostname))
         if dbg>=2:
             ioman.LOG("announced to parent %s\n" % hogehoge)
         parent.write_stream(hogehoge)
 
-    def get_gxp_dir(self):
+    def xxx_get_gxp_dir_xxx(self):
         # potentially dangerous
         # gxp_dir = os.environ.get("GXP_DIR", "")
         # if gxp_dir != "": return gxp_dir
@@ -2012,10 +2053,20 @@ class gxpd(ioman.ioman):
         # full_path_gxpd_py should be like a/gxp3/gxpd.py
         a,b = os.path.split(full_path_gxpd_py)
         if b != "gxpd.py":
-            Es("%s : could not derive GXP_DIR from %s\n" \
-                   % (self.gupid, full_path_gxpd_py))
+            Es(("%s : could not derive GXP_DIR from %s\n"
+                % (self.gupid, full_path_gxpd_py)))
+            ioman.LOG(("%s : could not derive GXP_DIR from %s\n" 
+                       % (self.gupid, full_path_gxpd_py)))
             return None
         return a
+
+    def get_gxp_dir(self):
+        gxp_dir,err = this_file.get_this_dir()
+        if gxp_dir is None: 
+            Es("%s\n" % err)
+            ioman.LOG("%s\n" % err)
+            return None
+        return gxp_dir
 
     def push_path(self, orig, val):
         if orig == "":
@@ -2049,37 +2100,50 @@ class gxpd(ioman.ioman):
         if env is None:
             return -1
         else:
+            if dbg>=2:
+                ioman.LOG(("gxpd environment:\n%s\n" 
+                           % env.__dict__))
             if (env is not None) and remove_self:
-                self.remove_on_exit.append(os.path.dirname(env.GXP_DIR))
+                dire = os.path.dirname(env.GXP_DIR)
+                self.remove_on_exit.append(dire)
+                if dbg>=2:
+                    ioman.LOG(("added to remove on exit: %s\n" 
+                               % dire))
             self.gxpd_env = env
             return 0
 
     def set_target_label(self, target_label):
+        """
+        set the name in which this gxpd was explored.
+        it comes from explore -> inst_local.py -> gxpd.py.
+        by default, it defaults to its hostname.
+        this is normally used for the root gxpd
+        """
         if target_label == "":
             self.target_label = self.hostname
         else:
             self.target_label = target_label
+        if dbg>=2:
+            ioman.LOG("set target_label to %s\n" % self.target_label)
 
     def main_no_cleanup(self, argv):
-        if self.init() == -1: return gxpd.EX_CONFIG
+        if dbg>=2:
+            ioman.LOG("argv = %s\n" % argv)
         opts = gxpd_opts()
         if opts.parse(argv[1:]) == -1: return gxpd.EX_USAGE
+        if self.init(opts) == -1: return gxpd.EX_CONFIG
         self.set_target_label(opts.target_label)
+        # open socket to receive requests
         if self.setup_channel_listen(opts.listen, opts.created_explicitly, opts.qlen) == -1:
             return gxpd.EX_OSERR
+        # set environment variables
         if self.set_gxpd_environment(opts.remove_self, opts.root_gupid) == -1:
             return gxpd.EX_OSERR
-        if dbg>=2:
-            ioman.LOG("bring up GXP_DIR=%s argv=%s\n" \
-                      % (os.environ["GXP_DIR"], argv))
-        self.setup_parent_peer(opts.parent,
-                               opts.no_stdin,
-                               opts.redirect_stdout,
-                               opts.redirect_stderr,
-                               opts.created_explicitly)
+        self.setup_parent_peer(opts)
 
-        if self.parent.peer_name != "":
-            self.say_hogehoge(self.parent) # say to inst_local
+        # no longer necessary
+        # if self.parent.peer_name != "" or 1 or 1 or 1: # see mondai
+        self.say_hogehoge(self.parent)
 
         while self.quit == 0:
             ch,ev = self.process_an_event()
@@ -2099,6 +2163,8 @@ class gxpd(ioman.ioman):
             if self.profiler.to_stop:
                 self.profiler.prof.stop()
                 self.profiler.stopped()
+        if dbg>=2:
+            ioman.LOG("self.quit = 1. quitting ...\n")
         return 0
 
     def allowed_to_remove(self, allowed, f):
@@ -2139,6 +2205,9 @@ class gxpd(ioman.ioman):
             
 
     def cleanup(self):
+        """
+        clean up files made by copying GXP_DIR
+        """
         allowed =  [ "/tmp" ]
         if "HOME" in os.environ:
             gxp_tmp = os.path.join(os.environ["HOME"], ".gxp_tmp")
@@ -2157,11 +2226,20 @@ class gxpd(ioman.ioman):
                             self.safe_remove(allowed, p)
                 self.safe_remove(allowed, top)
 
+    def get_exception_trace(self):
+        import cStringIO,traceback
+        type,value,trace = sys.exc_info()
+        cio = cStringIO.StringIO()
+        traceback.print_exc(trace, cio)
+        return cio.getvalue()
+
     def main(self, argv):
         try:
-            return self.main_no_cleanup(argv)
-        finally:
-            self.cleanup()
+            self.main_no_cleanup(argv)
+        except Exception,e:
+            ioman.LOG("gxpd.py terminated with an exception:\n")
+            ioman.LOG("%s\n" % self.get_exception_trace())
+        self.cleanup()
 
 def main():
     return gxpd().main(sys.argv)
@@ -2170,6 +2248,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.9  2009/09/06 20:05:46  ttaauu
+# lots of changes to avoid creating many dirs under ~/.gxp_tmp of the root host
+#
 # Revision 1.8  2009/06/06 14:06:22  ttaauu
 # added headers and logs
 #

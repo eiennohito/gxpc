@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.34 2009/08/04 13:16:39 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.35 2009/09/06 20:05:46 ttaauu Exp $
 # $Name:  $
 #
 
@@ -56,7 +56,8 @@ pickler = import_safe_pickler()
 import cStringIO,errno,fcntl,glob,random,re
 import select,signal,socket,stat # shlex
 import string,time,threading,types,copy
-import opt,gxpm,gxpd
+import opt,gxpm,this_file
+# ,gxpd
 
 #
 # gxp frontend (command interpreter) that talks to daemons
@@ -546,7 +547,7 @@ class session_state:
             if pong.parent == "": roots.append(t)
         # obviously the root must be unique
         if len(roots) != 1:
-            Es("gxpc: broken gxp daemon tree (deamons seem broken)\n")
+            Es("gxpc: broken gxp daemon tree (deamons seem broken, roots=%s)\n" % roots)
             return None,None,None
         # check if parent and children are consistent
         for gupid,pong in pongs:
@@ -1344,7 +1345,6 @@ class cmd_interpreter:
         # (see real_init)
         if self.init_level >= 1: return 0
         self.init_level = 1
-
         # determine session and daemon
         if self.find_or_create_session() == -1:
             return -1
@@ -1580,7 +1580,7 @@ class cmd_interpreter:
         else:
             return 0
 
-    def get_gxp_dir(self):
+    def get_gxp_dir_xx(self):
         # ugly: copied from gxpd.py
         # gxp_dir = os.environ.get("GXP_DIR", "")
         # if gxp_dir != "": return gxp_dir
@@ -1594,6 +1594,14 @@ class cmd_interpreter:
             return None
         return a
 
+    def get_gxp_dir(self):
+        d,err = this_file.get_this_dir()
+        if d is None:
+            Es("%s : %s\n" % (self.gupid, err))
+            return None
+        else:
+            return d
+
     def push_path(self, orig, val):
         if orig == "":
             return val
@@ -1602,8 +1610,8 @@ class cmd_interpreter:
 
     def get_gxpc_environment(self):
         gxp_dir = self.get_gxp_dir()
-        prefix,gxp_top = os.path.split(gxp_dir)
         if gxp_dir is None: return None
+        prefix,gxp_top = os.path.split(gxp_dir)
         gxpbin_dir = os.path.join(gxp_dir, "gxpbin")
         path = os.environ.get("PATH", "")
         path = self.push_path(path, gxp_dir)
@@ -1932,13 +1940,14 @@ class cmd_interpreter:
                     # and --create_daemon doesn't say don't create
                     # -> create one
                     if opts.verbosity >= 1:
-                        Es("gxpc: no daemon found, create one ('gxpc quit/help' to clean up/get help)\n")
+                        Es("gxpc: no daemon found, create one. 'gxpc quit' to clean up. 'gxpc help' to get help.\n")
                     pid = self.create_daemon(opts.create_daemon)
                     # time.sleep(0.5)
                     if opts.verbosity >= 2:
                         Es("gxpc: created, check it again\n")
                     # search socket files with specified pid
-                    addrs = self.find_daemon_addrs2(pid, 20.0)
+                    # addrs = self.find_daemon_addrs2(pid, 20.0)
+                    addrs = self.find_daemon_addrs(None)
                     if len(addrs) == 1:
                         gupid,daemon_addr = addrs[0]
                         self.gupid = gupid
@@ -2055,7 +2064,7 @@ class cmd_interpreter:
             if sleep_t > 3.0: sleep_t = 3.0
         return []
         
-    def create_daemon(self, create_daemon_explicit):
+    def create_daemon_x(self, create_daemon_explicit):
         pid = os.fork()
         if pid == 0:
             gxpd_py = gxpd.get_this_file()
@@ -2071,6 +2080,32 @@ class cmd_interpreter:
                 argv = argv + [ "--target_label", self.opts.root_target_name ]
             os.execvp(argv[0], argv)
         else:
+            return pid
+        
+    def create_daemon(self, create_daemon_explicit):
+        pid = os.fork()
+        if pid == 0:
+            gxp_dir = self.get_gxp_dir()
+            inst_local_py = os.path.join(gxp_dir, "inst_local.py")
+            os.setpgrp()
+            # os.close(0)
+            argv = [ sys.executable, inst_local_py,
+                     "--dont_wait",
+                     "--seq", "explore-root-gxpd",
+                     "--rsh", "sh",
+                     "--rsh", "-c",
+                     "--rsh", "%(cmd)s",
+                     "--first_args_template",  "--remove_self",
+                     "--first_args_template",  "--continue_after_close",
+                     "--second_args_template", "--remove_self",
+                     "--second_args_template", "--continue_after_close",
+                     "--created_explicitly", 
+                     ("%d" % create_daemon_explicit) ]
+            if self.opts.root_target_name is not None:
+                argv = argv + [ "--target_label", self.opts.root_target_name ]
+            os.execvp(argv[0], argv)
+        else:
+            os.waitpid(pid, 0)
             return pid
         
 
@@ -4065,7 +4100,8 @@ Use use command to specify how (e.g., 'gxpc use ssh %s %s').
                 % (opts.args[1], opts.args[0], opts.args[0], opts.args[1])))
         else:
             Ws("%s\n" % cmd)
-            Ws(r"""Set environment variables GXP_DIR/GXP_GUPID
+            if 0:
+                Ws(r"""Set environment variables GXP_DIR/GXP_GUPID
 to run the above command. e.g., 
   export GXP_DIR=%s
   export GXP_TOP=%s
@@ -4302,9 +4338,9 @@ See Also:
                 return None
             A.append("--rsh '%s'" % subst_a)
         rsh_args = string.join(A, " ")
-        
-        return ("python $GXP_DIR/inst_local.py %s %s %s"
-                % (rsh_args, mand_args, opt_args))
+        gxp_dir = os.environ["GXP_DIR"]
+        return ("python %s/inst_local.py %s %s %s"
+                % (gxp_dir, rsh_args, mand_args, opt_args))
     
     def replace_tgt_pat(self, m, tgt_pat):
         # Es("replace_tgt_pat %s\n" % tgt_pat)
@@ -4415,6 +4451,8 @@ See Also:
             # okay, now we get some appropriate target nodes for h
             blocked = []
             # ensure each node can add at least one child
+            # THIS turned out to be a BAD IDEA. it may potentially takes
+            # too much time exploring many nodes one at a time
             # max_ch = min(ch_hard_lim, max(ch_soft_lim, len(h.children) + 1))
             max_ch = ch_soft_lim
             while len(h.children) < max_ch and len(to_explore) > 0:
@@ -5002,6 +5040,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.35  2009/09/06 20:05:46  ttaauu
+# lots of changes to avoid creating many dirs under ~/.gxp_tmp of the root host
+#
 # Revision 1.34  2009/08/04 13:16:39  ttaauu
 # *** empty log message ***
 #

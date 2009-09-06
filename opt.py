@@ -13,7 +13,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/opt.py,v 1.4 2009/06/06 14:06:23 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/opt.py,v 1.5 2009/09/06 20:05:46 ttaauu Exp $
 # $Name:  $
 #
 
@@ -172,7 +172,7 @@ class cmd_opts:
         if hasattr(self, field):
             typ,val = getattr(self, field)
         else:
-            field = ("%s__" % field)
+            field = ("%s__" % field) # ugly as__
             typ,val = getattr(self, field)
 
         # type check
@@ -198,6 +198,9 @@ class cmd_opts:
         else:
             assert len(typ) == 2, typ
             assert typ[1] == "*", typ
+            if val is None: 
+                val = []
+                setattr(self, field, (typ,val))
             val.append(x)
         self.specified_fields[field] = 1
         return 0
@@ -218,6 +221,9 @@ class cmd_opts:
         return copy.deepcopy(self)
 
 # $Log: opt.py,v $
+# Revision 1.5  2009/09/06 20:05:46  ttaauu
+# lots of changes to avoid creating many dirs under ~/.gxp_tmp of the root host
+#
 # Revision 1.4  2009/06/06 14:06:23  ttaauu
 # added headers and logs
 #

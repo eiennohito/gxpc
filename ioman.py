@@ -10,7 +10,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.6 2009/06/06 14:06:23 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.7 2009/09/06 20:05:46 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2262,96 +2262,6 @@ class ioman:
         self.ch_receive_child_death = ch_r
         signal.signal(signal.SIGCHLD, self.sigchld)
 
-    def xxx_reset_ready_channels_aux(self, hot_only):
-        if dbg>=2:
-            LOG("ioman.reset_ready_channels(hot_only=%d)\n" \
-                % hot_only)
-        assert len(self.ready_channels) == 0, self.ready_channels
-        Y = []             # channels having pending events
-        R = []             # channels to check for readability
-        W = []             # channels to check for writability
-        T = INF            # earliest time limit
-        timelimit_table = {}
-        if hot_only:
-            channels = self.hot_channels
-        else:
-            channels = self.cold_channels
-
-        for ch in channels.keys():
-            if ch.is_garbage():
-                # delete channels 'discarded' by previous events
-                self.mark_garbage(ch)
-            elif ch.has_pending_events():
-                # this channel may generate an event without IO
-                Y.append(ch)
-            elif ch.want_io() == 0:
-                self.mark_dormant(ch)
-            else:
-                # why this is true?
-                # this channel is not garbage and has no pending
-                # events.
-                assert ch.is_closed() == 0
-                self.mark_cold(ch)
-                if isinstance(ch, wchannel):
-                    W.append(ch)
-                else:
-                    assert (isinstance(ch, rchannel) or \
-                            isinstance(ch, achannel)), ch
-                    R.append(ch)
-                # calc earliest timelimit
-                T = min(T, ch.x_timelimit)
-                if T == ch.x_timelimit != INF:
-                    if not timelimit_table.has_key(ch.x_timelimit):
-                        timelimit_table[ch.x_timelimit] = []
-                    timelimit_table[ch.x_timelimit].append(ch)
-        if len(R) + len(W) + len(Y) == 0: return -1
-        if hot_only or len(Y) > 0:
-            timeout = 0.0
-            # timeout = 0.02
-        else:
-            timeout = self.to_timeout(T)
-            if timeout == INF: timeout = None
-        if dbg>=2:
-            LOG("%d has pending events "
-                "%d to check read "
-                "%d to check write "
-                "[%s] to timeout\n" % (len(Y), len(R), len(W),
-                                       timeout))
-        if len(R) + len(W) == 0:
-            R1 = []
-            W1 = []
-        elif len(W) > 0:
-            # there are some channels that want to write.
-            # we try to evacuate those write channels first
-            R1,W1,_ = nointr_select.select([], W, [], 0.1)
-            if len(W1) == 0:
-                # fail. then we try to read also
-                R1,W1,_ = nointr_select.select(R, W, [], timeout)
-        else:
-            R1,W1,_ = nointr_select.select(R, W, [], timeout)
-        if hot_only or len(R1) + len(W1) + len(Y) > 0:
-            # set ready channels
-            for ch in R1: self.mark_hot(ch)
-            for ch in W1: self.mark_hot(ch)
-            for ch in Y:  self.mark_hot(ch)
-            self.ready_channels = W1 + Y + R1
-            self.timeout_channels = []
-            if dbg>=2:
-                LOG("%d pending events "
-                    "%d readable "
-                    "%d writable\n" % (len(Y), len(R1), len(W1)))
-        else:
-            self.ready_channels = []
-            cur = time.time()
-            assert T != ""
-            assert (T <= cur + 0.1), (T, cur)
-            assert len(timelimit_table[T]) > 0
-            self.timeout_channels = timelimit_table[T]
-            if dbg>=2:
-                LOG("no ready channels %d timeouts\n" \
-                    % len(self.timeout_channels))
-        return 0
-
     def reset_ready_channels_aux(self, hot_only):
         """
         0 : read from parent
@@ -2562,6 +2472,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.7  2009/09/06 20:05:46  ttaauu
+# lots of changes to avoid creating many dirs under ~/.gxp_tmp of the root host
+#
 # Revision 1.6  2009/06/06 14:06:23  ttaauu
 # added headers and logs
 #

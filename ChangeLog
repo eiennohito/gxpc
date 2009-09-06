@@ -13,11 +13,18 @@
 2009-05-23 Taura
 	* gxpbin/xmake : fixed links from state.html -> state.txt
 	and other state_xx.html's
-2009-06-6 Taura
+2009-06-06 Taura
 	* gxpbin/xmake : defined GXP_MAKE_WORK_IDX and GXP_MAKE_MKSH_PID
 	in job environment
 2009-08-5 Taura
 	* gxpc.py : fixed an explore bug that repeats obtaining nodes one at a time
 2009-08-5 Taura
 	* gxpbin/su_cmd : it finally became reliable
-
+2009-09-07 Taura
+	* this_file.py : added and used by gxpc.py and inst_local.py
+	* inst_local.py : it no longer requires environment variables GXP_DIR, etc.
+2009-09-07 Taura
+	* gxpc.py : 
+	* gxpd.py : many changes to bring up the daemon through inst_local.py,
+	not directly invoking gxpd.py.  this is to avoid creating many directories
+	under ~/.gxp_tmp when so many hosts are explored from the root.
