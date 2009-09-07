@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.35 2009/09/06 20:05:46 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.36 2009/09/07 12:22:26 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2064,24 +2064,6 @@ class cmd_interpreter:
             if sleep_t > 3.0: sleep_t = 3.0
         return []
         
-    def create_daemon_x(self, create_daemon_explicit):
-        pid = os.fork()
-        if pid == 0:
-            gxpd_py = gxpd.get_this_file()
-            os.setpgrp()
-            os.close(0)
-            argv = [ sys.executable, gxpd_py,
-                     "--created_explicitly", 
-                     ("%d" % create_daemon_explicit),
-                     "--no_stdin",
-                     "--redirect_stdout",
-                     "--redirect_stderr" ]
-            if self.opts.root_target_name is not None:
-                argv = argv + [ "--target_label", self.opts.root_target_name ]
-            os.execvp(argv[0], argv)
-        else:
-            return pid
-        
     def create_daemon(self, create_daemon_explicit):
         pid = os.fork()
         if pid == 0:
@@ -2101,8 +2083,12 @@ class cmd_interpreter:
                      "--second_args_template", "--continue_after_close",
                      "--created_explicitly", 
                      ("%d" % create_daemon_explicit) ]
-            if self.opts.root_target_name is not None:
-                argv = argv + [ "--target_label", self.opts.root_target_name ]
+            rtn = self.opts.root_target_name
+            if rtn is not None:
+                argv = argv + [ "--first_args_template",  "--target_label",
+                                "--first_args_template",  rtn,
+                                "--second_args_template", "--target_label",
+                                "--second_args_template", rtn ]
             os.execvp(argv[0], argv)
         else:
             os.waitpid(pid, 0)
@@ -5040,6 +5026,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.36  2009/09/07 12:22:26  ttaauu
+# *** empty log message ***
+#
 # Revision 1.35  2009/09/06 20:05:46  ttaauu
 # lots of changes to avoid creating many dirs under ~/.gxp_tmp of the root host
 #
