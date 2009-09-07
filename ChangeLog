@@ -28,3 +28,5 @@
 	* gxpd.py : many changes to bring up the daemon through inst_local.py,
 	not directly invoking gxpd.py.  this is to avoid creating many directories
 	under ~/.gxp_tmp when so many hosts are explored from the root.
+2009-09-07 Taura
+	* gxpc.py : fixed broken --root_target_name option
