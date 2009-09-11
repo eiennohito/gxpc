@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.36 2009/09/07 12:22:26 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.37 2009/09/11 09:17:33 ttaauu Exp $
 # $Name:  $
 #
 
@@ -4086,6 +4086,10 @@ Use use command to specify how (e.g., 'gxpc use ssh %s %s').
                 % (opts.args[1], opts.args[0], opts.args[0], opts.args[1])))
         else:
             Ws("%s\n" % cmd)
+            if 1:
+                Ws(r"""Set environment variable GXP_DIR to run the above command. e.g., 
+  export GXP_DIR=%s
+""" % os.environ["GXP_DIR"])
             if 0:
                 Ws(r"""Set environment variables GXP_DIR/GXP_GUPID
 to run the above command. e.g., 
@@ -4324,9 +4328,9 @@ See Also:
                 return None
             A.append("--rsh '%s'" % subst_a)
         rsh_args = string.join(A, " ")
-        gxp_dir = os.environ["GXP_DIR"]
-        return ("python %s/inst_local.py %s %s %s"
-                % (gxp_dir, rsh_args, mand_args, opt_args))
+        # gxp_dir = os.environ["GXP_DIR"]
+        return ("python ${GXP_DIR}/inst_local.py %s %s %s"
+                % (rsh_args, mand_args, opt_args))
     
     def replace_tgt_pat(self, m, tgt_pat):
         # Es("replace_tgt_pat %s\n" % tgt_pat)
@@ -5026,6 +5030,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.37  2009/09/11 09:17:33  ttaauu
+# fixed an explore bug that embeds wrong gxp_dir directory in the installer command line
+#
 # Revision 1.36  2009/09/07 12:22:26  ttaauu
 # *** empty log message ***
 #
