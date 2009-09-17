@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.42 2009/06/11 22:02:12 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.43 2009/09/17 18:47:53 ttaauu Exp $
 # $Name:  $
 #
 
@@ -469,13 +469,14 @@ class Shot:
         if self.run.time_start is None:
             self.run.time_start = cur_time
 
-    def finish(self, finish_reason, status, cur_time):
+    def finish(self, finish_reason, status, rusage, cur_time):
         """
         called when this shot has finished with status at cur_time
         """
         self.time_end = cur_time
         run = self.run
         assert run.shots[0] is self, (self, run.shots)
+        run.accumulate_rusage(rusage)
         run.shots.pop(0)
 
         if len(run.shots) > 0 and status is not None and \
@@ -484,7 +485,7 @@ class Shot:
             self.server.shots_todo.append(run.shots[0])
         else:
             # the entire run has finished
-            run.finish(finish_reason, status, cur_time)
+            run.finish(finish_reason, status, rusage, cur_time)
 
 class shot_stage(Shot):
     def setup_redirect(self):
@@ -653,6 +654,7 @@ class Run:
         self.status = None
         self.time_start = None          # set by the first shot's shot
         self.time_end = None
+        self.rusage = None      # total rusage of the constituing shots
 
     def show_status(self):
         """
@@ -662,35 +664,41 @@ class Run:
             # not yet finished by any shot
             if self.man is None:
                 # not yet dispatched or in progress
-                return ("job_waiting","-")
+                return ("job_waiting","-",self.rusage)
             else:
                 # somebody working on it
-                return ("job_running", ("by %s" % self.man.name))
+                return ("job_running", ("by %s" % self.man.name), self.rusage)
         elif self.finish_reason == Shot.finish_reason_worker_died:
-            return ("job_worker_died", "worker died")
+            return ("job_worker_died", "worker died", self.rusage)
         elif self.finish_reason == Shot.finish_reason_worker_left:
-            return ("job_worker_left", "worker left")
+            return ("job_worker_left", "worker left", self.rusage)
         elif self.finish_reason == Shot.finish_reason_no_throw:
-            return ("job_no_throw", "no throw")
+            return ("job_no_throw", "no throw", self.rusage)
         elif self.finish_reason == Shot.finish_reason_interrupt:
-            return ("job_interrupt", "interrupt")
+            return ("job_interrupt", "interrupt", self.rusage)
         else:
             assert self.finish_reason == Shot.finish_reason_normal, self.finish_reason
             assert self.status is not None
             if os.WIFEXITED(self.status):
                 s = os.WEXITSTATUS(self.status)
                 if s == 0:
-                    return ("job_success", ("exit %d" % s))
+                    return ("job_success", ("exit %d" % s), self.rusage)
                 else:
-                    return ("job_failed",  ("exit %d" % s))
+                    return ("job_failed",  ("exit %d" % s), self.rusage)
             elif os.WIFSIGNALED(self.status):
                 s = os.WTERMSIG(self.status)
-                return ("job_killed", ("killed %d" % s))
+                return ("job_killed", ("killed %d" % s), self.rusage)
             else:
-                return ("job_unknown", ("??? %s" % self.status))
+                return ("job_unknown", ("??? %s" % self.status), self.rusage)
+
+    def accumulate_rusage(self, rusage):
+        if self.rusage is None:
+            self.rusage = [ 0 ] * len(rusage)
+        for i in range(len(self.rusage)):
+            self.rusage[i] = self.rusage[i] + rusage[i]
 
     # Run.finish
-    def finish(self, finish_reason, status, cur_time):
+    def finish(self, finish_reason, status, rusage, cur_time):
         self.time_end = cur_time
         self.finish_reason = finish_reason
         self.status = status
@@ -1315,7 +1323,7 @@ td.man_working {
                         elapsed = "%.2f" % (e - s)
                     else:
                         elapsed = "%.2f" % (cur_time - s)
-                cls,sts = run.show_status()
+                cls,sts,rusage = run.show_status()
                 wp.write('<tr>')
                 if i == 0:
                     # first three columns are common in all runs
@@ -1412,6 +1420,30 @@ td.man_working {
         wp.write("</table>\n")
         return wp.getvalue()
 
+    def getrusage_fields(self):
+        return ('utime\t'
+                'stime\t'
+                'maxrss\t'
+                'ixrss\t'
+                'idrss\t'
+                'isrss\t'
+                'minflt\t'
+                'majflt\t'
+                'nswap\t'
+                'inblock\t'
+                'oublock\t'
+                'msgsnd\t'
+                'msgrcv\t'
+                'nsignals\t'
+                'nvcsw\t'
+                'nivcsw')
+
+    def show_rusage(self, rusage):
+        if rusage is None:
+            return string.join(["-"] * 16, "\t")
+        else:
+            return string.join(map(str, rusage), "\t")
+
     def gen_works_in_comments(self, cur_time):
         wp = cStringIO.StringIO()
         # wp.write('<!--\n')
@@ -1422,7 +1454,8 @@ td.man_working {
                   'finished at\t'
                   'executed by\t'
                   'turn around time\t'
-                  'status\n'))
+                  'status\t'
+                  '%s\n' % self.getrusage_fields()))
 
         for w in self.server.works:
             queued_t = time.ctime(w.req_time + self.server.start_t)
@@ -1442,8 +1475,9 @@ td.man_working {
                         elapsed = "%.2f" % (e - s)
                     else:
                         elapsed = "%.2f" % (cur_time - s)
-                cls,sts = run.show_status()
+                cls,sts,rusage = run.show_status()
                 wp.write(('%d\t'
+                          '%s\t'
                           '%s\t'
                           '%s\t'
                           '%s\t'
@@ -1453,7 +1487,8 @@ td.man_working {
                           '%s\n'
                           % (w.idx, cmds,
                              queued_t, start_t, end_t,
-                             man, elapsed, sts)))
+                             man, elapsed, sts, 
+                             self.show_rusage(rusage))))
         # wp.write('-->\n')
         return wp.getvalue()
     
@@ -1775,6 +1810,23 @@ class Pinger:
         self.last_ping_time = cur_time
         return 1
 
+class resource_usage:
+    def __init__(self):
+        self.r = None
+        import resource
+        self.getrusage = resource.getrusage
+        self.RUSAGE_CHILDREN = resource.RUSAGE_CHILDREN
+
+    def get_child_rusage(self):
+        r = self.getrusage(self.RUSAGE_CHILDREN)
+        if self.r is None:
+            self.r = (0,) * len(r)
+        dr = []
+        for i in range(len(self.r)):
+            dr.append(r[i] - self.r[i])
+        self.r = r
+        return dr
+
 class xmake_server:
     """
 
@@ -1809,6 +1861,8 @@ class xmake_server:
         # UNIX domain socket to accept connect from mksh
         self.so = None
         self.so_name = None             # so's path name
+        # rusage tracker
+        self.ru = resource_usage()
         #
         self.cleaning = 0
         # sigchild handling
@@ -2270,7 +2324,7 @@ class xmake_server:
         """
         receive a termination notification of a single command from
         gxpc.
-        (gupid, tid, src, rid, pid, status)
+        (gupid, tid, src, rid, pid, status, rusage)
         hongo104-tau-2008-04-26-13-05-48-11662 tid_make_24108_9380 proc 1 13335 0
         """
         lines = self.fast_readlines(self.gxpc_fd)
@@ -2298,7 +2352,8 @@ class xmake_server:
         """
         if self.logfp:
             self.LOG("notified of a remote process termination %s\n" % line)
-        [ man_name, tid, src_, rid, pid_, status ] = string.split(line)
+        # [ man_name, tid, src_, rid, pid_, status ] = string.split(line)
+        (man_name, tid, src_, rid, pid_, status, rusage) = eval(line)
         # [ man_name, _, _, _, _, status ] = string.split(line)
         assert man_name != ""
         man = self.men.get(man_name)
@@ -2341,23 +2396,24 @@ class xmake_server:
             shot = self.shots.get(rid)
             if shot:
                 assert shot.id == rid, (shot.id, rid)
-                self.handle_fin(shot, status)
+                self.handle_fin(shot, status, rusage)
         else:
             msg = "unknown rid %s\n" % rid
             if self.logfp: self.LOG(msg)
             Es("xmake: %s" % msg)
         self.n_state_changes = self.n_state_changes + 1
             
-    def handle_fin(self, shot, status):
+    def handle_fin(self, shot, status, rusage):
         # a working process has just finished.
         self.release_resources(shot)
         del self.shots[shot.id]
         if self.logfp:
-            self.LOG("shot %s finished\n" % shot)
+            self.LOG(("shot %s finished with status=%s rusage=%s\n" 
+                      % (shot, status, rusage)))
         cur_time = self.cur_time()
         _,p = self.parallelism[-1]
         self.parallelism.append((cur_time, p - 1))
-        shot.finish(Shot.finish_reason_normal, int(status), cur_time)
+        shot.finish(Shot.finish_reason_normal, int(status), rusage, cur_time)
         
     def find_matches(self):
         fifo = 1
@@ -2499,7 +2555,7 @@ class xmake_server:
                 man.state = Man.state_gone
                 n = len(man.running)
                 for run in man.running[:]: # make a copy
-                    run.finish(finish_reason, None, cur_time)
+                    run.finish(finish_reason, None, None, cur_time)
                     assert run not in man.running
                 _,p = self.parallelism[-1]
                 self.parallelism.append((cur_time, p - n))
@@ -2674,8 +2730,9 @@ class xmake_server:
                 if e.args[0] == errno.ECHILD: break
                 raise
             if pid == 0: break
-            pids.append((pid, status))
-        for pid,status in pids:
+            rusage = self.ru.get_child_rusage()
+            pids.append((pid, status, rusage))
+        for pid,status,rusage in pids:
             if self.logfp:
                 self.LOG("child (%d) terminated with %d\n" % (pid, status))
             if pid == self.make_pid:
@@ -2693,7 +2750,7 @@ class xmake_server:
                     self.LOG("it is a shot running locally\n")
                 shot = self.shots[pid]
                 assert shot.id == pid, (shot.id, pid)
-                self.handle_fin(shot, status)
+                self.handle_fin(shot, status, rusage)
             elif pid == self.pinger.ping_pid:
                 if self.logfp:
                     self.LOG("it is a ping job\n")
@@ -2735,14 +2792,14 @@ class xmake_server:
             self.LOG(("exiting %d outstanding processes\n"
                       % len(shots)))
         for shot in shots:
-            shot.finish(Shot.finish_reason_interrupt, None, cur_time)
+            shot.finish(Shot.finish_reason_interrupt, None, None, cur_time)
         self.shots = {}
         if self.logfp:
             self.LOG(("exiting %d waiting processes\n"
                       % len(self.shots_todo)))
         while len(self.shots_todo) > 0:
             shot = self.shots_todo.pop(0)
-            shot.finish(Shot.finish_reason_no_throw, None, cur_time)
+            shot.finish(Shot.finish_reason_no_throw, None, None, cur_time)
         
     def determine_exit_status(self):
         s = self.make_status
@@ -3031,6 +3088,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.43  2009/09/17 18:47:53  ttaauu
+# ioman.py,gxpm.py,gxpd.py,gxpc.py,xmake: changes to track rusage of children and show them in state.txt
+#
 # Revision 1.42  2009/06/11 22:02:12  ttaauu
 # *** empty log message ***
 #

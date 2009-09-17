@@ -10,7 +10,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.7 2009/09/06 20:05:46 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.8 2009/09/17 18:47:53 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1464,6 +1464,23 @@ class achannel(channel):
 # special channel for getting notification of child death
 # -------------------------------------------------------------------
 
+class resource_usage:
+    def __init__(self):
+        self.r = None
+        import resource
+        self.getrusage = resource.getrusage
+        self.RUSAGE_CHILDREN = resource.RUSAGE_CHILDREN
+
+    def get_child_rusage(self):
+        r = self.getrusage(self.RUSAGE_CHILDREN)
+        if self.r is None:
+            self.r = (0,) * len(r)
+        dr = []
+        for i in range(len(self.r)):
+            dr.append(r[i] - self.r[i])
+        self.r = r
+        return dr
+
 class rchannel_wait_child(rchannel):
     """
     a special channel to get notification from the sigchld handler
@@ -1473,6 +1490,7 @@ class rchannel_wait_child(rchannel):
         rchannel.__init__(self, pch)
         # self.daemon = daemon
         self.set_expected([("*",)])
+        self.ru = resource_usage()
 
     def process_event(self, ev):
         assert ev.kind == ch_event.OK, ev.kind
@@ -1486,7 +1504,11 @@ class rchannel_wait_child(rchannel):
                     break
                 else:
                     raise
-            p = self.iom.del_process(pid, term_status)
+            if self.ru: 
+                rusage = self.ru.get_child_rusage()
+            else:
+                rusage = None
+            p = self.iom.del_process(pid, term_status, rusage)
             dead_processes.append(p)
         ev.dead_processes = dead_processes
         return ev
@@ -1883,6 +1905,7 @@ class child_process(process_base):
         self.cwd = cwd        # directory (may be None)
         self.pid = None       # process id
         self.term_status = None
+        self.rusage = None
 
     def is_garbage(self):
         # a process is garbage when it terminated and
@@ -2175,7 +2198,7 @@ class ioman:
                 "added child process %d\n" % p.pid)
         self.processes[p.pid] = p
 
-    def del_process(self, pid, term_status):
+    def del_process(self, pid, term_status, rusage):
         """
         delete a process of pid from interesting processes.
         set its status to term_status.
@@ -2190,6 +2213,7 @@ class ioman:
             return None
         p = self.processes[pid]
         p.term_status = term_status
+        p.rusage = rusage
         del self.processes[pid]
         if dbg>=2:
             LOG("ioman.del_process : "
@@ -2472,6 +2496,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.8  2009/09/17 18:47:53  ttaauu
+# ioman.py,gxpm.py,gxpd.py,gxpc.py,xmake: changes to track rusage of children and show them in state.txt
+#
 # Revision 1.7  2009/09/06 20:05:46  ttaauu
 # lots of changes to avoid creating many dirs under ~/.gxp_tmp of the root host
 #

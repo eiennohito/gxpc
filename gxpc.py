@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.37 2009/09/11 09:17:33 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.38 2009/09/17 18:47:53 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2189,15 +2189,16 @@ class cmd_interpreter:
 
     def handle_event_die(self, gupid, tid, ev):
         if self.opts.verbosity>=2:
-            Es("gxpc: handle_event_die(%s, %s, ev.payload=%s)\n" \
-               % (gupid, tid, ev.status))
+            Es("gxpc: handle_event_die(%s, %s, ev.status=%s, ev.rusage=%s)\n" \
+               % (gupid, tid, ev.status, ev.rusage))
         # Ws("shindayo\n")
         self.session.last_term_status[gupid] = int(ev.status)
         if self.notify_proc_exit_fp:
             # self.opts.notify_proc_exit > 0
-            self.safe_write(self.notify_proc_exit_fp,
-                            ("%s %s %s %s %s %s\n"
-                             % (gupid, tid, ev.src, ev.rid, ev.pid, ev.status)))
+            s = (gupid, tid, ev.src, ev.rid, ev.pid, ev.status, ev.rusage)
+            self.safe_write(self.notify_proc_exit_fp, "%s\n" % (s,))
+            # ("%s %s %s %s %s %s %s\n"
+            # % (gupid, tid, ev.src, ev.rid, ev.pid, ev.status, ev.rusage))
 
     def handle_event_peerstatus(self, gupid, tid, ev):
         if self.opts.verbosity>=2:
@@ -5030,6 +5031,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.38  2009/09/17 18:47:53  ttaauu
+# ioman.py,gxpm.py,gxpd.py,gxpc.py,xmake: changes to track rusage of children and show them in state.txt
+#
 # Revision 1.37  2009/09/11 09:17:33  ttaauu
 # fixed an explore bug that embeds wrong gxp_dir directory in the installer command line
 #

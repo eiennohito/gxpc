@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.9 2009/09/06 20:05:46 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.10 2009/09/17 18:47:53 ttaauu Exp $
 # $Name:  $
 #
 
@@ -739,7 +739,7 @@ class gxpd(ioman.ioman):
         # let the client know the process is dead
         m = gxpm.up(self.gupid, task.tid,
                     gxpm.event_die("proc", rid,
-                                   pid, p.term_status))
+                                   pid, p.term_status, p.rusage))
         task.forward_up(m, gxpm.unparse(m))
         # 2007 12/2 tau
         # fixed a descriptor-leak bug that does not close
@@ -2248,6 +2248,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.10  2009/09/17 18:47:53  ttaauu
+# ioman.py,gxpm.py,gxpd.py,gxpc.py,xmake: changes to track rusage of children and show them in state.txt
+#
 # Revision 1.9  2009/09/06 20:05:46  ttaauu
 # lots of changes to avoid creating many dirs under ~/.gxp_tmp of the root host
 #

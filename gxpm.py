@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpm.py,v 1.5 2009/06/06 14:06:23 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpm.py,v 1.6 2009/09/17 18:47:53 ttaauu Exp $
 # $Name:  $
 #
 
@@ -280,11 +280,12 @@ class event_die(event):
      <src>proc</src><rid>...</rid><pid>...</pid><status>...</status>
     </event>
     """
-    def __init__(self, src, rid, pid, status):
+    def __init__(self, src, rid, pid, status, rusage):
         self.src = src
         self.rid = rid
         self.pid = pid
         self.status = status
+        self.rusage = rusage
 
 class event_peerstatus(event):
         
@@ -339,6 +340,9 @@ class syn:
         self.event = event
 
 # $Log: gxpm.py,v $
+# Revision 1.6  2009/09/17 18:47:53  ttaauu
+# ioman.py,gxpm.py,gxpd.py,gxpc.py,xmake: changes to track rusage of children and show them in state.txt
+#
 # Revision 1.5  2009/06/06 14:06:23  ttaauu
 # added headers and logs
 #

@@ -30,3 +30,9 @@
 	under ~/.gxp_tmp when so many hosts are explored from the root.
 2009-09-07 Taura
 	* gxpc.py : fixed broken --root_target_name option
+2009-09-18 Taura
+	* ioman.py : added code to track rusage of children
+	* gxpm.py : added rusage field to handle_die
+	* gxpd.py : added rusage arg to handle_die
+	* gxpc.py : added code to emit rusage to notify_proc_exit_fp
+	* xmake : receive rusage from persistent gxpc,h. emit them in state.txt
