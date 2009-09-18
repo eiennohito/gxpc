@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.38 2009/09/17 18:47:53 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.39 2009/09/18 15:44:12 ttaauu Exp $
 # $Name:  $
 #
 
@@ -710,6 +710,7 @@ class e_cmd_opts(opt.cmd_opts):
         self.withidxnegmask = ("s", None)
         self.timeout = ("f", None)
         self.notify_proc_exit = ("i", None)
+        self.log_io = ("i", None)
         self.persist = ("i", None)
         self.keep_connection = ("i", None)
         self.tid = ("s", None)
@@ -1185,6 +1186,7 @@ class interpreter_opts(opt.cmd_opts):
         self.withidxnegmask = ("s", None)
         self.timeout = ("f", None)
         self.notify_proc_exit = ("i", -1)
+        self.log_io = ("i", -1)
         self.persist = ("i", 0)
         # 0 : never, 1 : until exit, 2 : forever
         self.keep_connection = ("i", gxpm.keep_connection_until_fin)
@@ -1419,6 +1421,7 @@ class cmd_interpreter:
         # setup default pipes 0 -> 0, 1 -> 1, 2 -> 2, etc.
         self.setup_default_pipes(self.opts)
         self.notify_proc_exit_fp = None
+        self.log_io_fp = None
         
         return 0
         
@@ -2142,8 +2145,8 @@ class cmd_interpreter:
 
     def handle_event_io(self, gupid, tid, ev):
         if self.opts.verbosity>=2:
-            Es("gxpc: handle_event_io(%s,%s,ev.src=%s,ev.fd=%s,ev.kind=%s,ev.payload=%s)\n" \
-               % (gupid, tid, ev.src, ev.fd, ev.kind, ev.payload))
+            Es("gxpc: handle_event_io(%s,%s,ev.src=%s,ev.kind=%s,ev.rid=%s,ev.pid=%s,ev.fd=%s,ev.payload=%s)\n" \
+               % (gupid, tid, ev.src, ev.kind, ev.rid, ev.pid, ev.fd, ev.payload))
         # this must match constants in ioman.ch_event
         OK = 0                              # got OK data
         IO_ERROR = -1                       # got IO error
@@ -2159,6 +2162,10 @@ class cmd_interpreter:
                 # self.event_log.append((time.time(), ev.payload))
                 # if fp is None: Es("what?\n")
                 # Es("fp=%s, payload=%s\n" % (fp, ev.payload))
+                if self.log_io_fp:
+                    evs = gxpm.unparse(ev)
+                    self.safe_write(self.log_io_fp, "%9d %s" % (len(evs), evs))
+
                 if fp is not None and \
                        self.safe_write(fp, ev.payload) == -1:
                     # Es("got epipe!\n")
@@ -3795,6 +3802,8 @@ See Also:
             self.opts.timeout = opts.timeout
         if opts.notify_proc_exit is not None:
             self.opts.notify_proc_exit = opts.notify_proc_exit
+        if opts.log_io is not None:
+            self.opts.log_io = opts.log_io
         if opts.persist is not None:
             self.opts.persist = opts.persist
         if opts.keep_connection is not None:
@@ -3804,7 +3813,9 @@ See Also:
 
         if opts.notify_proc_exit > 0:
             self.notify_proc_exit_fp = os.fdopen(opts.notify_proc_exit, "wb")
-            # self.set_close_on_exec_fd(opts.notify_proc_exit, 1)
+        if opts.log_io > 0:
+            self.log_io_fp = os.fdopen(opts.log_io, "wb")
+
 
         if cname == "ep":
             if opts.master is None:
@@ -4938,6 +4949,8 @@ Options:
 
     def make_makectl_cmd(self, args):
         if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        # make sure we have session files before jobs run
+        self.session.save(self.opts.verbosity)
         gxp_dir = os.environ["GXP_DIR"]
         make = os.path.join(gxp_dir, os.path.join("gxpbin", "xmake"))
         # pass session name to make sure child processes attach to
@@ -5031,6 +5044,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.39  2009/09/18 15:44:12  ttaauu
+# record individual job output in state.html
+#
 # Revision 1.38  2009/09/17 18:47:53  ttaauu
 # ioman.py,gxpm.py,gxpd.py,gxpc.py,xmake: changes to track rusage of children and show them in state.txt
 #

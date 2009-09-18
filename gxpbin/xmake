@@ -15,14 +15,14 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.43 2009/09/17 18:47:53 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.44 2009/09/18 15:44:13 ttaauu Exp $
 # $Name:  $
 #
 
 import errno,os,sys,random,re,select,shlex,signal,socket,stat,string,time
 import cStringIO
 
-import opt
+import gxpm,opt
     
 
 """
@@ -473,6 +473,7 @@ class Shot:
         """
         called when this shot has finished with status at cur_time
         """
+        if self.time_end is not None: return
         self.time_end = cur_time
         run = self.run
         assert run.shots[0] is self, (self, run.shots)
@@ -655,6 +656,19 @@ class Run:
         self.time_start = None          # set by the first shot's shot
         self.time_end = None
         self.rusage = None      # total rusage of the constituing shots
+        self.io_events = []     # total io events associated with the run
+
+    def get_output(self):
+        payload = []
+        for e in self.io_events:
+            payload.append(e.payload)
+        s = string.join(payload, "")
+        if s == "": 
+            return "<br>"
+        elif len(s) < 1000: 
+            return s
+        else:
+            return "..." + s[-1000:]
 
     def show_status(self):
         """
@@ -692,10 +706,11 @@ class Run:
                 return ("job_unknown", ("??? %s" % self.status), self.rusage)
 
     def accumulate_rusage(self, rusage):
-        if self.rusage is None:
+        if self.rusage is None and rusage is not None:
             self.rusage = [ 0 ] * len(rusage)
-        for i in range(len(self.rusage)):
-            self.rusage[i] = self.rusage[i] + rusage[i]
+        if self.rusage is not None and rusage is not None:
+            for i in range(len(self.rusage)):
+                self.rusage[i] = self.rusage[i] + rusage[i]
 
     # Run.finish
     def finish(self, finish_reason, status, rusage, cur_time):
@@ -1135,10 +1150,12 @@ td.man_working {
 <tr><td>make pid</td><td>%s</td></tr>
 <tr><td>make status</td><td class="%s">%s</td></tr>
 <tr><td>socket</td><td>%s</td></tr>
+<tr><td>gxpc cmd</td><td>%s</td></tr>
 <tr><td>gxpc pid</td><td>%s</td></tr>
 <tr><td>gxpc tid</td><td>%s</td></tr>
 <tr><td>gxpc status</td><td>%s</td></tr>
 <tr><td>gxpc fd</td><td>%s</td></tr>
+<tr><td>job io fd</td><td>%s</td></tr>
 </table>
 ''' % (server.sys_argv,
        server.hostname,
@@ -1150,8 +1167,9 @@ td.man_working {
        server.xmake_args, server.make_args, 
        server.make_pid, mk_class, mk_status,
        server.so_name, 
+       server.gxpc_cmd,
        server.gxpc_pid, server.tid, gxpc_status,
-       server.gxpc_fd))
+       server.gxpc_fd, server.job_io_fd))
 
     def mk_lnk(self, f, from_dir):
         """
@@ -1297,6 +1315,7 @@ td.man_working {
 <td>executed by</td>
 <td>turn around time</td>
 <td>status</td>
+<td>output</td>
 </tr>''')
         for w in works:
             if self.make_link:
@@ -1311,6 +1330,8 @@ td.man_working {
             for run in w.runs:
                 s = run.time_start
                 e = run.time_end
+                # todo : may be slow
+                io = run.get_output()
                 start_t = "<br>"
                 end_t = "<br>"
                 elapsed = "<br>"
@@ -1338,8 +1359,9 @@ td.man_working {
                           '<td>%s</td> '
                           '<td>%s</td> '
                           '<td class="%s">%s</td> '
+                          '<td><pre>%s</pre></td> '
                           % (start_t, end_t,
-                             man, elapsed, cls, sts)))
+                             man, elapsed, cls, sts, io)))
                 wp.write('</tr>\n')
                 i = i + 1
         wp.write('</table>\n')
@@ -1455,7 +1477,8 @@ td.man_working {
                   'executed by\t'
                   'turn around time\t'
                   'status\t'
-                  '%s\n' % self.getrusage_fields()))
+                  '%s\n' 
+                  % self.getrusage_fields()))
 
         for w in self.server.works:
             queued_t = time.ctime(w.req_time + self.server.start_t)
@@ -1858,6 +1881,7 @@ class xmake_server:
         self.gxpc_status = None
         self.gxpc_fd = None
         self.gxpc_partial_msg = None    # incomplete line
+        self.job_io_fd = None
         # UNIX domain socket to accept connect from mksh
         self.so = None
         self.so_name = None             # so's path name
@@ -1878,7 +1902,8 @@ class xmake_server:
         # list of all works 
         self.works = None
         self.shots_todo = None
-        self.shots = None
+        self.shots_outstanding = None
+        self.shots_issued = None
         self.matches = None
         # dict of all men (man name -> man)
         self.men = None
@@ -2368,7 +2393,7 @@ class xmake_server:
                 self.men[man_name] = man
                 for i in range(n):
                     self.free_men.append(man)
-                assert not self.shots.has_key(rid)
+                assert not self.shots_outstanding.has_key(rid)
         elif self.rid_gen.ping_pat.match(rid):
             if man:
                 man.set_heartbeat(cur_time)
@@ -2393,7 +2418,7 @@ class xmake_server:
                 if man.state < Man.state_leaving:
                     man.state = Man.state_leaving
         elif self.rid_gen.shot_pat.match(rid):
-            shot = self.shots.get(rid)
+            shot = self.shots_outstanding.get(rid)
             if shot:
                 assert shot.id == rid, (shot.id, rid)
                 self.handle_fin(shot, status, rusage)
@@ -2405,8 +2430,11 @@ class xmake_server:
             
     def handle_fin(self, shot, status, rusage):
         # a working process has just finished.
+        # already finished
+        if shot.time_end is not None: return
         self.release_resources(shot)
-        del self.shots[shot.id]
+        # do not delete so we can get output from this shot
+        del self.shots_outstanding[shot.id]
         if self.logfp:
             self.LOG(("shot %s finished with status=%s rusage=%s\n" 
                       % (shot, status, rusage)))
@@ -2414,7 +2442,66 @@ class xmake_server:
         _,p = self.parallelism[-1]
         self.parallelism.append((cur_time, p - 1))
         shot.finish(Shot.finish_reason_normal, int(status), rusage, cur_time)
+
+    def read_sz(self, fd, sz):
+        """
+        read exactly sz bytes or return None
+        """
+        A = []
+        r = sz
+        while r > 0:
+            try:
+                a = os.read(fd, r)
+            except IOError,e:
+                if e.args[0] == errno.EINTR:
+                    continue    # retry
+                else:
+                    raise
+            except OSError,e:
+                if e.args[0] == errno.EINTR:
+                    continue    # retry
+                else:
+                    raise
+            if a == "": 
+                os.close(fd)
+                return None
+            r = r - len(a)
+            A.append(a)
+        return string.join(A, "")
         
+    def recv_job_event_io(self, fd):
+        m = self.read_sz(fd, 10)
+        if m is None: return None
+        sz = int(m)
+        m = self.read_sz(fd, sz)
+        return gxpm.parse(m)
+
+    def recv_job_io(self):
+        """
+        receive job outputs
+        """
+        fd = self.job_io_fd
+        while 1:
+            try:
+                R = []
+                R,_,_ = select.select([ fd ], [], [], 0.0)
+            except select.error,e:
+                if e.args[0] == errno.EINTR:
+                    self.LOG("select interrupted in recv_job_io\n")
+                else:
+                    raise
+            if len(R) == 0: break
+            ev = self.recv_job_event_io(fd)
+            if ev is None:
+                self.LOG("EOF from gxpc job io\n")
+                self.job_io_fd = None
+                break
+            assert ev.rid in self.shots_issued, (ev.rid, self.shots_issued)
+            shot = self.shots_issued[ev.rid]
+            # record outputs from the run
+            self.LOG("got job io '%s'\n" % ev.payload)
+            shot.run.io_events.append(ev)
+
     def find_matches(self):
         fifo = 1
         if self.logfp:
@@ -2506,7 +2593,8 @@ class xmake_server:
             n = n + 1
             self.n_state_changes = self.n_state_changes + 1
             self.parallelism.append((cur_time, p + n))
-            self.shots[shot.id] = shot
+            self.shots_outstanding[shot.id] = shot
+            self.shots_issued[shot.id] = shot
             # check if a job is returning
             # may be too much overhead
             if n % 1000 == 0:
@@ -2571,29 +2659,35 @@ class xmake_server:
         # child gxpc write process terminatation events to w.
         # parent gets them from r
         r,w = os.pipe()
-        # r0 becomes stdin of the child
+        rj,wj = os.pipe()
+        # rc becomes stdin of the child
         # the parent immediately closes w0
         # net effect is gxpc immediately receives EOF from its stdin
-        r0,w0 = os.pipe()
+        rc,wc = os.pipe()
+
         rid = self.rid_gen.get_join_rid()
         cmd = ([ self.opts.gxpc ] + self.e_args
                + [ "e", "--tid", tid, "--persist", "1",
-                   "--rid", rid, "--notify_proc_exit", ("%d" % w) ])
+                   "--rid", rid, 
+                   "--notify_proc_exit", ("%d" % w),
+                   "--log_io", ("%d" % wj) ])
         pid = os.fork()
         if pid == 0:
             self.close_fds()
             # os.setpgrp()
             os.close(r)
-            os.close(w0)
-            os.dup2(r0, 0)              # make r0 stdin of the child
+            os.close(rj)
+            os.close(wc)
+            os.dup2(rc, 0)              # make rc stdin of the child
             if self.logfp:
                 self.LOG("run persistent task %s\n" % cmd)
             os.execvp(cmd[0], cmd)
         else:
             os.close(w)
-            os.close(r0)
-            os.close(w0)
-            return cmd,pid,r
+            os.close(wj)
+            os.close(rc)
+            os.close(wc)
+            return cmd,pid,r,rj
         
     def show_state(self):
         if self.logfp:
@@ -2745,10 +2839,10 @@ class xmake_server:
                     self.LOG("it is the initial process\n")
                 self.gxpc_pid = None
                 self.gxpc_status = status
-            elif self.shots.has_key(pid):
+            elif self.shots_outstanding.has_key(pid):
                 if self.logfp:
                     self.LOG("it is a shot running locally\n")
-                shot = self.shots[pid]
+                shot = self.shots_outstanding[pid]
                 assert shot.id == pid, (shot.id, pid)
                 self.handle_fin(shot, status, rusage)
             elif pid == self.pinger.ping_pid:
@@ -2757,7 +2851,7 @@ class xmake_server:
                 self.pinger.ping_pid = None
             else:
                 if self.logfp:
-                    self.LOG("it is another job\n")
+                    self.LOG("it is a remote job\n")
             self.n_state_changes = self.n_state_changes + 1
         if self.logfp:
             self.LOG("%d children reaped\n" % len(pids))
@@ -2787,13 +2881,13 @@ class xmake_server:
 
     def abandon_all_shots_todo(self):
         cur_time = self.cur_time()
-        shots = self.shots.values()
+        shots = self.shots_outstanding.values()
         if self.logfp:
             self.LOG(("exiting %d outstanding processes\n"
                       % len(shots)))
         for shot in shots:
             shot.finish(Shot.finish_reason_interrupt, None, None, cur_time)
-        self.shots = {}
+        self.shots_outstanding = {}
         if self.logfp:
             self.LOG(("exiting %d waiting processes\n"
                       % len(self.shots_todo)))
@@ -2841,7 +2935,7 @@ class xmake_server:
             Es("xmake: %s" % msg)
             self.LOG(msg)
         self.rid_gen = make_rid_generator()
-        self.gxpc_cmd,self.gxpc_pid,self.gxpc_fd = self.run_persistent_e(self.tid)
+        self.gxpc_cmd,self.gxpc_pid,self.gxpc_fd,self.job_io_fd = self.run_persistent_e(self.tid)
         self.gxpc_partial_msg = ""
         self.parallelism = [ (self.cur_time(), 0) ]
         self.conf = xmake_server_conf()
@@ -2853,7 +2947,8 @@ class xmake_server:
         self.make_pid = self.run_make() # run GNU make
         self.works = []                 # list of works
         self.shots_todo = []            # shots to do
-        self.shots = {}                 # shots in progress (pid/rid -> )
+        self.shots_issued = {}             # outstanding shots
+        self.shots_outstanding = {}     # all shots
         self.matches = []
         self.men = {}                   # list of free men
         self.local_man = Man(local_man_name, len(self.men), 1, self.cur_time())
@@ -2889,7 +2984,7 @@ class xmake_server:
                     self.LOG(msg)
                 Es("xmake: %s" % msg)
             elif nd_after is not None and \
-                     cur_time > nd_after and len(self.shots) == 0:
+                     cur_time > nd_after and len(self.shots_outstanding) == 0:
                 self.interrupted = 1
                 msg = ("soft limit %.3f reached. wait for outstanding"
                        " jobs to finish. waiting jobs will exit with %d\n"
@@ -2914,6 +3009,7 @@ class xmake_server:
         R = [ self.child_rfd ]
         if self.so: R.append(self.so)
         if self.gxpc_fd: R.append(self.gxpc_fd)
+        if self.job_io_fd: R.append(self.job_io_fd)
         if self.n_state_changes > xmake_server.FAST_UPDATE_THRESHOLD:
             nr = self.next_record_time_1
         else:
@@ -2941,6 +3037,7 @@ class xmake_server:
         cur_time_after = self.cur_time()
         if self.so in RR: self.recv_works()
         if self.gxpc_fd in RR: self.recv_fins()
+        if self.job_io_fd in RR: self.recv_job_io()
         if self.child_rfd in RR: self.handle_child_death()
         if cur_time_after - cur_time > 1.0:
             # if the server is very busy, it may be missing
@@ -3088,6 +3185,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.44  2009/09/18 15:44:13  ttaauu
+# record individual job output in state.html
+#
 # Revision 1.43  2009/09/17 18:47:53  ttaauu
 # ioman.py,gxpm.py,gxpd.py,gxpc.py,xmake: changes to track rusage of children and show them in state.txt
 #
