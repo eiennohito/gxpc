@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.39 2009/09/18 15:44:12 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.40 2009/09/27 17:15:14 ttaauu Exp $
 # $Name:  $
 #
 
@@ -3776,10 +3776,10 @@ See Also:
         if opts.parse(args) == -1:
             return cmd_interpreter.RET_NOT_RUN
         # overwrite default
+        # ugly stuff begins
         self.opts.withall = opts.withall
         if opts.withmask is not None:
             self.opts.withmask = opts.withmask
-        # ugly
         if self.opts.withall:
             self.opts.withmask = None
         if opts.withhostmask is not None:
@@ -5044,6 +5044,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.40  2009/09/27 17:15:14  ttaauu
+# added comment on gxpm.py
+#
 # Revision 1.39  2009/09/18 15:44:12  ttaauu
 # record individual job output in state.html
 #
