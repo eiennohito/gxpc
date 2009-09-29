@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.19 2009/09/06 20:05:46 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.20 2009/09/29 10:06:12 ttaauu Exp $
 # $Name:  $
 #
 
@@ -269,7 +269,7 @@ class installer(expectd.expectd):
         gxp_dir = os.environ["GXP_DIR"]
         flag = os.path.join(gxp_dir, "REMOTE_INSTALLED")
         if dbg>=2: 
-            ioman.LOG("checking remote flag %s\n" % (gxp_dir, flag))
+            ioman.LOG("checking remote flag %s/%s\n" % (gxp_dir, flag))
         if os.path.exists(flag):
             if dbg>=2: ioman.LOG("exists, remotely installed\n")
             return 1
@@ -597,6 +597,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.20  2009/09/29 10:06:12  ttaauu
+# fixed a bug in inst_local.py with --verbosity 2
+#
 # Revision 1.19  2009/09/06 20:05:46  ttaauu
 # lots of changes to avoid creating many dirs under ~/.gxp_tmp of the root host
 #
