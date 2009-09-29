@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.44 2009/09/18 15:44:13 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.45 2009/09/29 10:37:24 ttaauu Exp $
 # $Name:  $
 #
 
@@ -173,6 +173,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.parallelism_gpl = ("s", "parallelism.gpl")
         self.parallelism_terminal = ("s", "png") # gnuplot type
         self.parallelism_image = ("s", "parallelism.png")
+        self.shine_file = ("s", "shine")
         self.gnuplot_err = ("s", "gnuplot.err")
         self.max_records = ("i", 10000)
         self.max_records_in_page = ("i", 500)
@@ -2700,8 +2701,26 @@ class xmake_server:
                          self.gxpc_pid, self.gxpc_fd)))
 
     FAST_UPDATE_THRESHOLD = 10
+
+    def check_shine_file(self):
+        """
+        check if shine file exists and updated after start_t
+        """
+        if self.interrupted > 0: return
+        shine = os.path.join(self.opts.state_dir, self.opts.shine_file)
+        try:
+            st = os.stat(shine)
+        except OSError,e:
+            return
+        mtime = st[stat.ST_MTIME]
+        if self.start_t < mtime:
+            msg = "found shine file (%s) updated, terminating..." % shine
+            self.LOG("%s\n" % msg)
+            Es("xmake : %s\n" % msg)
+            self.interrupted = self.interrupted + 1
     
     def periodic(self, finished):
+        self.check_shine_file()
         self.show_state()
         t0 = self.cur_time()
         if (finished or self.last_record_time is None
@@ -3185,6 +3204,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.45  2009/09/29 10:37:24  ttaauu
+# shine file in xmake
+#
 # Revision 1.44  2009/09/18 15:44:13  ttaauu
 # record individual job output in state.html
 #
