@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.45 2009/09/29 10:37:24 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.46 2009/10/25 14:51:53 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1581,9 +1581,17 @@ last_ping_time = %.3f<br>
 set style fill solid
 plot '-' with boxes
 """)
-        for t,p in self.server.parallelism:
+        s = 0
+        p = 0
+        for t,q in self.server.parallelism:
+            # parallelism became q at time t,
+            # which means parallelism was p during [s,t]
+            wp.write('%.3f %d\n' % (s, p))
             wp.write('%.3f %d\n' % (t, p))
-        _,p = self.server.parallelism[-1]
+            s = t
+            p = q
+        # _,p = self.server.parallelism[-1]
+        wp.write('%.3f %d\n' % (s, p))
         wp.write('%.3f %d\n' % (cur_time, p))
         wp.write('e\n')
         wp.close()
@@ -3204,6 +3212,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.46  2009/10/25 14:51:53  ttaauu
+# ChangeLog 2009-10-25 xmake
+#
 # Revision 1.45  2009/09/29 10:37:24  ttaauu
 # shine file in xmake
 #
