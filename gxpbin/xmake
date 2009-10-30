@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.46 2009/10/25 14:51:53 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.47 2009/10/30 08:18:31 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1186,7 +1186,7 @@ td.man_working {
         # say real_from_dir = /a/b/x/y
         real_from_dir = os.path.realpath(from_dir)
         # common = /a/b/
-        common = os.path.commonprefix([real_f, real_from_dir])
+        common = os.path.dirname(os.path.commonprefix([real_f, real_from_dir]))
         d = real_f
         base = ""
         # we then compute path from common -> f (i.e., d/e/f part)
@@ -3212,6 +3212,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.47  2009/10/30 08:18:31  ttaauu
+# fixed the bug reported by masa-tanaka. see ChangeLog 2009-10-30
+#
 # Revision 1.46  2009/10/25 14:51:53  ttaauu
 # ChangeLog 2009-10-25 xmake
 #
