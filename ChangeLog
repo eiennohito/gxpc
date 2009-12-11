@@ -39,3 +39,10 @@
 2009-09-19 Taura
 	* gxpc.py : added --log_io option 
 	* xmake : record individual job output in state.html
+2009-10-25 Taura
+	* xmake : fixed a bug in generating parallelism.gpl. now it correctly handles 
+	cases where a prallelism is constant for long time
+2009-10-30 Taura
+	* xmake : fixed a bug reported by masa-tanaka, that 
+	xmake failed to make a link from /a/bc to /a/bd, because
+	os.path.commonprefix returns /a/b, rather than the desired /a.
