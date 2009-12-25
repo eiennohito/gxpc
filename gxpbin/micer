@@ -291,7 +291,7 @@ class ProcReader:
         return self.states[pid]
 
     def get_nicer_info(self, mom_users, me, mom_pct):
-        """ Returns (Nora pcpu) """
+        """ Returns unrecognized (a.k.a Nora) pcpu: (mine, others') """
         u_pcpu = {}
         for pid,pcpu in self.pcpus.items():
             if pid in self.users:
@@ -305,14 +305,16 @@ class ProcReader:
                 u_pcpu[user] -= mom_pct
                 if u_pcpu[user] < 0.0:
                     u_pcpu[user] = 0.0
-        sum_pcpu = 0.0
+        other_pcpu = 0.0
+        my_pcpu = 0.0
         for user,pcpu in u_pcpu.items():
             if user == me:
                 if self.dbg >= self.DEBUG_DEBUG:
                     Es("my pcpu = %.3f\n" % pcpu)
+                my_pcpu = pcpu
             else:
-                sum_pcpu += pcpu
-        return sum_pcpu
+                other_pcpu += pcpu
+        return (my_pcpu, other_pcpu)
 
 class W:
     """ Obtain information about users"""
@@ -641,7 +643,12 @@ class Mom:
         min_jobseq = jobseq + 1
         while(len(logfiles) > 0):
             f = logfiles.pop()
-            fp = open(f, "r")
+            try:
+                fp = open(f, "r")
+            except:
+                if self.dbg >= 1:
+                    Es("Error: cannot open %s\n" % (f))
+                return "Unknown"
             while True:
                 line = fp.readline()
                 if line == '':
@@ -699,21 +706,25 @@ class Micer:
         nUsers = self.w.nUsers
         if self.dbg >= 1:
             Es("Info: # of users = %d\n"%(nUsers))
-            Es("Info: CPU load = %f\n"%(self.pcpu))
+            Es("Info: Other users' CPU load = %f\n"%(self.pcpu))
         if nUsers != 0:
             if self.dbg >= 1: Es("Info: interactive users exist\n")
             return False
 
         # Gather information
         mom_users = self.mom.getMomUsers()
-        self.pcpu = self.reader.get_nicer_info(mom_users, self.env.me, self.env.pcpuMom)
+        (my_pcpu, self.pcpu) = self.reader.get_nicer_info(mom_users, self.env.me, self.env.pcpuMom)
         ncpus = self.reader.num_cpus() - len(mom_users) * self.env.pcpuMom / 100.0
 
         if self.running:
             threshold = self.env.pcpuDown * ncpus
+            if my_pcpu > ncpus * 100:
+                if self.dbg >= 1:
+                    Es("Info: CPU load of my processes (%.3f) is higher than the limit (%.3f)\n"%(my_pcpu, ncpus * 100))
+                return False
             if self.pcpu > threshold:
                 if self.dbg >= 1:
-                    Es("Info: CPU load (%.3f) is higher than the threshold (%.3f)\n"%(self.pcpu, threshold))
+                    Es("Info: CPU load of other processes (%.3f) is higher than the threshold (%.3f)\n"%(self.pcpu, threshold))
                 return False
             else:
                 return True
@@ -785,6 +796,7 @@ class Micer:
         sys.exit(self.env.childStatus)
 
 def main():
+    os.environ['MICER_PID'] = str(os.getpid())
     micer = Micer()
     micer.main()
 
