@@ -30,6 +30,9 @@
 	under ~/.gxp_tmp when so many hosts are explored from the root.
 2009-09-07 Taura
 	* gxpc.py : fixed broken --root_target_name option
+2009-09-07 Taura
+	* su_cmd.expect : renamed the original su_cmd (expect script) to this
+	* su_cmd : a newly added python script
 2009-09-18 Taura
 	* ioman.py : added code to track rusage of children
 	* gxpm.py : added rusage field to handle_die
@@ -46,3 +49,4 @@
 	* xmake : fixed a bug reported by masa-tanaka, that 
 	xmake failed to make a link from /a/bc to /a/bd, because
 	os.path.commonprefix returns /a/b, rather than the desired /a.
+
