@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.20 2009/09/29 10:06:12 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.21 2009/12/27 16:02:20 ttaauu Exp $
 # $Name:  $
 #
 
@@ -161,7 +161,7 @@ class inst_options(opt.cmd_opts):
         # ---------------- 
         # target label of the gxpd that eventually starts
         self.target_label = ("s", None)
-        self.created_explicitly = ("i", 0)
+        # self.created_explicitly = ("i", 0)
         # gupid of the root gxpd
         self.root_gupid = ("s", None)
         # sequence number
@@ -198,6 +198,7 @@ class inst_options(opt.cmd_opts):
         self.install_timeout = ("f", default_install_timeout)
         self.dont_wait = (None, 0)
         self.dbg = ("i", 0)
+
     def postcheck(self):
         if len(self.python) == 0:
             self.python.append(default_python)
@@ -530,6 +531,7 @@ check_install_exec(python=%r,
             #  "Brought up on GUPID ACCESS_PORT TARGET_LABEL HOSTNAME\n"
             # e.g.,
             #  "Brought up on hongo100-tau-2008-07-06-14-40-00-3878 None hongo hongo100\n"
+            # ioman.LOG("Brought up on %s %s\n" % (g, O.seq))
             self.Wm("Brought up on %s %s\n" % (g, O.seq))
         else:
             if dbg>=2:
@@ -597,6 +599,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.21  2009/12/27 16:02:20  ttaauu
+# fixed broken --create_daemon 1 option
+#
 # Revision 1.20  2009/09/29 10:06:12  ttaauu
 # fixed a bug in inst_local.py with --verbosity 2
 #

@@ -49,4 +49,10 @@
 	* xmake : fixed a bug reported by masa-tanaka, that 
 	xmake failed to make a link from /a/bc to /a/bd, because
 	os.path.commonprefix returns /a/b, rather than the desired /a.
-
+2009-10-30 Taura
+	* gxpc.py : fixed a broken --created_daemon option reported by Kawahara-san.
+	lots of refactoring around session and daemon findings.
+	directory names also changed. it now uses
+	/tmp/gxp-user-default/gxp-xxxxxxxx-{daemon,stdout,stderr}-host-user-...-pid
+	and
+	/tmp/gxp-user-default/gxp-xxxxxxxx-{daemon,stdout,stderr}-host-user-...-pid-sid

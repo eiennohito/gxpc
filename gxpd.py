@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.10 2009/09/17 18:47:53 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.11 2009/12/27 16:02:20 ttaauu Exp $
 # $Name:  $
 #
 
@@ -282,7 +282,9 @@ class gxpd_opts(opt.cmd_opts):
         # address to listen to
         self.listen = ("s", "unix:")
         # 1 if it is created with --create_session 1
-        self.created_explicitly = ("i", 0)
+        # self.created_explicitly = ("i", 0)
+        # prefix of stdout/stderr/unix-socket
+        self.name_prefix = ("s", "gxp-00000000")
         self.qlen = ("i", 1000)
         self.remove_self = (None, 0)
         self.root_gupid = ("s", "")
@@ -465,7 +467,7 @@ class gxpd(ioman.ioman):
                 raise
         os.chmod(directory, 0700)
 
-    def parse_listen_arg(self, listen_arg, created_explicitly):
+    def parse_listen_arg(self, listen_arg, name_prefix): # created_explicitly
         """
         Syntax of listen_arg
              unix:path | inet:addr:port
@@ -512,12 +514,13 @@ class gxpd(ioman.ioman):
             if path == "":
                 gxp_tmp = self.get_gxp_tmp()
                 self.ensure_dir(gxp_tmp)
-                if created_explicitly:
-                    prefix = "Gxpd"
-                else:
-                    prefix = "gxpd"
+                if 0:
+                    if created_explicitly:
+                        prefix = "Gxpd"
+                    else:
+                        prefix = "gxpd"
                 path = os.path.join(self.get_gxp_tmp(), 
-                                    ("%s-%s" % (prefix, self.gupid)))
+                                    ("%s-daemon-%s" % (name_prefix, self.gupid)))
             return socket.AF_UNIX,path
         elif af_str == "NONE":
             return 0,None
@@ -525,7 +528,8 @@ class gxpd(ioman.ioman):
             return None,None            # error
         
 
-    def setup_channel_listen(self, listen_arg, created_explicitly, qlen):
+                                               # created_explicitly, 
+    def setup_channel_listen(self, listen_arg, name_prefix, qlen):
         """
         Open a socket to listen on. af is an address family
         (normally socket.AF_INET), addr is an address to bind to
@@ -535,7 +539,8 @@ class gxpd(ioman.ioman):
         return 0 on success, -1 on error
         
         """
-        af,addr = self.parse_listen_arg(listen_arg, created_explicitly)
+        # created_explicitly
+        af,addr = self.parse_listen_arg(listen_arg, name_prefix)
         if addr is None:
             if af == 0:
                 return 0
@@ -564,16 +569,17 @@ class gxpd(ioman.ioman):
         # if xp.fileno() > 2: xp.close()
 
         opts = self.opts
-        if opts.created_explicitly:
-            oprefix = "Gxpout"
-            eprefix = "Gxperr"
-        else:
-            oprefix = "gxpout"
-            eprefix = "gxperr"
+        if 0:
+            if opts.created_explicitly:
+                oprefix = "Gxpout"
+                eprefix = "Gxperr"
+            else:
+                oprefix = "gxpout"
+                eprefix = "gxperr"
         opath = os.path.join(self.get_gxp_tmp(),
-                             ("%s-%s" % (oprefix, self.gupid)))
+                             ("%s-stdout-%s" % (opts.name_prefix, self.gupid)))
         epath = os.path.join(self.get_gxp_tmp(),
-                             ("%s-%s" % (eprefix, self.gupid)))
+                             ("%s-stderr-%s" % (opts.name_prefix, self.gupid)))
         if dbg>=2:
             ioman.LOG("redirecting stdout to %s\n" % opath)
             ioman.LOG("redirecting stderr to %s\n" % epath)
@@ -585,30 +591,6 @@ class gxpd(ioman.ioman):
         os.chmod(epath, 0600)
         os.dup2(ep.fileno(), 2)
         if ep.fileno() > 2: ep.close()
-
-    def redirect_stdout_stderr_obsolete(self, opts):
-        if opts.redirect_stdout:
-            if opts.created_explicitly:
-                prefix = "Gxpout"
-            else:
-                prefix = "gxpout"
-            path = os.path.join(self.get_gxp_tmp(),
-                                ("%s-%s" % (prefix, self.gupid)))
-            fp = open(path, "wb")
-            os.chmod(path, 0600)
-            os.dup2(fp.fileno(), 1)
-            if fp.fileno() > 1: fp.close()
-        if opts.redirect_stderr:
-            if opts.created_explicitly:
-                prefix = "Gxperr"
-            else:
-                prefix = "gxperr"
-            path = os.path.join(self.get_gxp_tmp(),
-                                ("%s-%s" % (prefix, self.gupid)))
-            fp = open(path, "wb")
-            os.chmod(path, 0600)
-            os.dup2(fp.fileno(), 2)
-            if fp.fileno() > 2: fp.close()
 
     def setup_parent_peer(self, opts):
         """
@@ -2134,7 +2116,7 @@ class gxpd(ioman.ioman):
         if self.init(opts) == -1: return gxpd.EX_CONFIG
         self.set_target_label(opts.target_label)
         # open socket to receive requests
-        if self.setup_channel_listen(opts.listen, opts.created_explicitly, opts.qlen) == -1:
+        if self.setup_channel_listen(opts.listen, opts.name_prefix, opts.qlen) == -1:
             return gxpd.EX_OSERR
         # set environment variables
         if self.set_gxpd_environment(opts.remove_self, opts.root_gupid) == -1:
@@ -2248,6 +2230,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.11  2009/12/27 16:02:20  ttaauu
+# fixed broken --create_daemon 1 option
+#
 # Revision 1.10  2009/09/17 18:47:53  ttaauu
 # ioman.py,gxpm.py,gxpd.py,gxpc.py,xmake: changes to track rusage of children and show them in state.txt
 #

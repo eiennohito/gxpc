@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.47 2009/10/30 08:18:31 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.48 2009/12/27 16:02:20 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2126,7 +2126,7 @@ class xmake_server:
             dire,basex = None,None
         else:
             dire,base = os.path.split(self.session)
-            session_pat = re.compile("(G|g)xpsession-[^-]+-[^-]+-(.*)")
+            session_pat = re.compile("(G|g)xp-[^-]+-session-[^-]+-[^-]+-(.*)")
             m = session_pat.match(base)
             basex = m.group(2)
         name = os.path.join(dire, ("xmake-%s-%s" % (cookie, basex)))
@@ -3212,6 +3212,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.48  2009/12/27 16:02:20  ttaauu
+# fixed broken --create_daemon 1 option
+#
 # Revision 1.47  2009/10/30 08:18:31  ttaauu
 # fixed the bug reported by masa-tanaka. see ChangeLog 2009-10-30
 #

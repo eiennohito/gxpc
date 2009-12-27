@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.40 2009/09/27 17:15:14 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.41 2009/12/27 16:02:20 ttaauu Exp $
 # $Name:  $
 #
 
@@ -24,7 +24,8 @@ def prompt_():
         D = "/tmp/gxp-%s-%s" % (os.environ.get("USER", "unknown"),
                                 os.environ.get("GXP_TMP_SUFFIX", "default"))
         for d in os.listdir(D):
-            if "gxpsession-" == d[0:len("gxpsession-")]:
+            # "gxp-xxxxxxxx-session-..."
+            if d[0:4] == "gxp-" and d[12:21] == "-session-":
                 if s == "":
                     s = os.path.join(D, d)
                 else:
@@ -1337,7 +1338,9 @@ class cmd_interpreter:
     def __init__(self):
         self.init_level = 0
         self.gupid = None
+        # full path to the socket file to talk to the daemon
         self.daemon_addr = None
+        # full path to the session file
         self.session_file = None
         self.session = None
         self.master_pids = []
@@ -1348,6 +1351,7 @@ class cmd_interpreter:
         if self.init_level >= 1: return 0
         self.init_level = 1
         # determine session and daemon
+        self.gxp_tmp = self.get_gxp_tmp()
         if self.find_or_create_session() == -1:
             return -1
         assert self.gupid is not None
@@ -1376,8 +1380,6 @@ class cmd_interpreter:
                 Es("gxpc: broken session file %s, "
                    "creating a new session\n" \
                    % (self.session_file))
-                # self.cleanup_session_file()
-                # self.safe_remove(self.session_file)
             else:
                 return 0 # OK
         else:
@@ -1473,15 +1475,16 @@ class cmd_interpreter:
         ensure connection to gxpd.
         """
         if self.so is None:
+            daemon_addr_path = os.path.join(self.gxp_tmp, self.daemon_addr)
             # so = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             for i in range(2):
                 try:
                     so = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                    so.connect(self.daemon_addr)
+                    so.connect(daemon_addr_path)
                     break
                 except socket.error,e:
-                    Es(("gxpc: warning failed to connect to gxpd, retry %s\n"
-                        % (e.args,)))
+                    Es(("gxpc: warning failed to connect to gxpd (%s), retry %s\n"
+                        % (daemon_addr_path, e.args)))
                     so.close()
                     time.sleep(1.0)
             if i > 0:
@@ -1583,20 +1586,6 @@ class cmd_interpreter:
         else:
             return 0
 
-    def get_gxp_dir_xx(self):
-        # ugly: copied from gxpd.py
-        # gxp_dir = os.environ.get("GXP_DIR", "")
-        # if gxp_dir != "": return gxp_dir
-        full_path_gxpd_py = gxpd.get_this_file()
-        if full_path_gxpd_py is None: return None
-        # full_path_gxpd_py should be like a/gxp3/gxpd.py
-        a,b = os.path.split(full_path_gxpd_py)
-        if b != "gxpd.py":
-            Es("%s : could not derive GXP_DIR from %s\n" \
-               % (self.gupid, full_path_gxpd_py))
-            return None
-        return a
-
     def get_gxp_dir(self):
         d,err = this_file.get_this_dir()
         if d is None:
@@ -1627,6 +1616,276 @@ class cmd_interpreter:
                                   "GXP_GUPID"    : self.gupid,
                                   "PATH"         : path,
                                   "PYTHONPATH"   : pypath })
+    # session management
+
+    def mk_generic_session_file_pattern_regexp(self):
+        return re.compile("/(?P<prefix>[Gg]xp-\d+)-session-(?P<gupid>.*-(?P<pid>\d+))-(?P<id>\d+)$")
+
+    def mk_generic_daemon_addr_pattern_regexp(self):
+        return re.compile("/(?P<prefix>[Gg]xp-\d+)-daemon-(?P<gupid>.*-(?P<pid>\d+))$")
+
+    def parse_session_filename(self, session_file):
+        """
+        break session file name (like gxp-xxxxxx-session-monako-tau-..-pid-yyyyyy)
+        into components (gxp-xxxxxx, monako-tau-...-pid, pid, yyyyyyyy)
+        """
+        p = self.mk_generic_session_file_pattern_regexp()
+        m = p.search(session_file)
+        if m is None: return None,None,None,None
+        prefix,gupid,pid,sid = m.group("prefix", "gupid", "pid", "id")
+        pid = self.safe_atoi(pid, None)
+        if pid is None: return None,None,None,None
+        sid = self.safe_atoi(sid, None)
+        if sid is None: return None,None,None,None
+        return prefix,gupid,pid,sid
+
+    def parse_daemon_addr(self, daemon_addr):
+        """
+        break daemon addr name (like gxp-xxxxxx-daemon-monako-tau-..-pid)
+        into components (gxp-xxxxxx, monako-tau-...-pid, pid)
+        """
+        p = self.mk_generic_daemon_addr_pattern_regexp()
+        m = p.search(daemon_addr)
+        if m is None: return None,None,None
+        prefix,gupid,pid = m.group("prefix", "gupid", "pid")
+        pid = self.safe_atoi(pid, None)
+        if pid is None: return None,None,None
+        return prefix,gupid,pid
+
+    def mk_daemon_addr(self, prefix, gupid):
+        base = "%s-daemon-%s" % (prefix, gupid)
+        return os.path.join(self.gxp_tmp, base)
+
+    def mk_stdout_file(self, prefix, gupid):
+        base = "%s-stdout-%s" % (prefix, gupid)
+        return os.path.join(self.gxp_tmp, base)
+
+    def mk_stderr_file(self, prefix, gupid):
+        base = "%s-stderr-%s" % (prefix, gupid)
+        return os.path.join(self.gxp_tmp, base)
+
+    def generate_session_filename_of_daemon_addr(self, daemon_addr):
+        """
+        given daemon_addr, generate a random session filename for it
+        """
+        # gxp-xxxxxxxx-daemon-... -> gxp-xxxxxxxx-session-... 
+        prefix,gupid,_ = self.parse_daemon_addr(daemon_addr)
+        assert prefix, deamon_addr
+        session_prefix = ("%s-session-%s" % (prefix, gupid))
+        if self.opts.create_session > 0 or self.opts.create_daemon > 0:
+            # gxp-xxxxxxxx-session-... -> Gxp-xxxxxxxx-session-... 
+            session_prefix = session_prefix.replace("gxp-", "Gxp-")
+        id = random.randint(0, 99999999)
+        base = "%s-%08d" % (session_prefix, id)
+        return os.path.join(self.gxp_tmp, base)
+
+    def find_session_files_of_daemon_addr(self, daemon_addr):
+        """
+        given gupid, return session files that may be associated
+        with it.
+        """
+        assert (daemon_addr[0] == "/"), daemon_addr
+        daemon_addr_base = os.path.basename(daemon_addr)
+        prefix,gupid,_ = self.parse_daemon_addr(daemon_addr_base)
+        session_pat = ("%s-session-%s-*" % (prefix, gupid))
+        glob_pat = os.path.join(self.gxp_tmp, session_pat)
+        return glob.glob(glob_pat)
+
+    def generate_prefix(self):
+        """
+        generate the first two components of various files
+        (daemon addr, session file, stdout, stderr file)
+        gxp-xxxxxxxx or Gxp-xxxxxxxx
+        """
+        id = random.randint(0, 99999999)
+        if self.opts.create_session > 0 or self.opts.create_daemon > 0:
+            return "Gxp-%08d" % id
+        else:
+            return "gxp-%08d" % id
+
+    def mk_specified_session_file_pattern_str(self):
+        """
+        return user-specified session pattern
+        """
+        # user-specified session pattern
+        # 1. command line (--session)
+        # 2. environment variable (GXP_SESSION)
+        # 3. default is match always (.*)
+        opts = self.opts
+        if opts.session is not None:
+            if opts.verbosity >= 2:
+                Es("gxpc: --session %s given\n" % opts.session)
+            return opts.session
+        # check env
+        env_session = os.environ.get("GXP_SESSION")
+        if env_session is not None:
+            if opts.verbosity >= 2:
+                Es("gxpc: --session not given, use GXP_SESSION (%s)\n" 
+                   % env_session)
+            return env_session
+        # default
+        assert (opts.create_session <= 0), opts.create_session
+        assert (opts.create_daemon <= 0), opts.create_daemon
+        default_session_pat = os.path.join(self.gxp_tmp, "gxp-\d+-session-.*")
+        if opts.verbosity >= 2:
+            Es("gxpc: neither --session nor GXP_SESSION given, "
+               "use default (%s)\n" % default_session_pat)
+        return default_session_pat
+
+    def mk_specified_session_file_pattern_regexp(self):
+        """
+        return a reg exp object to search for session files,
+        depending on --session or GXP_SESSION
+        """
+        opts = self.opts
+        session_pat_str = self.mk_specified_session_file_pattern_str()
+        # compile user specified pattern
+        if opts.verbosity >= 2:
+            Es("gxpc: session pattern to search for is %s\n" % session_pat_str)
+        try:
+            return re.compile(session_pat_str)
+        except ValueError,e:
+            Es("gxpc: %s %s\n" % (session_pat_str, e.args))
+            return None
+        
+    def mk_specified_daemon_addr_pattern_str(self):
+        opts = self.opts
+        if opts.daemon is not None:
+            if opts.verbosity >= 2:
+                Es("gxpc: --daemon %s given\n" % opts.daemon)
+            return opts.daemon
+        env_daemon = os.environ.get("GXP_DAEMON")
+        if env_daemon is not None:
+            if opts.verbosity >= 2:
+                Es("gxpc: --daemon not given, use GXP_DAEMON (%s)\n" 
+                   % env_daemon)
+            return env_daemon
+        assert (opts.create_daemon <= 0), opts.create_daemon 
+        default_daemon_pat = os.path.join(self.gxp_tmp, "[Gg]xp-\d+-daemon-.*")
+        if opts.verbosity >= 2:
+            Es("gxpc: neither --daemon nor GXP_DAEMON given, "
+               "use default (%s)\n" % default_daemon_pat)
+        return default_daemon_pat
+
+    def mk_specified_daemon_addr_pattern_regexp(self):
+        """
+        return a reg exp object to search for daemon addrs,
+        depending on --daemon or GXP_DAEMON
+        """
+        opts = self.opts
+        daemon_pat_str = self.mk_specified_daemon_addr_pattern_str()
+        if opts.verbosity >= 2:
+            Es("gxpc: daemon addr pattern to search for is %s\n" % daemon_pat_str)
+        try:
+            return re.compile(daemon_pat_str)
+        except ValueError,e:
+            Es("gxpc: wrong daemon address pattern %s %s\n" 
+               % (daemon_pat_str, e.args))
+            return None
+
+    def daemon_running(self, daemon_addr, gupid, pid):
+        """
+        check if daemon gupid is really running.
+        - process pid exists
+        - its socket file 
+        (/tmp/gxp-$USER-default/gxp-xxxxxxxx-daemon-*) exists
+        """
+        opts = self.opts
+        if opts.verbosity >= 2:
+            Es("gxpc: checking if daemon %s (pid=%d) is alive\n" 
+               % (gupid, pid))
+        if self.proc_running(pid) == 0:
+            if opts.verbosity >= 2:
+                Es("gxpc: no, process %d not alive\n" % pid)
+            return -1           # dead and daemon_addr should be removed
+        if opts.verbosity >= 2:
+            Es("gxpc: yes, process %d is alive\n" % pid)
+            Es("gxpc: checking if %s is a socket\n" % daemon_addr)
+        if not self.is_my_socket(daemon_addr):
+            if opts.verbosity >= 2:
+                Es("gxpc: no, %s does not exist or is not a socket\n" 
+                   % daemon_addr)
+            return 0            # daemon_addr is not a socket
+        if opts.verbosity >= 2:
+            Es("gxpc: yes, %s is a socket\n" % daemon_addr)
+        return 1
+
+    def find_sessions(self):
+        """
+        Find session files matching the requested pattern.
+        session file name is
+
+          gxpsession-hostname-user-yyyy-mm-dd-hh-mm-ss-pid-random
+
+        Along the way, we make sure the daemon is actually running
+        by checking pid and its socket file. Always return a session
+        whose daemon seems really alive.
+
+        """
+        opts = self.opts
+        assert (opts.create_daemon <= 0), opts.create_daemon
+        assert (opts.create_session <= 0), opts.create_session
+        generic_pat = self.mk_generic_session_file_pattern_regexp()
+        user_pat = self.mk_specified_session_file_pattern_regexp()
+        daemon_pat = self.mk_specified_daemon_addr_pattern_regexp()
+        # now search for files
+        sessions = []
+        if opts.verbosity >= 2:
+            Es("gxpc: searching directory %s ...\n" % self.gxp_tmp)
+        for session_base in os.listdir(self.gxp_tmp):
+            session = os.path.join(self.gxp_tmp, session_base)
+            # filter out those not matching against the user-specified pattern
+            if opts.verbosity >= 2:
+                Es("gxpc: matching %s to %s\n" % (session, user_pat.pattern))
+            m = user_pat.search(session)
+            if m is None: 
+                if opts.verbosity >= 2:
+                    Es("gxpc: %s does not match %s\n" 
+                       % (session, user_pat.pattern))
+                continue
+            # match against the common pattern and get gupid/pid part
+            if opts.verbosity >= 2:
+                Es("gxpc: %s matches %s, extracting daemon_addr, gupid\n" 
+                   % (session, user_pat.pattern))
+            prefix,gupid,pid,sid = self.parse_session_filename(session)
+            if prefix is None:
+                Es("gxpc: %s does not match the generic pattern "
+                   "of session files, ignored \n" % session)
+                continue
+            # match extacted daemon part to the specified daemon address
+            daemon_addr = self.mk_daemon_addr(prefix, gupid)
+            if opts.verbosity >= 2:
+                Es("gxpc: checking daemon addr %s\n" % daemon_addr)
+            if daemon_pat.search(daemon_addr) is None:
+                if opts.verbosity >= 2:
+                    Es("gxpc: %s does not match %s\n"
+                       % (daemon_addr, daemon_pat.pattern))
+                continue
+            # check if daemon is really alive
+            live = self.daemon_running(daemon_addr, gupid, pid)
+            if live == -1:
+                # session exists, but the process seems gone.
+                # cleanup garbages
+                self.cleanup_daemon_files(daemon_addr)
+                self.cleanup_session_file(session)
+                # Es("gxpc: cleanup session file %s\n" % session)
+            elif live == 1:
+                sessions.append((gupid, daemon_addr, session))
+        return sessions
+            
+    def requested_session(self):
+        ses = self.opts.session
+        if ses: return ses
+        ses = os.environ.get("GXP_SESSION")
+        if ses: return ses
+        return None
+
+    def requested_daemon_addr(self):
+        dmn = self.opts.daemon
+        if dmn: return dmn
+        dmn = os.environ.get("GXP_DAEMON")
+        if dmn: return dmn
+        return None
 
     def find_or_create_session(self):
         """
@@ -1661,18 +1920,20 @@ class cmd_interpreter:
         """
         opts = self.opts
         if opts.verbosity >= 2:
-            Es("gxpc: find or create session\n")
+            Es("gxpc: find or create session "
+               "(create_daemon=%d, create_session=%d)\n" 
+               % (opts.create_daemon, opts.create_session))
         if opts.create_daemon > 0 or opts.create_session > 0:
             # pretend that no session files are found
             sessions = []
         else:
-            # look for specified /tmp/gxp-$USER/gxpsession-* files
+            # look for specified /tmp/gxp-$USER/gxp-xxxxxxxx-session-* files
             sessions = self.find_sessions()
-        if sessions is None:
             # regexp error
-            return -1
-        elif len(sessions) > 1:
-            # multiple session found --> always an error
+            if sessions is None: return -1
+
+        if len(sessions) > 1:
+            # multiple sessions found --> always an error
             if opts.session is None:
                 Es("gxpc: there are multiple sessions. "
                    "use environment variable GXP_SESSION or "
@@ -1680,14 +1941,13 @@ class cmd_interpreter:
             else:
                 Es("gxpc: there are multiple sessions that "
                    "matched the requested pattern (%s). "
-                   "use environment variable GXP_SESSION or "
-                   "option --session to specify one\n" \
                    % opts.session)
             # show all sessions that matched
             for gupid,daemon_addr,session_file in sessions:
                 Es("%s\n" % session_file)
             return -1
-        elif len(sessions) == 1:
+
+        if len(sessions) == 1:
             # happy case. we found exactly one. 
             gupid,daemon_addr,session_file = sessions[0]
             self.gupid = gupid
@@ -1697,186 +1957,37 @@ class cmd_interpreter:
                 Es("gxpc: OK, session found (%s)\n" \
                    % self.session_file)
             return 0
-        else:
-            # not found. determine if we should create one
-            ses = opts.session
-            if ses is None: ses = os.environ.get("GXP_SESSION")
-            if ses is None or ses == "":
-                # neither --session nor GXP_SESSION specified,
-                if opts.create_session >= 0:
-                    # and --create_session doesn't say don't create
-                    # --> create
-                    if opts.verbosity >= 2:
-                        Es("gxpc: no session found, "
-                           "try to create one\n")
-                    if self.find_or_create_daemon() == -1:
-                        return -1
-                    assert self.gupid is not None
-                    assert self.daemon_addr is not None
-                    if opts.verbosity >= 2:
-                        Es("gxpc: daemon found (%s), create session"
-                           " for it\n" % self.gupid)
-                    f = self.create_session_filename(self.gupid)
-                    self.session_file = f
-                    if opts.verbosity >= 2:
-                        Es("gxpc: new session %s\n" \
-                           % self.session_file)
-                    return 0
-                else:
-                    # session not found, and command says dont create
-                    Es("gxpc: no session\n")
-                    return -1
-            else:
-                # session explicitly specified and not found
-                Es("gxpc: no session matching the requested "
-                   "pattern (%s)\n" % ses)
-                return -1
 
-    def create_session_filename(self, gupid):
-        id = random.randint(0, 99999999)
-        if self.opts.create_session > 0 or self.opts.create_daemon > 0:
-            # avoid confusing implicitly created session
-            template = "Gxpsession-%s-%08d"
-        else:
-            template = "gxpsession-%s-%08d"
-        return os.path.join(self.get_gxp_tmp(),
-                            template % (gupid, id))
-    
-    def session_files_of_gupid(self, gupid):
-        """
-        given gupid, return session files that may be associated
-        with it.
-        """
-        glob_pat = os.path.join(self.get_gxp_tmp(),
-                                ("?xpsession-%s-*" % gupid))
-        return glob.glob(glob_pat)
+        ses = self.requested_session()
+        if ses:
+            # none found, but a pattern is specified either by
+            # --session or GXP_SESSION -> NOT FOUND error
+            Es("gxpc: no session matching the requested pattern (%s)\n" 
+               % ses)
+            return -1
 
-    def find_sessions(self):
-        """
-        Find session files matching the requested pattern.
-        session file name is
-
-          gxpsession-hostname-user-yyyy-mm-dd-hh-mm-ss-pid-random
-
-        Along the way, we make sure the daemon is actually running
-        by checking pid and its socket file. Always return a session
-        whose daemon seems really alive.
-
-        """
-        opts = self.opts
-        gxp_tmp = self.get_gxp_tmp()
-        glob_pat = os.path.join(gxp_tmp, "?xpsession-*")
-        # pattern to extract pid
-        pat = ".xpsession-(.+-.+-\d+-\d+-\d+-\d+-\d+-\d+-(\d+))-\d+"
-        regexp = re.compile(os.path.join(gxp_tmp, pat))
-        # user-specified pattern
-        # 1. command line (--session)
-        # 2. environment variable (GXP_SESSION)
-        # 3. default is match always (.*)
-        session_pat = opts.session
-        if session_pat is None:
-            session_pat = os.environ.get("GXP_SESSION")
-        if session_pat is None or session_pat == "":
-            # when session is not specified, ignore Gxpsession-...
-            session_pat = "gxpsession-.*"
-        # compile user specified pattern
-        try:
-            u_regexp = re.compile(session_pat)
-        except ValueError,e:
-            Es("gxpc: %s %s\n" % (session, e.args))
-            return None
-        # now search for files
-        sessions = []
-        for session in glob.glob(glob_pat):
-            # match against the user-specified pattern
-            m = u_regexp.search(session)
-            if m is None: continue
-            # match against the common pattern and get gupid/pid part
-            m = regexp.match(session)
-            if m is None: continue
-            gupid = m.group(1)
-            pid = int(m.group(2))
-            # check if daemon is really alive
-            live,daemon_addr = self.daemon_running(gupid, pid)
-            if live == 0:
-                # session exists, but the process seems gone.
-                # cleanup garbages
-                self.cleanup_daemon_files(gupid)
-                self.cleanup_session_file(session)
-                # Es("gxpc : cleanup session file %s\n" % session)
-            elif daemon_addr is not None:
-                sessions.append((gupid, daemon_addr, session))
-        return sessions
-            
-    def daemon_running(self, gupid, pid):
-        """
-        check if daemon gupid is really running.
-        - process pid exists
-        - its socket file (/tmp/gxp-$USER/gxpd-*) exists
-        """
-        opts = self.opts
+        # none found, and 
+        # neither --session nor GXP_SESSION specified
+        # -> see if we should create one
+        if opts.create_session < 0:
+            # session not found, and command says dont create
+            Es("gxpc: no session\n")
+            return -1
+        # --create_session >= 0 (you MAY create one)
+        # --> create
         if opts.verbosity >= 2:
-            Es("gxpc: checking if daemon %s is alive "
-               "and interesting\n" % gupid)
-        if self.proc_running(pid) == 0:
-            if opts.verbosity >= 2:
-                Es("gxpc: no, process %d not alive\n" % pid)
-            return 0,None
-        gxp_tmp = self.get_gxp_tmp()
-        socket_file = os.path.join(gxp_tmp, ("gxpd-%s" % gupid))
-        Socket_file = os.path.join(gxp_tmp, ("Gxpd-%s" % gupid))
-        if not self.is_my_socket(socket_file):
-            socket_file = Socket_file
-        if self.is_my_socket(socket_file):
-            pat = opts.daemon
-            if pat is None: pat = os.environ.get("GXP_DAEMON")
-            if pat is None or pat == "": pat = ".*"
-            try:
-                regexp = re.compile(pat)
-            except ValueError,e:
-                Es("gxpc: no, wrong pattern %s %s\n" % (pat, e.args))
-                return 1,None
-            if regexp.search(socket_file):
-                if opts.verbosity >= 2:
-                    Es("gxpc: yes, daemon %s alive and "
-                       "interesting\n" % gupid)
-                return 1,socket_file
-            else:
-                if opts.verbosity >= 2:
-                    Es("gxpc: no, daemon %s alive but "
-                       "uninteresting\n" % gupid)
-                return 1,None           # alive, but uninteresting
+            Es("gxpc: no session found, try to create one\n")
+        if self.find_or_create_daemon() == -1: return -1
+        assert self.gupid is not None
+        assert self.daemon_addr is not None
         if opts.verbosity >= 2:
-            Es("gxpc: no, socket %s does not exist\n" % socket_file)
-        return 0,None
-
-    def cleanup_daemon_files(self, gupid):
-        """
-        cleanup files of apparantly dead daemons.
-        - gxpd-[gupid] socket file
-        - gxpout-[gupid] stdout
-        - gxperr-[gupid] stderr
-        """
-        if self.opts.verbosity >= 2:
-            Es("gxpc: clean up daemon files for %s\n" % gupid)
-        gxp_tmp = self.get_gxp_tmp()
-        socket_file = os.path.join(gxp_tmp, ("gxpd-%s" % gupid))
-        out_file = os.path.join(gxp_tmp, ("gxpout-%s" % gupid))
-        err_file = os.path.join(gxp_tmp, ("gxperr-%s" % gupid))
-        Socket_file = os.path.join(gxp_tmp, ("Gxpd-%s" % gupid))
-        Out_file = os.path.join(gxp_tmp, ("Gxpout-%s" % gupid))
-        Err_file = os.path.join(gxp_tmp, ("Gxperr-%s" % gupid))
-        self.safe_remove(socket_file)
-        self.safe_remove_if_empty(out_file)
-        self.safe_remove_if_empty(err_file)
-        self.safe_remove(Socket_file)
-        self.safe_remove_if_empty(Out_file)
-        self.safe_remove_if_empty(Err_file)
-
-    def cleanup_session_file(self, session_file):
-        if self.opts.verbosity >= 2:
-            Es("gxpc: clean up session file %s\n" % session_file)
-        self.safe_remove(session_file)
+            Es("gxpc: daemon found (%s), create session"
+               " for it\n" % self.gupid)
+        session_file = self.generate_session_filename_of_daemon_addr(self.daemon_addr)
+        self.session_file = session_file
+        if opts.verbosity >= 2:
+            Es("gxpc: new session %s\n" % self.session_file)
+        return 0
 
     def find_or_create_daemon(self):
         """
@@ -1907,25 +2018,27 @@ class cmd_interpreter:
         """
         opts = self.opts
         if opts.verbosity >= 2:
-            Es("gxpc: find or create daemon\n")
+            Es("gxpc: find or create daemon (create_daemon=%d)\n"
+               % opts.create_daemon)
         if opts.create_daemon > 0:
             # pretend as if no socket files are found
             addrs = []
         else:
             # search for specified /tmp/gxp-$USER/gxpd-* files
             addrs = self.find_daemon_addrs(None)
-        if addrs is None:
             # regexp error
-            return -1
-        elif len(addrs) > 1:
-            # multiple files found -> error
+            if addrs is None: return -1
+
+        if len(addrs) > 1:
+            # multiple daemon socket files found -> error
             Es("gxpc: there are multiple daemons that "
                "matched the requested pattern (%s). "
                "use environment variable GXP_DAEMON or "
                "option --daemon to specify one\n"
                % opts.daemon)
             return -1
-        elif len(addrs) == 1:
+
+        if len(addrs) == 1:
             # exactly one found -> OK
             gupid,daemon_addr = addrs[0]
             self.gupid = gupid
@@ -1933,141 +2046,93 @@ class cmd_interpreter:
             if opts.verbosity >= 2:
                 Es("gxpc: OK, daemon found (%s)\n" % self.gupid)
             return 0
-        else:
-            # none found -> determine if we should create one
-            dmn = opts.daemon
-            if dmn is None: dmn = os.environ.get("GXP_DAEMON")
-            if dmn is None or dmn == "":
-                # neither --daemon nor GXP_DAEMON specified,
-                if opts.create_daemon >= 0:
-                    # and --create_daemon doesn't say don't create
-                    # -> create one
-                    if opts.verbosity >= 1:
-                        Es("gxpc: no daemon found, create one. 'gxpc quit' to clean up. 'gxpc help' to get help.\n")
-                    pid = self.create_daemon(opts.create_daemon)
-                    # time.sleep(0.5)
-                    if opts.verbosity >= 2:
-                        Es("gxpc: created, check it again\n")
-                    # search socket files with specified pid
-                    # addrs = self.find_daemon_addrs2(pid, 20.0)
-                    addrs = self.find_daemon_addrs(None)
-                    if len(addrs) == 1:
-                        gupid,daemon_addr = addrs[0]
-                        self.gupid = gupid
-                        self.daemon_addr = daemon_addr
-                        if opts.verbosity >= 2:
-                            Es("gxpc: daemon successfully brought "
-                               "up (%s)\n" % self.gupid)
-                        return 0
-                    else:
-                        assert len(addrs) == 0, addrs
-                        Es("gxpc: failed to bring up daemon\n")
-                        return -1
-                else:
-                    Es("gxpc: no daemon\n")
-                    return -1
-            else:
-                Es("gxpc: no daemon matching the requested "
-                   "pattern (%s)\n" % dmn)
-                return -1
 
-    def find_daemon_addrs(self, pid_to_find):
-        opts = self.opts
-        gxp_tmp = self.get_gxp_tmp()
-        # daemon file name:
-        # gxpd-hostname-user-yyyy-mm-dd-hh-mm-ss-pid-random
-        glob_pat = os.path.join(gxp_tmp, "?xpd-*")
-        pat = ".xpd-(.+-.+-\d+-\d+-\d+-\d+-\d+-\d+-(\d+))"
-        regexp = re.compile(os.path.join(gxp_tmp, pat))
-        if pid_to_find is None:
-            daemon_pat = opts.daemon
-            if daemon_pat is None:
-                daemon_pat = os.environ.get("GXP_DAEMON")
-            if daemon_pat is None or daemon_pat == "":
-                # if daemon name is implicit, ignore Gxpd-...
-                daemon_pat = "gxpd-.*"
+        dmn = self.requested_daemon_addr()
+        if dmn:
+            # none found, but a pattern is specified either by
+            # --daemon or GXP_DAEMON -> NOT FOUND error
+            Es("gxpc: no daemon matching the requested pattern (%s)\n" 
+               % dmn)
+            return -1
+
+        # none found, and neither --daemon nor GXP_DAEMON specified,
+        # -> see if we should create one
+        if opts.create_daemon < 0:
+            Es("gxpc: no daemon\n")
+            return -1
+        # --create_daemon >= 0 (you MAY create one)
+        # -> create one
+        if opts.verbosity >= 1:
+            Es("gxpc: no daemon found, create one. "
+               "'gxpc quit' to clean up. "
+               "'gxpc help' to get help.\n")
+        pat = self.really_create_daemon()
+        if opts.verbosity >= 2:
+            Es("gxpc: created, check it again\n")
+        addrs = self.find_daemon_addrs(pat)
+        if len(addrs) == 1:
+            gupid,daemon_addr = addrs[0]
+            self.gupid = gupid
+            self.daemon_addr = daemon_addr
+            if opts.verbosity >= 2:
+                Es("gxpc: daemon successfully brought "
+                   "up (%s)\n" % self.gupid)
+            return 0
         else:
-            daemon_pat = ("gxpd-.+-.+-\d+-\d+-\d+-\d+-\d+-\d+-%d" \
-                          % pid_to_find)
-        try:
-            u_regexp = re.compile(daemon_pat)
-        except ValueError,e:
-            Es("gxpc: %s %s\n" % (daemon_pat, e.args))
-            return None
+            assert (len(addrs) == 0), addrs
+            Es("gxpc: failed to bring up daemon\n")
+            return -1
+
+    def find_daemon_addrs(self, pat):
+        """
+        find files that match pat under gxp_tmp dir
+        """
+        opts = self.opts
+        generic_pat = self.mk_generic_daemon_addr_pattern_regexp()
+        if pat is None:
+            # no pattern is given. use one specified in
+            # the command line or GXP_DAEMON
+            daemon_pat = self.mk_specified_daemon_addr_pattern_regexp()
+            if daemon_pat is None: return None
+        else:
+            daemon_pat = pat
+        if opts.verbosity >= 2:
+            Es("gxpc: searching directory %s ...\n" % self.gxp_tmp)
         addrs = []
         # daemon is actually a name of a unix-domain socket file
-        for addr in glob.glob(glob_pat):
-            m = u_regexp.search(addr)
-            if m is None: continue
-            m = regexp.match(addr)
-            if m is None: continue
-            gupid = m.group(1)
-            pid = self.safe_atoi(m.group(2), None)
-            assert pid is not None
-            live,daemon_addr = self.daemon_running(gupid, pid)
-            if live == 0:
-                # deamon seems gone.
-                self.cleanup_daemon_files(gupid)
-            elif daemon_addr is not None:
-                addrs.append((gupid, daemon_addr))
+        for addr_base in os.listdir(self.gxp_tmp):
+            addr = os.path.join(self.gxp_tmp, addr_base)
+            # match against the user-specified or newly created pattern 
+            if opts.verbosity >= 2:
+                Es("gxpc: matching %s to %s\n" % (addr, daemon_pat.pattern))
+            m = daemon_pat.search(addr)
+            if m is None: 
+                if opts.verbosity >= 2:
+                    Es("gxpc: %s does not match %s\n" 
+                       % (addr, daemon_pat.pattern))
+                continue
+            # match against the common pattern and get gupid/pid part
+            if opts.verbosity >= 2:
+                Es("gxpc: %s matches %s, extracting daemon_addr, gupid\n" 
+                   % (addr, generic_pat.pattern))
+            prefix,gupid,pid = self.parse_daemon_addr(addr)
+            if prefix is None: 
+                Es("gxpc: %s does not match the generic pattern "
+                   "of daemon addrs, ignored \n" % addr)
+                continue
+            # here we know addr matches pattern
+            live = self.daemon_running(addr, gupid, pid)
+            if live == -1:      # deamon seems gone.
+                self.cleanup_daemon_files(addr)
+            elif live == 1:
+                addrs.append((gupid, addr))
         return addrs
         
-    def find_daemon_addrs2(self, pid_to_find, wait_time):
-        opts = self.opts
-        gxp_tmp = self.get_gxp_tmp()
-        # daemon file name:
-        # gxpd-hostname-user-yyyy-mm-dd-hh-mm-ss-pid-random
-        glob_pat = os.path.join(gxp_tmp, "?xpd-*")
-        pat = ".xpd-(.+-.+-\d+-\d+-\d+-\d+-\d+-\d+-(\d+))"
-        regexp = re.compile(os.path.join(gxp_tmp, pat))
-        if pid_to_find is None:
-            daemon_pat = opts.daemon
-            if daemon_pat is None:
-                daemon_pat = os.environ.get("GXP_DAEMON")
-            if daemon_pat is None or daemon_pat == "":
-                # daemon name implicit, ignore Gxpd-
-                daemon_pat = "gxpd-.*"
-        else:
-            daemon_pat = (".xpd-.+-.+-\d+-\d+-\d+-\d+-\d+-\d+-%d" \
-                          % pid_to_find)
-        try:
-            u_regexp = re.compile(daemon_pat)
-        except ValueError,e:
-            Es("gxpc: %s %s\n" % (daemon_pat, e.args))
-            return None
-        start_t = time.time()
-        sleep_t = 0.01
-        dot_displayed = 0
-        while time.time() < start_t + wait_time:
-            addrs = []
-            # daemon is actually a name of a unix-domain socket file
-            for addr in glob.glob(glob_pat):
-                m = u_regexp.search(addr)
-                if m is None: continue
-                m = regexp.match(addr)
-                if m is None: continue
-                gupid = m.group(1)
-                pid = self.safe_atoi(m.group(2), None)
-                assert pid is not None
-                live,daemon_addr = self.daemon_running(gupid, pid)
-                if live == 0:
-                    # deamon seems gone.
-                    self.cleanup_daemon_files(gupid)
-                elif daemon_addr is not None:
-                    addrs.append((gupid, daemon_addr))
-            if len(addrs) > 0:
-                if opts.verbosity >= 2 and dot_displayed: Es(" OK\n")
-                return addrs
-            if opts.verbosity >= 2 and sleep_t > 1.0:
-                dot_displayed = 1
-                Es(".")
-                Ef()
-            time.sleep(sleep_t)
-            sleep_t = sleep_t * 1.5
-            if sleep_t > 3.0: sleep_t = 3.0
-        return []
-        
-    def create_daemon(self, create_daemon_explicit):
+    def really_create_daemon(self):
+        """
+        really create daemon
+        """
+        prefix = self.generate_prefix()
         pid = os.fork()
         if pid == 0:
             gxp_dir = self.get_gxp_dir()
@@ -2082,21 +2147,50 @@ class cmd_interpreter:
                      "--rsh", "%(cmd)s",
                      "--first_args_template",  "--remove_self",
                      "--first_args_template",  "--continue_after_close",
+                     "--first_args_template",  "--name_prefix",
+                     "--first_args_template",  prefix,
                      "--second_args_template", "--remove_self",
                      "--second_args_template", "--continue_after_close",
-                     "--created_explicitly", 
-                     ("%d" % create_daemon_explicit) ]
+                     "--second_args_template", "--remove_self",
+                     "--second_args_template", "--continue_after_close",
+                     "--second_args_template", "--name_prefix",
+                     "--second_args_template", prefix,
+                     ]
             rtn = self.opts.root_target_name
             if rtn is not None:
                 argv = argv + [ "--first_args_template",  "--target_label",
                                 "--first_args_template",  rtn,
                                 "--second_args_template", "--target_label",
                                 "--second_args_template", rtn ]
+            if self.opts.verbosity >= 2:
+                Es("gxpc: execvp(%s, %s)\n" % (argv[0], argv))
             os.execvp(argv[0], argv)
         else:
             os.waitpid(pid, 0)
-            return pid
+            base = "%s-daemon" % prefix
+            return re.compile(os.path.join(self.gxp_tmp, base))
         
+    def cleanup_daemon_files(self, daemon_addr):
+        """
+        cleanup files of apparantly dead daemons.
+        - gxpd-[gupid] socket file
+        - gxpout-[gupid] stdout
+        - gxperr-[gupid] stderr
+        """
+        if self.opts.verbosity >= 2:
+            Es("gxpc: clean up daemon files for %s\n" % daemon_addr)
+        prefix,gupid,pid = self.parse_daemon_addr(daemon_addr)
+        assert prefix, daemon_addr
+        out_file = self.mk_stdout_file(prefix, gupid)
+        err_file = self.mk_stderr_file(prefix, gupid)
+        self.safe_remove(daemon_addr)
+        self.safe_remove_if_empty(out_file)
+        self.safe_remove_if_empty(err_file)
+
+    def cleanup_session_file(self, session_file):
+        if self.opts.verbosity >= 2:
+            Es("gxpc: clean up session file %s\n" % session_file)
+        self.safe_remove(session_file)
 
     # ------------- handle events from gxpd -------------
 
@@ -3180,11 +3274,10 @@ session will cease.
                                    self.opts.persist,
                                    self.opts.keep_connection)
             assert tid is not None
-            self.cleanup_daemon_files(self.gupid)
-            session_files = self.session_files_of_gupid(self.gupid)
-            if 1:
-                for session_file in session_files:
-                    self.cleanup_session_file(session_file)
+            self.cleanup_daemon_files(self.daemon_addr)
+            session_files = self.find_session_files_of_daemon_addr(self.daemon_addr)
+            for session_file in session_files:
+                self.cleanup_session_file(session_file)
         return 0
         
     #
@@ -5044,6 +5137,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.41  2009/12/27 16:02:20  ttaauu
+# fixed broken --create_daemon 1 option
+#
 # Revision 1.40  2009/09/27 17:15:14  ttaauu
 # added comment on gxpm.py
 #
