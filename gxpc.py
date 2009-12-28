@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.41 2009/12/27 16:02:20 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.42 2009/12/28 07:27:26 ttaauu Exp $
 # $Name:  $
 #
 
@@ -919,6 +919,9 @@ class hosts_parser_base:
         return self.hosts
 
 class etc_hosts_parser(hosts_parser_base):
+    """
+    parse a file describing alias relationships
+    """
     def process_line(self, line, hosts, flag):
         """
         line is like:
@@ -933,12 +936,22 @@ class etc_hosts_parser(hosts_parser_base):
         return self.process_list(aliases, hosts, flag)
 
     def process_list(self, args, hosts, flag):
+        """
+        args : a list of hostnames that appear in a single
+        line (e.g., [ "123.456.78.9", "hoge.bar.com", "hoge" ]).
+        we consider them to mean the same host.
+        """
         L = []
+        # list all aliases of all names in the line. i.e.,
+        # L =  "123.456.78.9"'s aliases + 
+        #      "hoge.bar.com"'s aliases + 
+        #      "hoge"'s aliases 
         for a in args:
             for b in hosts.get(a, []):
                 if b not in L: L.append(b)
         for a in args:
             if a not in L: L.append(a)
+        # record the fact that L are aliases of a.
         for a in L:
             if flag or hosts.has_key(a):
                 hosts[a] = L
@@ -1013,7 +1026,7 @@ class targets_parser(hosts_parser_base):
         #        e.g., istbs[000-100] -> istbs000 istbs001 ... istbs100
         #        e.g., istbs[[000-100,100-200]] -> istbs000 istbs001 ... istbs100
         for h in self.expand_number_notation(host):
-            hosts[h] = n
+            hosts[h] = hosts.get(h, 0) + n
 
     def process_list(self, args, hosts, flag):
         """
@@ -4146,6 +4159,7 @@ Options are the same as those of `e' command.
                     found = 1
                     for a in h_aliases: marked[a] = 1
                     T.append((h, n))
+                    break
             if found == 0: T.append((t, n))
         return T
         
@@ -5137,6 +5151,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.42  2009/12/28 07:27:26  ttaauu
+# made the behavior of explore more intuitive (ChangeLog 2009-12-28)
+#
 # Revision 1.41  2009/12/27 16:02:20  ttaauu
 # fixed broken --create_daemon 1 option
 #
