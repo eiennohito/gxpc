@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.42 2009/12/28 07:27:26 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.43 2009/12/29 04:17:11 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1364,6 +1364,7 @@ class cmd_interpreter:
         if self.init_level >= 1: return 0
         self.init_level = 1
         # determine session and daemon
+        if self.ensure_gxp_tmp() == -1: return -1
         self.gxp_tmp = self.get_gxp_tmp()
         if self.find_or_create_session() == -1:
             return -1
@@ -1532,7 +1533,23 @@ class cmd_interpreter:
     def get_gxp_tmp(self):
         suffix = os.environ.get("GXP_TMP_SUFFIX", "default")
         u = self.get_user_name()
-        return os.path.join("/tmp", ("gxp-%s-%s" % (u, suffix)))
+        d = os.path.join("/tmp", ("gxp-%s-%s" % (u, suffix)))
+        return d
+
+    def ensure_gxp_tmp(self):
+        d = self.get_gxp_tmp()
+        try:
+            os.mkdir(d)
+            return 0
+        except OSError,e:
+            pass
+        if os.path.isdir(d): return 0
+        if os.path.exists(d):
+            Es("gxpc: %s exists but is not a directory\n" % d)
+            return -1
+        Es("gxpc: could not create gxp tmp directory %s %s\n"
+           % (d, e.args))
+        return -1
 
     def proc_running(self, pid):
         """
@@ -5151,6 +5168,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.43  2009/12/29 04:17:11  ttaauu
+# fixed error when /tmp/gxp-user-default does not exist
+#
 # Revision 1.42  2009/12/28 07:27:26  ttaauu
 # made the behavior of explore more intuitive (ChangeLog 2009-12-28)
 #
