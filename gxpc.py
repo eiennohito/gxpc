@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.43 2009/12/29 04:17:11 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.44 2009/12/30 19:54:50 ttaauu Exp $
 # $Name:  $
 #
 
@@ -108,12 +108,12 @@ class login_method_configs:
         # if the first character is non alphabetical, use
         # it as the separator (see ssh below, which uses :)
         # otherwise it uses whitespaces as the separator
-        self.ssh         = (":ssh:-o:StrictHostKeyChecking no"
-                            ":-o:PreferredAuthentications hostbased,publickey"
-                            ":-A:%target%:%cmd%")
-        self.ssh_as      = (":ssh:-o:StrictHostKeyChecking no"
-                            ":-o:PreferredAuthentications hostbased,publickey"
-                            ":-A:-l:%user%:%target%:%cmd%")
+        self.ssh         = ("ssh -o StrictHostKeyChecking=no "
+                            "-o PreferredAuthentications=hostbased,publickey "
+                            "-A %target% %cmd%")
+        self.ssh_as      = ("ssh -o StrictHostKeyChecking=no "
+                            "-o PreferredAuthentications=hostbased,publickey "
+                            "-A -l %user% %target% %cmd%")
 
         self.rsh         = "rsh %target% %cmd%"
         self.rsh_as      = "rsh -l %user% %target% %cmd%"
@@ -125,9 +125,12 @@ class login_method_configs:
         self.sge_host    = "qsub_wrap --sys sge %cmd% -- -l hostname=%target%"
         
         self.torque      = "qsub_wrap --sys torque %cmd%"
-        self.torque_n    = "qsub_wrap --sys torque %cmd% -- -l nodes=%nodes:-1%:ppn=%ppn:-1%"
-        self.torque_host = "qsub_wrap --sys torque %cmd% -- -l host=%target%"
-        self.torque_psched = "qsub_wrap --sys torque_psched %cmd% -- --node %target% --lib %lib:-libtorque.so%"
+        self.torque_n    = ("qsub_wrap --sys torque %cmd% "
+                            "-- -l nodes=%nodes:-1%:ppn=%ppn:-1%")
+        self.torque_host = ("qsub_wrap --sys torque %cmd% "
+                            "-- -l host=%target%")
+        self.torque_psched = ("qsub_wrap --sys torque_psched %cmd% "
+                              "-- --node %target% --lib %lib:-libtorque.so%")
         self.condor        = "qsub_wrap --sys condor %cmd%"
 
         self.nqs_hitachi = "qsub_wrap --sys nqs_hitachi %cmd%"
@@ -138,6 +141,10 @@ class login_method_configs:
 
         self.n1ge        = "qsub_wrap --sys n1ge %cmd%"
         self.n1ge_host   = "qsub_wrap --sys n1ge %cmd% -l host=%target%"
+
+        self.tsubame     = ("qsub_wrap --sys n1ge --qstat qstat "
+                            "--qdel qdelete %cmd% "
+                            "-- -q %q% -g %g% -mem %mem:-4.0% -rt %rt:-30%")
 
 class mask_patterns:
     def __init__(self, hostmask, gupidmask, targetmask, idxmask):
@@ -5168,6 +5175,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.44  2009/12/30 19:54:50  ttaauu
+# *** empty log message ***
+#
 # Revision 1.43  2009/12/29 04:17:11  ttaauu
 # fixed error when /tmp/gxp-user-default does not exist
 #
