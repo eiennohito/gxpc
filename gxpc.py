@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.44 2009/12/30 19:54:50 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.45 2009/12/30 20:01:00 ttaauu Exp $
 # $Name:  $
 #
 
@@ -142,7 +142,7 @@ class login_method_configs:
         self.n1ge        = "qsub_wrap --sys n1ge %cmd%"
         self.n1ge_host   = "qsub_wrap --sys n1ge %cmd% -l host=%target%"
 
-        self.tsubame     = ("qsub_wrap --sys n1ge --qstat qstat "
+        self.tsubame     = ("qsub_wrap --sys n1ge --qsub n1ge --qstat qstat "
                             "--qdel qdelete %cmd% "
                             "-- -q %q% -g %g% -mem %mem:-4.0% -rt %rt:-30%")
 
@@ -5175,6 +5175,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.45  2009/12/30 20:01:00  ttaauu
+# *** empty log message ***
+#
 # Revision 1.44  2009/12/30 19:54:50  ttaauu
 # *** empty log message ***
 #
