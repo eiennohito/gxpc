@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.45 2009/12/30 20:01:00 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.46 2009/12/31 20:06:33 ttaauu Exp $
 # $Name:  $
 #
 
@@ -142,9 +142,14 @@ class login_method_configs:
         self.n1ge        = "qsub_wrap --sys n1ge %cmd%"
         self.n1ge_host   = "qsub_wrap --sys n1ge %cmd% -l host=%target%"
 
-        self.tsubame     = ("qsub_wrap --sys n1ge --qsub n1ge --qstat qstat "
-                            "--qdel qdelete %cmd% "
-                            "-- -q %q% -g %g% -mem %mem:-4.0% -rt %rt:-30%")
+        self.tsubame     = ("qsub_wrap --sys n1ge "
+                            "--timeout %timeout:-100% %cmd% "
+                            "--qsub n1ge --qstat qstat --qdel qdelete %cmd% "
+                            "-- -q %q% -g %g% -mem %mem:-4.0% -rt %cpu:-30%")
+        self.ha8000     = ("qsub_wrap --sys nqs_hitachi "
+                           "--timeout %timeout:-100% --addr 10 %cmd% "
+                           "-- -q %q% -N %nodes:-1% -J T%ppn:-1% "
+                           "-lT %cpu:-5%:00 -lm %mem:-28%gb")
 
 class mask_patterns:
     def __init__(self, hostmask, gupidmask, targetmask, idxmask):
@@ -5175,6 +5180,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.46  2009/12/31 20:06:33  ttaauu
+# *** empty log message ***
+#
 # Revision 1.45  2009/12/30 20:01:00  ttaauu
 # *** empty log message ***
 #
