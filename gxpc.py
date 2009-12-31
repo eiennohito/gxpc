@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.47 2009/12/31 20:09:48 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.48 2009/12/31 20:40:42 ttaauu Exp $
 # $Name:  $
 #
 
@@ -151,8 +151,10 @@ class login_method_configs:
                            "-- -q %q% -N %nodes:-1% -J T%ppn:-1% "
                            "-lT %cpu:-5%:00 -lm %mem:-28%gb")
         self.hx600     = ("qsub_wrap --sys nqs_fujitsu "
-                           "--timeout %timeout:-100% %cmd% "
-                           "-- -g %g% -q %q% -lP %nodes:-1% -Pvn UNPack")
+                          "--timeout %timeout:-100% %cmd% "
+                          "-- -q %q% -g %g% -lP %nodes:-1% -lp %ppn:-1% "
+                          "-cp %cpu:-5%:00 -lm %mem:-28%gb "
+                          "-nr -Pvn UNPack")
 
 class mask_patterns:
     def __init__(self, hostmask, gupidmask, targetmask, idxmask):
@@ -5183,6 +5185,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.48  2009/12/31 20:40:42  ttaauu
+# *** empty log message ***
+#
 # Revision 1.47  2009/12/31 20:09:48  ttaauu
 # *** empty log message ***
 #
