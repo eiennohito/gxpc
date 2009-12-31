@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.16 2009/06/18 00:32:18 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.17 2009/12/31 20:09:48 ttaauu Exp $
 # $Name:  $
 #
 
@@ -609,7 +609,7 @@ class nqs_fujitsu_system_option:
         self.name = "nqs_fujitsu"
         self.qsub_pattern = re.compile(".*Request (?P<job_id>\d+\..*) submitted to queue:", re.DOTALL)
         self.qstat_trust_status = 0
-        self.qstat_pattern = "%job_id%.+RUNNING"
+        self.qstat_pattern = "%job_id%.+(RUNNING|QUEUED)"
         self.qstat_job_id_flag = "-r"
         self.qsub_stdout_flag = "-o" 
         self.qsub_stderr_flag = "-e"
@@ -1350,6 +1350,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: qsub_wrap,v $
+# Revision 1.17  2009/12/31 20:09:48  ttaauu
+# *** empty log message ***
+#
 # Revision 1.16  2009/06/18 00:32:18  ttaauu
 # condor support
 #

@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.21 2009/12/27 16:02:20 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.22 2009/12/31 20:06:33 ttaauu Exp $
 # $Name:  $
 #
 
@@ -144,8 +144,8 @@ default_second_args_template = [ "--remove_self" ] + default_first_args_template
 # Default timeout values
 #
 
-default_hello_timeout = 40.0
-default_install_timeout = 100.0
+default_hello_timeout = 86400.0
+default_install_timeout = 1000.0
 
 dbg = 0
 
@@ -599,6 +599,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.22  2009/12/31 20:06:33  ttaauu
+# *** empty log message ***
+#
 # Revision 1.21  2009/12/27 16:02:20  ttaauu
 # fixed broken --create_daemon 1 option
 #
