@@ -60,4 +60,10 @@
 	* gxpc.py : made the behavior of explore when listing the same name
 	many times more intuitive. explore x x x now tries to grab x three
 	times (equivalent to explore x 3).
+2010-1-5 Taura
+	 * gxpbin/tmsub.rb : changed (fixed) the behavior of tmsub.rb when
+	 given --node parameter like n0009.  It was previously an error
+	 because 0009 was considered as an octal number.  It is now 
+	 interpreted as a decimal nine, which will be what most people
+	 expects in this context.
 	

@@ -103,7 +103,7 @@ module TMLIB
   NODE is a sequence of alphabets or underscores followed by a positive number (e.g., a23)")
     end
     # match to strings like "abc123", "xyz0", etc.
-    m = /[A-za-z_]+([0-9]+)/.match(argv[1])
+    m = /[A-za-z_]+0*([1-9]?[0-9]*)/.match(argv[1])
     if m.nil?
       die("arg to --node (#{argv[1]}) must be a sequence of alphabets or underscores followed by a positive number (e.g., a12, xyz123, a_b_1)")
     end
