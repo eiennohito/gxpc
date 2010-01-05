@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.11 2009/12/27 16:02:20 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.12 2010/01/05 06:48:32 ttaauu Exp $
 # $Name:  $
 #
 
@@ -434,7 +434,13 @@ class gxpd(ioman.ioman):
         return 0
 
     def gethostname(self):
-        return socket.gethostname()
+        # gxpd dies with error: AF_UNIX path too long
+        # an incomplete workaround here.
+        # truncate FQDN into shorter one
+        h = socket.gethostname()
+        m = re.match("(\.*[^\.]*)", h)
+        assert m
+        return m.group(1)
 
     def get_boot_time(self):
         return time.strftime("%Y-%m-%d-%H-%M-%S")
@@ -2230,6 +2236,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.12  2010/01/05 06:48:32  ttaauu
+# fixed fixed a bug in gxpd.py that generates a too long unix domain socket pathnames
+#
 # Revision 1.11  2009/12/27 16:02:20  ttaauu
 # fixed broken --create_daemon 1 option
 #

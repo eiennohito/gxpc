@@ -67,3 +67,11 @@
 	 interpreted as a decimal nine, which will be what most people
 	 expects in this context.
 	
+2010-1-5 Taura
+	 * gxpd.py : fixed a bug in gxpd.py, reported by murawaki-san,
+	which generates a too long UNIX domain path name, especially on
+	hosts that return their FQDNs with socket.gethostname().  I am
+	simply working around this problem by truncating FQDNs with the
+	plain hostname.  It must be fixed more rigidly so it never
+	genrates a long pathname.  For now, a simple workaround.
+	
