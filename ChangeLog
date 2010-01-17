@@ -75,3 +75,10 @@
 	plain hostname.  It must be fixed more rigidly so it never
 	genrates a long pathname.  For now, a simple workaround.
 	
+2010-1-18 Taura
+	* mksh :
+	* xmake : now support --make_env option that takes a colon-separated
+	list of variable names that must be passed to node commands. i.e.,
+	--make_env PATH:WAO passes environment variables PATH and WAO at
+	host to compute workers.
+	

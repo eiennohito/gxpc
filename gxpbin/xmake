@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.48 2009/12/27 16:02:20 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.49 2010/01/17 17:17:28 ttaauu Exp $
 # $Name:  $
 #
 
@@ -205,6 +205,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.ctl = (None, 0)
         # in case you want to run GNU make with a different name
         self.make     = ("s", "make")
+        self.make_envs = ("s", None)
         self.stage_in = ("s", None)     # "./stage_in"
         self.gxpc     = ("s", None)
         self.qlen     = ("i", 10000)
@@ -269,17 +270,25 @@ gxpc make options:
   --emulate / -n :
       pretend all commands finished successfully. useful to generate
       and see state html file.
-  --sem SEM_SPECS :
-      specify concurrency constraints for various jobs.
-      see SEM_SPECS below.
   --state_dir DIR :
       specify directory where state.html and assocated files are written
       (including xmake.log). created if not exist.
-  --state FILE :
-      write job/worker status to FILE (default: "state.html")
   --conf FILE :
       read FILE as the config file, in addition to ~/.gxpc_make.conf and
       gxpc_make.conf in the current dir.
+  --time_limit soft[:hard]
+      soft specifies the time when make stops dispatching jobs. after this time,
+      it only waits for outstanding workss to finish, and then throws away all
+      jobs (not dispatched) with exit status 124, or what you specify with --exit_status_time_limit. hard specifies the time when
+      make kills (with SIGINT) works in progress.
+  --make_env VAR:VAR:...:VAR
+      specify the list of environment variables that should be passed from the
+      root host to individual commands.
+  --sem SEM_SPECS :
+      specify concurrency constraints for various jobs.
+      see SEM_SPECS below.
+  --state FILE :
+      write job/worker status to FILE (default: "state.html")
   --log FILE :
       write log to FILE (default: "xmake.log")
   --update_interval_1 T1 :
@@ -304,11 +313,6 @@ gxpc make options:
       specify the backlog of the socket the scheduler listens
       (default : 10000). you might want to increase this value
       when there are more than 10000 workers.
-  --time_limit soft[:hard]
-      soft specifies the time when make stops dispatching jobs. after this time,
-      it only waits for outstanding workss to finish, and then throws away all
-      jobs (not dispatched) with exit status 124, or what you specify with --exit_status_time_limit. hard specifies the time when
-      make kills (with SIGINT) works in progress.
   --exit_status_worker_dead S
       specifies the exit status, perceived by GNU make, for jobs that
       are not completed because the worker is dead. default is 123.
@@ -2752,12 +2756,7 @@ class xmake_server:
             self.next_record_time_2 = t1 + time_to_next_2
             self.n_state_changes = 0
 
-    def run_make(self):
-        """
-        run GNU make. return pid
-        """
-        # set envinronment variable that affects all subsequent
-        # invocations of make
+    def set_make_environ(self):
         makefiles = os.environ.get("MAKEFILES")
         xmake_mk = os.path.join(os.environ["GXP_DIR"],
                                 os.path.join("gxpbin", "xmake.mk"))
@@ -2772,8 +2771,18 @@ class xmake_server:
         os.environ["GXP_MAKE_EXIT_STATUS_SERVER_DIED"] = x
         if self.opts.local_exec_cmd is not None:
             os.environ["GXP_MAKE_LOCAL_EXEC_CMD"] = self.opts.local_exec_cmd
+        if self.opts.make_envs is not None:
+            os.environ["GXP_MAKE_ENVS"] = self.opts.make_envs
+
+    def run_make(self):
+        """
+        run GNU make. return pid
+        """
+        # set envinronment variable that affects all subsequent
+        # invocations of make
         pid = os.fork()
         if pid == 0:
+            self.set_make_environ()
             self.close_fds()
             args = [ self.opts.make ] + self.make_args
             if self.logfp:
@@ -3212,6 +3221,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.49  2010/01/17 17:17:28  ttaauu
+# xmake now supports --make_env. see 2010-1-18 Taura
+#
 # Revision 1.48  2009/12/27 16:02:20  ttaauu
 # fixed broken --create_daemon 1 option
 #

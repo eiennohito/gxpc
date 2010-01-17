@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh,v 1.14 2009/12/11 15:54:37 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh,v 1.15 2010/01/17 17:17:28 ttaauu Exp $
 # $Name:  $
 #
 
@@ -29,7 +29,8 @@ envs_to_pass = [ "MAKEFLAGS", "MAKELEVEL", "MAKEFILES",
                  "GXP_MAKE_SO_NAME",
                  "GXP_MAKE_MKSH_PID",
                  "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED",
-                 "GXP_MAKE_EXIT_STATUS_SERVER_DIED" ]
+                 "GXP_MAKE_EXIT_STATUS_SERVER_DIED",
+                 ]
 
 def submit(so_name, cmd):
     key_cf = "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"
@@ -42,7 +43,9 @@ def submit(so_name, cmd):
     msgs.append("%9d %s" % (len(cmd), cmd))
     msgs.append("%9d %s" % (len(cwd), cwd))
     os.environ["GXP_MAKE_MKSH_PID"] = ("%d" % os.getpid())
-    for var in envs_to_pass:
+    # extend envs_to_pass
+    envs = string.split(os.environ.get("GXP_MAKE_ENVS", ""))
+    for var in envs_to_pass + envs:
         if os.environ.has_key(var):
             varval = "%s=%s" % (var, os.environ[var])
             msgs.append("%9d %s" % (len(varval), varval))
@@ -133,6 +136,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: mksh,v $
+# Revision 1.15  2010/01/17 17:17:28  ttaauu
+# xmake now supports --make_env. see 2010-1-18 Taura
+#
 # Revision 1.14  2009/12/11 15:54:37  ttaauu
 # ChangeLog
 #
