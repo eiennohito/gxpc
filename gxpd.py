@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.12 2010/01/05 06:48:32 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.13 2010/01/31 05:31:28 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2070,10 +2070,14 @@ class gxpd(ioman.ioman):
                               gxp_dir)
         path = self.push_path(path,
                               os.path.join(gxp_dir, "gxpbin"))
+        path = self.push_path(path,
+                              os.path.join(gxp_dir, "gxpmake"))
         pypath = self.push_path(os.environ.get("PYTHONPATH", ""),
                                 gxp_dir)
         pypath = self.push_path(pypath,
                                 os.path.join(gxp_dir, "gxpbin"))
+        pypath = self.push_path(pypath,
+                                os.path.join(gxp_dir, "gxpmake"))
         prefix,gxp_top = os.path.split(gxp_dir)
         return gxpd_environment({ "GXP_DIR"        : gxp_dir,
                                   "GXP_TOP"        : gxp_top,
@@ -2236,6 +2240,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.13  2010/01/31 05:31:28  ttaauu
+# added mapreduce support
+#
 # Revision 1.12  2010/01/05 06:48:32  ttaauu
 # fixed fixed a bug in gxpd.py that generates a too long unix domain socket pathnames
 #

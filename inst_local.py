@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.22 2009/12/31 20:06:33 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.23 2010/01/31 05:31:28 ttaauu Exp $
 # $Name:  $
 #
 
@@ -121,6 +121,15 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/gxpbin/topology.py",
                       "$GXP_DIR/gxpbin/gio",
                       "$GXP_DIR/gxpbin/pfsb.py",
+                      "$GXP_DIR/gxpmake",
+                      "$GXP_DIR/gxpmake/ex_block_reader",
+                      "$GXP_DIR/gxpmake/ex_count_reducer",
+                      "$GXP_DIR/gxpmake/ex_line_reader",
+                      "$GXP_DIR/gxpmake/ex_partitioner",
+                      "$GXP_DIR/gxpmake/ex_record_reader",
+                      "$GXP_DIR/gxpmake/ex_word_count_mapper",
+                      "$GXP_DIR/gxpmake/ex_xml_reader",
+                      "$GXP_DIR/gxpmake/read_helper.py",
                       ]
 
 #
@@ -599,6 +608,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.23  2010/01/31 05:31:28  ttaauu
+# added mapreduce support
+#
 # Revision 1.22  2009/12/31 20:06:33  ttaauu
 # *** empty log message ***
 #

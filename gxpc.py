@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.48 2009/12/31 20:40:42 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.49 2010/01/31 05:31:28 ttaauu Exp $
 # $Name:  $
 #
 
@@ -5088,6 +5088,22 @@ Options:
                 args.append(y)
         return args
 
+    def enter_interactive_shell(self, args):
+        return os.system("bash --rcfile hoge -i")
+
+    def do_i_cmd(self, args):
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        # make sure we have session files before jobs run
+        self.session.save(self.opts.verbosity)
+        # pass session name to make sure child processes attach to
+        # the right session
+        if not os.environ.has_key("GXP_SESSION"):
+            os.environ["GXP_SESSION"] = self.session_file
+        assert os.environ["GXP_SESSION"] == self.session_file, \
+               (os.environ["GXP_SESSION"], self.session_file)
+        self.enter_interactive_shell(args)
+        self.do_quit_cmd(args)
+
     def make_makectl_cmd(self, args):
         if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
         # make sure we have session files before jobs run
@@ -5111,6 +5127,14 @@ Options:
         # give --ctl option to xmake
         self.make_makectl_cmd([ "--", "--ctl" ] + args)
 
+    def do_mapred_cmd(self, args):
+        # give --ctl option to xmake
+        # ugly : init2 just to get gxp_dir ...
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        gxp_dir = os.environ["GXP_DIR"]
+        mapred_mk = os.path.join(gxp_dir, os.path.join("gxpmake", "gxp_make_mapred.mk"))
+        self.make_makectl_cmd([ "-f", mapred_mk ] + args)
+
     # ---------- dispatcher ----------
 
     def dispatch(self):
@@ -5128,7 +5152,7 @@ Options:
                 return r
             # ugly, but necessary to avoid saving
             # session file just deleted in do_quit_cmd
-            if cname == "quit": return r
+            if cname == "quit" or cname == "i": return r
             if self.session is not None:
                 assert self.init_level >= 2
                 if self.opts.save_session:
@@ -5185,6 +5209,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.49  2010/01/31 05:31:28  ttaauu
+# added mapreduce support
+#
 # Revision 1.48  2009/12/31 20:40:42  ttaauu
 # *** empty log message ***
 #

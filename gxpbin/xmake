@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.49 2010/01/17 17:17:28 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.50 2010/01/31 05:31:28 ttaauu Exp $
 # $Name:  $
 #
 
@@ -459,6 +459,7 @@ class Shot:
         self.server = server            # xmake_server object
         self.run = run                  # parent run object this shot is for
         self.resources = resources      # resources (semaphores) needed
+        self.hold_limit = float("inf")
         self.time_start = None
         self.time_end = None
 
@@ -1863,6 +1864,30 @@ class resource_usage:
         self.r = r
         return dr
 
+class cmd_attribute_parser:
+    def __init__(self):
+        # begin with non-quotes up to a whitespace or a quote
+        non_quoted_sequence = r"""([^\s'"]|\\'\\")+"""
+        # begin with a single quote, up to a matching quote
+        single_quoted_sequence = r"""'([^']|\\')*'"""
+        # begin with a double quote, up to a matching double quote
+        double_quoted_sequence = r'''"([^"]|\\")*"'''
+        # any of the above three kinds
+        any_sequence = ("(%s|%s|%s)" % (non_quoted_sequence, 
+                                        single_quoted_sequence, 
+                                        double_quoted_sequence))
+        # sequence of it (shell command line)
+        any_sequences = r"""\s*(%s*)""" % any_sequence
+        var_val = "([A-Za-z_]+)=(%s)" % any_sequences
+        self.var_val_pat = re.compile(var_val, re.DOTALL)
+        self.attr_pat = re.compile("GXPC?_?MAKE:\s*(.*)", re.DOTALL)
+        # usage:
+        # p = cmd_attribute_parser()
+        # m = p.attr_pat(command_line)
+        # if m: 
+        #     for var_val in p.var_val_pat.findall(m.group(1)):
+        #         m = p.var_val_pat(var_val)
+
 class xmake_server:
     """
 
@@ -1940,6 +1965,8 @@ class xmake_server:
         self.hostname = None
         #
         self.pinger = None
+        # parse command attributes GXPMAKE: x=y z=w ...
+        self.cmd_attr_parser = cmd_attribute_parser()
 
     def safe_int(self, x):
         try:
@@ -2515,6 +2542,50 @@ class xmake_server:
             self.LOG("got job io '%s'\n" % ev.payload)
             shot.run.io_events.append(ev)
 
+    def parse_cmd_attributes(self, cmd):
+        """
+        parse GXPMAKE: on=xxx wait=%s ... attributes
+        """
+        A = {}                  # key : value
+        p = self.cmd_attr_parser
+        m = p.attr_pat.search(cmd)
+        if m is None: return A
+        var_vals = p.var_val_pat.findall(m.group(1))
+        # Es("var_vals = %s\n" % var_vals)
+        for var_val in var_vals:
+            var = string.strip(var_val[0])
+            val = string.strip(var_val[1])
+            A[var] = val
+        return A
+
+    def check_constraint(self, shot, man, attrs):
+        if shot.hold_limit < self.cur_time(): return 1
+        attrs = self.parse_cmd_attributes(shot.cmd)
+        on = attrs.get("on")
+        if on is None: return 1
+        Es("xmake: task constraint: on=%s\n" % on)
+        if re.match(on, man.name): return 1
+        return 0
+
+    def find_man_for_shot(self, shot):
+        if shot.run.work.local:
+            return self.local_man
+        attrs = self.parse_cmd_attributes(shot.cmd)
+        for man in self.free_men:
+            if man.state == Man.state_active:
+                if self.check_constraint(shot, man, attrs):
+                    self.free_men.remove(man)
+                    return man
+            else:
+                # the man is dead
+                self.free_men.remove(man)
+                Es(("xmake: man %s in state %d found in "
+                    "free_men queue\n" % (man.name, man.stat)))
+        hold_limit = self.cur_time() + float(attrs.get("hold", "5.0"))
+        Es("xmake: hold until %f (%s)\n" % (hold_limit, shot.cmd))
+        shot.hold_limit = hold_limit
+        return None
+
     def find_matches(self):
         fifo = 1
         if self.logfp:
@@ -2547,20 +2618,8 @@ class xmake_server:
                 M.append((shot, shot.run.man))
             else:
                 # look for man who can execute it
-                found = 0
-                if shot.run.work.local:
-                    found = 1
-                    man = self.local_man
-                else:
-                    for man in self.free_men:
-                        self.free_men.remove(man)
-                        if man.state == Man.state_active:
-                            found = 1
-                            break           # found match for man
-                        else:
-                            Es(("xmake: man %s in state %d found in "
-                                "free_men queue\n" % (man.name, man.state)))
-                if found:
+                man = self.find_man_for_shot(shot)
+                if man:
                     if self.logfp:
                         self.LOG(("shot '%s' assignged %s\n"
                                   % (shot, man.name)))
@@ -2623,7 +2682,6 @@ class xmake_server:
                 break
         if self.logfp:
             self.LOG("%d jobs dispatched\n" % n)
-        
         return n
 
     def check_worker_status(self, cur_time):
@@ -3003,6 +3061,23 @@ class xmake_server:
         self.periodic(1)
         return self.determine_exit_status()
 
+    def calc_next_timeout(self, cur_time):
+        if self.n_state_changes > xmake_server.FAST_UPDATE_THRESHOLD:
+            nr = self.next_record_time_1
+        else:
+            nr = self.next_record_time_2
+        int_at = self.opts.interrupt_at
+        if int_at is not None and int_at < nr:
+            time_limit = int_at
+        else:
+            time_limit = nr
+        for shot in self.shots_todo:
+            time_limit = min(time_limit, shot.hold_limit)
+        cur_time = self.cur_time()
+        timeout = time_limit - cur_time
+        if timeout < 0.0: timeout = 0.0
+        return timeout
+
     def server_iterate(self):
         # take some special action for time limit
         # (1) soft limit reached and no work in flight
@@ -3046,17 +3121,9 @@ class xmake_server:
         if self.so: R.append(self.so)
         if self.gxpc_fd: R.append(self.gxpc_fd)
         if self.job_io_fd: R.append(self.job_io_fd)
-        if self.n_state_changes > xmake_server.FAST_UPDATE_THRESHOLD:
-            nr = self.next_record_time_1
-        else:
-            nr = self.next_record_time_2
-        int_at = self.opts.interrupt_at
+        # calc next timeout
         cur_time = self.cur_time()
-        if int_at is not None and int_at < nr:
-            timeout = int_at - cur_time
-        else:
-            timeout = nr - cur_time
-        if timeout < 0.0: timeout = 0.0
+        timeout = self.calc_next_timeout(cur_time)
         if n_dispatched_jobs == 0 and timeout < 1.0:
             timeout = 1.0
         if self.logfp:
@@ -3221,6 +3288,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.50  2010/01/31 05:31:28  ttaauu
+# added mapreduce support
+#
 # Revision 1.49  2010/01/17 17:17:28  ttaauu
 # xmake now supports --make_env. see 2010-1-18 Taura
 #
