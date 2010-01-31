@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.50 2010/01/31 11:08:06 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.51 2010/01/31 13:21:34 ttaauu Exp $
 # $Name:  $
 #
 
@@ -5064,7 +5064,7 @@ use.
         if full:
             u = u + r"""
 Description:
-  parallel and distributed make.
+  Parallel and distributed make.
 
 Options:
 """
@@ -5091,7 +5091,18 @@ Options:
     def enter_interactive_shell(self, args):
         return os.system("bash --rcfile hoge -i")
 
-    def do_i_cmd(self, args):
+    def xusage_i_cmd(self, full):
+        u = r"""Usage:
+  gxpc i
+"""
+        if full:
+            u = u + r"""
+Description:
+  Enter a new shell with a gxpc session.
+"""
+        return u
+
+    def xdo_i_cmd(self, args):
         if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
         # make sure we have session files before jobs run
         self.session.save(self.opts.verbosity)
@@ -5123,9 +5134,79 @@ Options:
     def do_make_cmd(self, args):
         self.make_makectl_cmd(args)
 
+    def usage_makectl_cmd(self, full):
+        u = r"""Usage:
+  gxpc makectl (leave|leave_now|join)
+"""
+        if full:
+            u = u + r"""
+Description:
+  GXP daemons who receive this command will leave, leave immediately,
+or join the gxp make computation.
+Options:
+"""
+        return u
+
     def do_makectl_cmd(self, args):
         # give --ctl option to xmake
         self.make_makectl_cmd([ "--", "--ctl" ] + args)
+
+    def usage_mapred_cmd(self, full):
+        u = r"""Usage:
+  gxpc mapred GNU-MAKE-ARGS [ -- GXPC-MAKE-ARGS ]
+"""
+        if full:
+            u = u + r"""
+Description:
+  This is a map-reduce framework built on top of GXP make.
+You can run map-reduce without writing any Makefile by yourself.
+You specify various options in GNU-MAKE-ARGS in the form of 
+var=val.  A simple example:
+
+  gxpc mapred -j input=big.txt output=out.txt \
+    mapper=./my_mapper reducer=./my_reducer
+
+You will find the '-n' option of make useful, since it tells you
+which commands are going to be executed by this command line.
+
+  gxpc mapred -n input=big.txt output=out.txt \
+    mapper=./my_mapper reducer=./my_reducer
+
+Options:
+You will probably want to specify at least the following.
+  input=<input filename>     (default: "input")
+  output=<output filename>   (default: "output")
+  mapper=<mapper command>    (default: "ex_word_count_mapper")
+  reducer=<reducer command>  (default: "ex_word_count_reducer")
+
+<input filename> and <output filename> are filenames.
+<mapper command> is a command that reads anything from stdin and 
+writes key-value pairs.
+<reducer command> is a command that reads key-value pairs from stdin 
+in sorted order and writes arbitrary final outputs.
+
+You will frequently want to specify the following.
+  n_maps=<number of map tasks>       (default: 4)
+  n_reduces=<number of reduce tasks> (default: 2)
+  reader=<reader command>            (default: "ex_line_reader")
+  int_dir=<intermediate directory>   (default: "int_dir")
+  keep_intermediates=y  will keep all intermediate files in int_dir
+  small_step=y  will execute the entire computation in small steps
+  dbg=y   equivalent to keep_intermediates=y small_step=y (useful for debugging)
+
+More options are:
+  partitioner=<partitioner command>  (default: "ex_partitioner")
+  pre_reduce_sorter=<sort command>   (default: "sort")
+  final_merger=<merge command>       (default: "cat")
+
+pre_reduce_sorter is a command that runs before each reducer.
+It takes in the command line mappers' output filenames and should
+output to the stdout the sorted list of key-value pairs.
+final_merger takes the filenames of all the reducers' output and
+outputs the final result.
+
+"""
+        return u
 
     def do_mapred_cmd(self, args):
         # give --ctl option to xmake
@@ -5134,6 +5215,32 @@ Options:
         gxp_dir = os.environ["GXP_DIR"]
         mapred_mk = os.path.join(gxp_dir, os.path.join("gxpmake", "gxp_make_mapred.mk"))
         self.make_makectl_cmd([ "-f", mapred_mk ] + args)
+
+    def usage_pp_cmd(self, full):
+        u = r"""Usage:
+  gxpc pp GNU-MAKE-ARGS [ -- GXPC-MAKE-ARGS ]
+"""
+        if full:
+            u = u + r"""
+Description:
+  This is a simple parameter parallel framework built on top of GXP make.
+You can run a simple parameter-sweep type parallel applications without 
+writing any Makefile by yourself.  You specify various options in GNU-MAKE-ARGS 
+in the form of var=val.  A simple example:
+
+  gxpc pp -j cmd='./my_cmd -a $(a) $(f) ' a="1 2 3 4" f="a.txt b.txt c.txt" parameters="a f"
+
+This will execute "./my_cmd -a $(a) $(f)" for all the 4x3=12 combinations
+of a and f. parameters= is mandatory.  For all names listed in parameters,
+you need to specify at least one value.  You will find the '-n' option of 
+make useful, since it tells you which commands are going to be executed by 
+this command line.
+
+  gxpc pp -n cmd='./my_cmd -a $(a) $(f) ' a="1 2 3" f="a.txt b.txt c.txt"
+
+"""
+        return u
+
 
     def do_pp_cmd(self, args):
         # ugly : init2 just to get gxp_dir ...
@@ -5216,6 +5323,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.51  2010/01/31 13:21:34  ttaauu
+# added help for mapred and pp
+#
 # Revision 1.50  2010/01/31 11:08:06  ttaauu
 # added parameter parallel framework
 #

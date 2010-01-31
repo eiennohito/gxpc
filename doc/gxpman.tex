@@ -73,9 +73,12 @@ Command Reference
 * help::                        
 * log_level::                   
 * make::                        
+* makectl::                     
 * makeman::                     
+* mapred::                      
 * ping::                        
 * popmask::                     
+* pp::                          
 * prof_start::                  
 * smask::                       
 * quit::                        
@@ -89,6 +92,7 @@ Command Reference
 * stat::                        
 * trim::                        
 * use::                         
+* version::                     
 
 Key Stroke Reference
 
@@ -702,9 +706,12 @@ todo
 * help::                        
 * log_level::                   
 * make::                        
+* makectl::                     
 * makeman::                     
+* mapred::                      
 * ping::                        
 * popmask::                     
+* pp::                          
 * prof_start::                  
 * smask::                       
 * quit::                        
@@ -718,6 +725,7 @@ todo
 * stat::                        
 * trim::                        
 * use::                         
+* version::                     
 @end menu
 
 @node cd, e, Command Reference, Command Reference
@@ -784,6 +792,12 @@ Options are the same as those of `@t{e}' command.
     match regexp @var{HOSTMASK}
 @item   @t{--withgupidnegmask},-G @var{HOSTMASK}
     execute on a set of nodes whose gupid (shown by @t{gxpc} @t{stat}) 
+    do not match regexp @var{HOSTMASK}
+@item   @t{--withtargetmask},@t{-t} @var{HOSTMASK}
+    execute on a set of nodes whose target name (shown by @t{gxpc} @t{stat}) 
+    match regexp @var{HOSTMASK}
+@item   @t{--withtargetnegmask},-T @var{HOSTMASK}
+    execute on a set of nodes whose target name (shown by @t{gxpc} @t{stat}) 
     do not match regexp @var{HOSTMASK}
 @item   @t{--up} FD0[:@var{FD1}]
     collect output from @var{FD0} of @var{CMD}, and output them to @var{FD1} of @t{gxpc}.
@@ -878,6 +892,12 @@ as soon as they are newlined.
 @item   @t{--withgupidnegmask},-G @var{HOSTMASK}
     execute on a set of nodes whose gupid (shown by @t{gxpc} @t{stat}) 
     do not match regexp @var{HOSTMASK}
+@item   @t{--withtargetmask},@t{-t} @var{HOSTMASK}
+    execute on a set of nodes whose target name (shown by @t{gxpc} @t{stat}) 
+    match regexp @var{HOSTMASK}
+@item   @t{--withtargetnegmask},-T @var{HOSTMASK}
+    execute on a set of nodes whose target name (shown by @t{gxpc} @t{stat}) 
+    do not match regexp @var{HOSTMASK}
 @item   @t{--up} FD0[:@var{FD1}]
     collect output from @var{FD0} of @var{CMD}, and output them to @var{FD1} of @t{gxpc}.
     if :@var{FD1} is omitted, it is treated as if @var{FD1} == @var{FD0}
@@ -966,6 +986,12 @@ as soon as they are newlined.
 @item   @t{--children_hard_limit} @var{N}
     control the shape of the @t{explore} tree. if this value is @var{N}, @t{gxpc}
     keeps the number of children of a single host no more than @var{N}, in any event.
+@item   @t{--target_prefix} @var{PATH}
+    specify the directory in remote hosts in which gxp files are installed.
+    default is ~/.gxp_tmp, meaning a temporary directory like
+    ~/.gxp_tmp/RANDOM_NAME/gxp3 will be created and all files are installed
+    there. automatically created if it does not exist. @t{use} @t{e}.g., /tmp/YOUR_NAME
+    or something if you have ridicuously slow home directory.
 @item   @t{--verbosity} @var{N} (0 <= @var{N} <= 2)
     set verbosity level (the larger the more verbose)
 @item   @t{--set_default}
@@ -1344,7 +1370,7 @@ Command @t{log_base_time} will reset the time of the selected nodes
 to zero.  Subsequent log entries will record the time relative to
 this time.
 
-@node make, makeman, log_level, Command Reference
+@node make, makectl, log_level, Command Reference
 @section make
 @vskip 5mm
 @b{Usage:}
@@ -1359,7 +1385,7 @@ this time.
 @b{Description:}
 
 
-  parallel and distributed @t{make}.
+  Parallel and distributed @t{make}.
 
 @vskip 5mm
 @b{Options:}
@@ -1369,7 +1395,32 @@ this time.
 @end table
 @vskip 5mm
 
-@node makeman, ping, make, Command Reference
+@node makectl, makeman, make, Command Reference
+@section makectl
+@vskip 5mm
+@b{Usage:}
+@example
+
+  @t{gxpc} @t{makectl} (leave|leave_now|join)
+
+@end example
+@vskip 5mm
+
+@vskip 5mm
+@b{Description:}
+
+
+  @var{GXP} daemons who receive this command will leave, leave immediately,
+or join the gxp @t{make} computation.
+@vskip 5mm
+@b{Options:}
+@table @code
+
+
+@end table
+@vskip 5mm
+
+@node makeman, mapred, makectl, Command Reference
 @section makeman
 @vskip 5mm
 @b{Usage:}
@@ -1386,7 +1437,88 @@ this time.
 
   Generate command reference chapter of gxp manual.
 
-@node ping, popmask, makeman, Command Reference
+@node mapred, ping, makeman, Command Reference
+@section mapred
+@vskip 5mm
+@b{Usage:}
+@example
+
+  @t{gxpc} @t{mapred} GNU-MAKE-ARGS [ -- GXPC-MAKE-ARGS ]
+
+@end example
+@vskip 5mm
+
+@vskip 5mm
+@b{Description:}
+
+
+  This is a map-reduce framework built on top of @var{GXP} @t{make}.
+You can run map-reduce without writing any Makefile by yourself.
+You specify various options in GNU-MAKE-ARGS in the form of 
+var=val.  @var{A} simple example:
+
+@vskip 5mm
+@example
+
+  @t{gxpc} @t{mapred} -j input=big.txt output=out.txt \
+    mapper=./my_mapper reducer=./my_reducer
+
+@end example
+@vskip 5mm
+
+You will find the '-n' option of @t{make} useful, since it tells you
+which commands are going to be executed by this command line.
+
+@vskip 5mm
+@example
+
+  @t{gxpc} @t{mapred} -n input=big.txt output=out.txt \
+    mapper=./my_mapper reducer=./my_reducer
+
+@end example
+@vskip 5mm
+
+@vskip 5mm
+@b{Options:}
+@table @code
+
+You will probably want to specify at least the following.
+  input=<input filename>     (default: "input")
+  output=<output filename>   (default: "output")
+  mapper=<mapper command>    (default: "ex_word_count_mapper")
+  reducer=<reducer command>  (default: "ex_word_count_reducer")
+
+@end table
+@vskip 5mm
+
+<input filename> and <output filename> are filenames.
+<mapper command> is a command that reads anything from stdin and 
+writes key-value pairs.
+<reducer command> is a command that reads key-value pairs from stdin 
+in sorted order and writes arbitrary final outputs.
+
+You will frequently want to specify the following.
+  n_maps=<number of map tasks>       (default: 4)
+  n_reduces=<number of reduce tasks> (default: 2)
+  reader=<reader command>            (default: "ex_line_reader")
+  int_dir=<intermediate directory>   (default: "int_dir")
+  keep_intermediates=y  will keep all intermediate files in int_dir
+  small_step=y  will execute the entire computation in small steps
+  dbg=y   equivalent to keep_intermediates=y small_step=y (useful for debugging)
+
+More options are:
+  partitioner=<partitioner command>  (default: "ex_partitioner")
+  pre_reduce_sorter=<sort command>   (default: "sort")
+  final_merger=<merge command>       (default: "cat")
+
+pre_reduce_sorter is a command that runs before each reducer.
+It takes in the command line mappers' output filenames and should
+output to the stdout the sorted list of key-value pairs.
+final_merger takes the filenames of all the reducers' output and
+outputs the final result.
+
+
+@node ping, popmask, mapred, Command Reference
 @section ping
 @vskip 5mm
 @b{Usage:}
@@ -1416,7 +1548,7 @@ of nodes and @t{trim} non-responding nodes.
 @end example
 @vskip 5mm
 
-@node popmask, prof_start, ping, Command Reference
+@node popmask, pp, ping, Command Reference
 @section popmask
 @vskip 5mm
 @b{Usage:}
@@ -1445,7 +1577,50 @@ for execution.
 @end example
 @vskip 5mm
 
-@node prof_start, smask, popmask, Command Reference
+@node pp, prof_start, popmask, Command Reference
+@section pp
+@vskip 5mm
+@b{Usage:}
+@example
+
+  @t{gxpc} @t{pp} GNU-MAKE-ARGS [ -- GXPC-MAKE-ARGS ]
+
+@end example
+@vskip 5mm
+
+@vskip 5mm
+@b{Description:}
+
+
+  This is a simple parameter parallel framework built on top of @var{GXP} @t{make}.
+You can run a simple parameter-sweep type parallel applications without 
+writing any Makefile by yourself.  You specify various options in GNU-MAKE-ARGS 
+in the form of var=val.  @var{A} simple example:
+
+@vskip 5mm
+@example
+
+  @t{gxpc} @t{pp} -j cmd='./my_cmd -a $(a) $(f) ' a="1 2 3 4" f="a.txt b.txt c.txt" @t{parameters}="a f"
+
+@end example
+@vskip 5mm
+
+This will execute "./my_cmd -a $(a) $(f)" for all the 4x3=12 combinations
+of a and f. @t{parameters}= is mandatory.  For all names listed in @t{parameters},
+you need to specify at least one value.  You will find the '-n' option of 
+@t{make} useful, since it tells you which commands are going to be executed by 
+this command line.
+
+@vskip 5mm
+@example
+
+  @t{gxpc} @t{pp} -n cmd='./my_cmd -a $(a) $(f) ' a="1 2 3" f="a.txt b.txt c.txt"
+
+@end example
+@vskip 5mm
+
+
+@node prof_start, smask, pp, Command Reference
 @section prof_start, prof_stop
 @vskip 5mm
 @b{Usage:}
@@ -1980,7 +2155,7 @@ the subtree from the tree of gxp daemons. For example,
 @end example
 @vskip 5mm
 
-@node use,  , trim, Command Reference
+@node use, version, trim, Command Reference
 @section use, edges
 @vskip 5mm
 @b{Usage:}
@@ -2114,6 +2289,17 @@ is allocated by the scheduler.
 @example
 
   @t{explore} @t{rsh}
+
+@end example
+@vskip 5mm
+
+@node version,  , use, Command Reference
+@section version
+@vskip 5mm
+@b{Usage:}
+@example
+
+  @t{gxpc} @t{version}
 
 @end example
 @vskip 5mm

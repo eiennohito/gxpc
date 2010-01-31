@@ -22,6 +22,10 @@ final_merger:=sort -m
 int_dir:=int_dir
 keep_intermediates:=n
 small_step:=n
+ifeq ($(dbg),y)
+keep_intermediates:=y
+small_step:=y
+endif
 
 
 all : $(output)

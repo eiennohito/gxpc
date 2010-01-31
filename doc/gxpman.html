@@ -3,7 +3,7 @@
 <title>GXP3 User's Guide</title>
 <meta http-equiv="Content-Type" content="text/html">
 <meta name="description" content="GXP3 User's Guide">
-<meta name="generator" content="makeinfo 4.8">
+<meta name="generator" content="makeinfo 4.11">
 <link title="Top" rel="top" href="#Top">
 <link href="http://www.gnu.org/software/texinfo/" rel="generator-home" title="Texinfo Homepage">
 <meta http-equiv="Content-Style-Type" content="text/css">
@@ -77,9 +77,12 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#dir">(dir)</a>
 <li><a href="#help">help</a>
 <li><a href="#log_005flevel">log_level</a>
 <li><a href="#make">make</a>
+<li><a href="#makectl">makectl</a>
 <li><a href="#makeman">makeman</a>
+<li><a href="#mapred">mapred</a>
 <li><a href="#ping">ping</a>
 <li><a href="#popmask">popmask</a>
+<li><a href="#pp">pp</a>
 <li><a href="#prof_005fstart">prof_start</a>
 <li><a href="#smask">smask</a>
 <li><a href="#quit">quit</a>
@@ -93,6 +96,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#dir">(dir)</a>
 <li><a href="#stat">stat</a>
 <li><a href="#trim">trim</a>
 <li><a href="#use">use</a>
+<li><a href="#version">version</a>
 
 </li></ul>
 <p>Key Stroke Reference
@@ -193,13 +197,13 @@ Instead, all you need to do is either to:
      <ol type=1 start=1>
 <li>make a symlink from anywhere in your path to <tt>gxp3/gxpc</tt>. For example,
      <pre class="example">          ln -s /absolute/path/to/gxp3/gxpc /usr/local/bin/gxpc
-     </pre>
+</pre>
      <p>or,
 
      <li>add <tt>gxp3</tt> directory to your PATH environment variable. For example,
 add the following line in your <tt>.bashrc</tt>.
      <pre class="example">          export PATH=$PATH:/absolute/path/to/gxp3
-     </pre>
+</pre>
      </ol>
 
    <p>In the former, it is important to make a symlink to, not a copy of,
@@ -581,75 +585,75 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Tutorial">Tutorial</a>
      <ul>
 <li>
      <pre class="example">          <tt>gxpc prompt</tt>
-     </pre>
+</pre>
      <p>will show a succinct summary of gxp status.  It is strongly
 recommended to put `gxpc prompt 2&gt; /dev/null`
 (note for the backquotes, not regular
 quotes) as part of your shell prompt. For example, if you are a bash
 user, put the following into your .bashrc.
      <pre class="example">          export PS1='\h:\W`gxpc prompt 2&gt; /dev/null`% '
-     </pre>
+</pre>
      <p>Then you will always see the succinct summary in your shell prompt. e.g.,
      <pre class="example">          $ export PS1='\h:\W`gxpc prompt 2&gt; /dev/null`% '
           $ gxpc
           hongo:tmp[1/1/1]%
-     </pre>
+</pre>
      <p>'2&gt; /dev/null' is to make gxpc silently exit if should be there any
 error.
 
      <li>
      <pre class="example">          <tt>gxpc use</tt> <i>rsh-name</i> <i>src</i> <i>target</i>
-     </pre>
+</pre>
      <p>tells gxp it can login
 from <i>src</i> to <i>target</i> via <i>rsh-name</i>.
 
      <li>
      <pre class="example">          <tt>gxpc explore</tt> <i>target</i> ...
-     </pre>
+</pre>
      <p>attempts to login specified <i>target</i>'s by methods specified by <tt>use</tt>
 commands. 
 There is a convenient notation to represent a set of targets. e.g.,
      <pre class="example">          $ gxpc explore hongo[[000-012]]
-     </pre>
+</pre>
      <p>is equivalent to
      <pre class="example">          $ gxpc explore hongo000 hongo001 hongo002 ... hongo012
-     </pre>
+</pre>
      <li>
      <pre class="example">          <tt>gxpc e</tt> <i>whatever</i>
-     </pre>
+</pre>
      <p>will run a shell command <i>whatever</i> on
 all selected hosts. e.g.,
 
      <li>
      <pre class="example">          <tt>gxpc cd</tt> <i>[directory]</i>
-     </pre>
+</pre>
      <p>will change the current directory of all selected hosts.
 
      <li>
      <pre class="example">          <tt>gxpc export</tt> <i>VAR=VAL</i>
-     </pre>
+</pre>
      <p>will set the environment variable for seqsequent commands.
 
      <li>
      <pre class="example">          <tt>gxpc smask</tt>
-     </pre>
+</pre>
      <p>will select the hosts on which the last command succeeded
 for the execution targets of subsequent commands.
 
      <li>
      <pre class="example">          <tt>gxpc rmask</tt>
-     </pre>
+</pre>
      <p>will reset the selected hosts to all hosts.
 
      <li>
      <pre class="example">          <tt>gxpc savemask</tt> <i>name</i>
-     </pre>
+</pre>
      <p>is similar to smask, but it remembers the set of selected hosts
 for future reference (by <tt>-m</tt> option of <tt>gxpc e</tt> commands).
 
      <li>
      <pre class="example">          <tt>gxpc e</tt> -m <i>name</i> <i>whatever</i>
-     </pre>
+</pre>
      <p>is similar to <tt>gxpc e</tt> <i>whatever</i>, but runs <i>whatever</i> on
 hosts that have been set by <i>name</i> by <tt>gxpc savemask</tt> <i>name</i>.
 
@@ -657,18 +661,18 @@ hosts that have been set by <i>name</i> by <tt>gxpc savemask</tt> <i>name</i>.
      <pre class="example">          <tt>gxpc -m</tt> <i>name</i> <tt>cd</tt> <i>[directory]</i>
           <tt>gxpc -m</tt> <i>name</i> <tt>export</tt> <i>VAR=VAL</i>
           <tt>gxpc -m</tt> <i>name</i> <tt>e</tt> <i>whatever</i>
-     </pre>
+</pre>
      <p><tt>-m</tt> can actually be written immediately after <tt>gxpc</tt>.
 
      <li>
      <pre class="example">          <tt>gxpc e</tt> -h <i>hostname</i> <i>whatever</i>
-     </pre>
+</pre>
      <p>is similar to <tt>gxpc e</tt> <i>whatever</i>, but runs <i>whatever</i> on
 hosts whose names match regular expression <i>hostname</i>.
 
      <li>
      <pre class="example">          <tt>gxpc e</tt> -H <i>hostname</i> <i>whatever</i>
-     </pre>
+</pre>
      <p>is similar to <tt>gxpc e</tt> <i>whatever</i>, but runs <i>whatever</i> on
 hosts whose names do not match regular expression <i>hostname</i>.
 
@@ -679,14 +683,14 @@ hosts whose names do not match regular expression <i>hostname</i>.
           <tt>gxpc -H</tt> <i>name</i> <tt>cd</tt> <i>[directory]</i>
           <tt>gxpc -H</tt> <i>name</i> <tt>export</tt> <i>VAR=VAL</i>
           <tt>gxpc -H</tt> <i>name</i> <tt>e</tt> <i>whatever</i>
-     </pre>
+</pre>
      <p>Both <tt>-h</tt> and <tt>-H</tt> can actually be written immediately after <tt>gxpc</tt>.
 
      <li>
      <pre class="example">          alias e='gxpc e'
           alias smask='gxpc smask'
           ...
-     </pre>
+</pre>
      <p>Finally, it is recommended to put aliases to some frequently used
 commands into your shell startup files, so that you do not need to
 type 'gxpc' everytime.
@@ -726,9 +730,12 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 <li><a accesskey="6" href="#help">help</a>
 <li><a accesskey="7" href="#log_005flevel">log_level</a>
 <li><a accesskey="8" href="#make">make</a>
-<li><a accesskey="9" href="#makeman">makeman</a>
+<li><a accesskey="9" href="#makectl">makectl</a>
+<li><a href="#makeman">makeman</a>
+<li><a href="#mapred">mapred</a>
 <li><a href="#ping">ping</a>
 <li><a href="#popmask">popmask</a>
+<li><a href="#pp">pp</a>
 <li><a href="#prof_005fstart">prof_start</a>
 <li><a href="#smask">smask</a>
 <li><a href="#quit">quit</a>
@@ -742,6 +749,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 <li><a href="#stat">stat</a>
 <li><a href="#trim">trim</a>
 <li><a href="#use">use</a>
+<li><a href="#version">version</a>
 </ul>
 
 <div class="node">
@@ -805,6 +813,10 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 <br><dt><tt>--withgupidmask</tt><code>,-g </code><var>HOSTMASK</var><dd>    execute on a set of nodes whose gupid (shown by <tt>gxpc</tt> <tt>stat</tt>)
     match regexp <var>HOSTMASK</var>
 <br><dt><tt>--withgupidnegmask</tt><code>,-G </code><var>HOSTMASK</var><dd>    execute on a set of nodes whose gupid (shown by <tt>gxpc</tt> <tt>stat</tt>)
+    do not match regexp <var>HOSTMASK</var>
+<br><dt><tt>--withtargetmask</tt><code>,</code><tt>-t</tt> <var>HOSTMASK</var><dd>    execute on a set of nodes whose target name (shown by <tt>gxpc</tt> <tt>stat</tt>)
+    match regexp <var>HOSTMASK</var>
+<br><dt><tt>--withtargetnegmask</tt><code>,-T </code><var>HOSTMASK</var><dd>    execute on a set of nodes whose target name (shown by <tt>gxpc</tt> <tt>stat</tt>)
     do not match regexp <var>HOSTMASK</var>
 <br><dt><tt>--up</tt><code> FD0[:</code><var>FD1</var><code>]</code><dd>    collect output from <var>FD0</var> of <var>CMD</var>, and output them to <var>FD1</var> of <tt>gxpc</tt>. 
     if :<var>FD1</var> is omitted, it is treated as if <var>FD1</var> == <var>FD0</var>
@@ -881,6 +893,10 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
     match regexp <var>HOSTMASK</var>
 <br><dt><tt>--withgupidnegmask</tt><code>,-G </code><var>HOSTMASK</var><dd>    execute on a set of nodes whose gupid (shown by <tt>gxpc</tt> <tt>stat</tt>)
     do not match regexp <var>HOSTMASK</var>
+<br><dt><tt>--withtargetmask</tt><code>,</code><tt>-t</tt> <var>HOSTMASK</var><dd>    execute on a set of nodes whose target name (shown by <tt>gxpc</tt> <tt>stat</tt>)
+    match regexp <var>HOSTMASK</var>
+<br><dt><tt>--withtargetnegmask</tt><code>,-T </code><var>HOSTMASK</var><dd>    execute on a set of nodes whose target name (shown by <tt>gxpc</tt> <tt>stat</tt>)
+    do not match regexp <var>HOSTMASK</var>
 <br><dt><tt>--up</tt><code> FD0[:</code><var>FD1</var><code>]</code><dd>    collect output from <var>FD0</var> of <var>CMD</var>, and output them to <var>FD1</var> of <tt>gxpc</tt>. 
     if :<var>FD1</var> is omitted, it is treated as if <var>FD1</var> == <var>FD0</var>
 <br><dt><tt>--down</tt><code> FD0[:</code><var>FD1</var><code>]</code><dd>    broadcast input to <var>FD0</var> of <tt>gxpc</tt> to <var>FD1</var> of <var>CMD</var>. 
@@ -950,6 +966,11 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
     unless it is absolutely necessary to reach requested nodes. 
 <br><dt><tt>--children_hard_limit</tt> <var>N</var><dd>    control the shape of the <tt>explore</tt> tree. if this value is <var>N</var>, <tt>gxpc</tt>
     keeps the number of children of a single host no more than <var>N</var>, in any event. 
+<br><dt><tt>--target_prefix</tt> <var>PATH</var><dd>    specify the directory in remote hosts in which gxp files are installed. 
+    default is ~/.gxp_tmp, meaning a temporary directory like
+    ~/.gxp_tmp/RANDOM_NAME/gxp3 will be created and all files are installed
+    there. automatically created if it does not exist. <tt>use</tt> <tt>e</tt>.g., /tmp/YOUR_NAME
+    or something if you have ridicuously slow home directory. 
 <br><dt><tt>--verbosity</tt> <var>N</var><code> (0 &lt;= </code><var>N</var><code> &lt;= 2)</code><dd>    set verbosity level (the larger the more verbose)
 <br><dt><tt>--set_default</tt><dd>    if you set this option, options specified in this <tt>explore</tt> becomes the default. 
     for example, if you say <tt>&ndash;timeout</tt> 20.0 and <tt>&ndash;set_default</tt>, timeout is set to
@@ -1268,7 +1289,7 @@ this time.
 <div class="node">
 <p><hr>
 <a name="make"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#makeman">makeman</a>,
+Next:&nbsp;<a rel="next" accesskey="n" href="#makectl">makectl</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#log_005flevel">log_level</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
@@ -1283,7 +1304,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 </pre>
    <p><b>Description:</b>
 
-   <p>parallel and distributed <tt>make</tt>.
+   <p>Parallel and distributed <tt>make</tt>.
 
    <p><b>Options:</b>
      <dl>
@@ -1291,14 +1312,38 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 <div class="node">
 <p><hr>
-<a name="makeman"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#ping">ping</a>,
+<a name="makectl"></a>
+Next:&nbsp;<a rel="next" accesskey="n" href="#makeman">makeman</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#make">make</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.9 makeman</h3>
+<h3 class="section">4.9 makectl</h3>
+
+<p><b>Usage:</b>
+<pre class="example">     
+       <tt>gxpc</tt> <tt>makectl</tt> (leave|leave_now|join)
+     
+</pre>
+   <p><b>Description:</b>
+
+   <p><var>GXP</var> daemons who receive this command will leave, leave immediately,
+or join the gxp <tt>make</tt> computation. 
+<b>Options:</b>
+     <dl>
+</dl>
+
+<div class="node">
+<p><hr>
+<a name="makeman"></a>
+Next:&nbsp;<a rel="next" accesskey="n" href="#mapred">mapred</a>,
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#makectl">makectl</a>,
+Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
+
+</div>
+
+<h3 class="section">4.10 makeman</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1311,14 +1356,86 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 <div class="node">
 <p><hr>
-<a name="ping"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#popmask">popmask</a>,
+<a name="mapred"></a>
+Next:&nbsp;<a rel="next" accesskey="n" href="#ping">ping</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#makeman">makeman</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.10 ping</h3>
+<h3 class="section">4.11 mapred</h3>
+
+<p><b>Usage:</b>
+<pre class="example">     
+       <tt>gxpc</tt> <tt>mapred</tt> GNU-MAKE-ARGS [ -- GXPC-MAKE-ARGS ]
+     
+</pre>
+   <p><b>Description:</b>
+
+   <p>This is a map-reduce framework built on top of <var>GXP</var> <tt>make</tt>. 
+You can run map-reduce without writing any Makefile by yourself. 
+You specify various options in GNU-MAKE-ARGS in the form of
+var=val.  <var>A</var> simple example:
+
+<pre class="example">     
+       <tt>gxpc</tt> <tt>mapred</tt> -j input=big.txt output=out.txt \
+         mapper=./my_mapper reducer=./my_reducer
+     
+</pre>
+   <p>You will find the '-n' option of <tt>make</tt> useful, since it tells you
+which commands are going to be executed by this command line.
+
+<pre class="example">     
+       <tt>gxpc</tt> <tt>mapred</tt> -n input=big.txt output=out.txt \
+         mapper=./my_mapper reducer=./my_reducer
+     
+</pre>
+   <p><b>Options:</b>
+     <dl>
+You will probably want to specify at least the following. 
+  input=&lt;input filename&gt;     (default: "input")
+  output=&lt;output filename&gt;   (default: "output")
+  mapper=&lt;mapper command&gt;    (default: "ex_word_count_mapper")
+  reducer=&lt;reducer command&gt;  (default: "ex_word_count_reducer")
+
+   </dl>
+
+   <p>&lt;input filename&gt; and &lt;output filename&gt; are filenames. 
+&lt;mapper command&gt; is a command that reads anything from stdin and
+writes key-value pairs. 
+&lt;reducer command&gt; is a command that reads key-value pairs from stdin
+in sorted order and writes arbitrary final outputs.
+
+   <p>You will frequently want to specify the following. 
+  n_maps=&lt;number of map tasks&gt;       (default: 4)
+  n_reduces=&lt;number of reduce tasks&gt; (default: 2)
+  reader=&lt;reader command&gt;            (default: "ex_line_reader")
+  int_dir=&lt;intermediate directory&gt;   (default: "int_dir")
+  keep_intermediates=y  will keep all intermediate files in int_dir
+  small_step=y  will execute the entire computation in small steps
+  dbg=y   equivalent to keep_intermediates=y small_step=y (useful for debugging)
+
+   <p>More options are:
+  partitioner=&lt;partitioner command&gt;  (default: "ex_partitioner")
+  pre_reduce_sorter=&lt;sort command&gt;   (default: "sort")
+  final_merger=&lt;merge command&gt;       (default: "cat")
+
+   <p>pre_reduce_sorter is a command that runs before each reducer. 
+It takes in the command line mappers' output filenames and should
+output to the stdout the sorted list of key-value pairs. 
+final_merger takes the filenames of all the reducers' output and
+outputs the final result.
+
+<div class="node">
+<p><hr>
+<a name="ping"></a>
+Next:&nbsp;<a rel="next" accesskey="n" href="#popmask">popmask</a>,
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#mapred">mapred</a>,
+Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
+
+</div>
+
+<h3 class="section">4.12 ping</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1341,13 +1458,13 @@ of nodes and <tt>trim</tt> non-responding nodes.
    <div class="node">
 <p><hr>
 <a name="popmask"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#prof_005fstart">prof_start</a>,
+Next:&nbsp;<a rel="next" accesskey="n" href="#pp">pp</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#ping">ping</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.11 popmask</h3>
+<h3 class="section">4.13 popmask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1368,15 +1485,52 @@ for execution.
 </pre>
    <div class="node">
 <p><hr>
-<a name="prof_start"></a>
-<a name="prof_005fstart"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#smask">smask</a>,
+<a name="pp"></a>
+Next:&nbsp;<a rel="next" accesskey="n" href="#prof_005fstart">prof_start</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#popmask">popmask</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.12 prof_start, prof_stop</h3>
+<h3 class="section">4.14 pp</h3>
+
+<p><b>Usage:</b>
+<pre class="example">     
+       <tt>gxpc</tt> <tt>pp</tt> GNU-MAKE-ARGS [ -- GXPC-MAKE-ARGS ]
+     
+</pre>
+   <p><b>Description:</b>
+
+   <p>This is a simple parameter parallel framework built on top of <var>GXP</var> <tt>make</tt>. 
+You can run a simple parameter-sweep type parallel applications without
+writing any Makefile by yourself.  You specify various options in GNU-MAKE-ARGS
+in the form of var=val.  <var>A</var> simple example:
+
+<pre class="example">     
+       <tt>gxpc</tt> <tt>pp</tt> -j cmd='./my_cmd -a $(a) $(f) ' a="1 2 3 4" f="a.txt b.txt c.txt" <tt>parameters</tt>="a f"
+     
+</pre>
+   <p>This will execute "./my_cmd -a $(a) $(f)" for all the 4x3=12 combinations
+of a and f. <tt>parameters</tt>= is mandatory.  For all names listed in <tt>parameters</tt>,
+you need to specify at least one value.  You will find the '-n' option of
+<tt>make</tt> useful, since it tells you which commands are going to be executed by
+this command line.
+
+<pre class="example">     
+       <tt>gxpc</tt> <tt>pp</tt> -n cmd='./my_cmd -a $(a) $(f) ' a="1 2 3" f="a.txt b.txt c.txt"
+     
+</pre>
+   <div class="node">
+<p><hr>
+<a name="prof_start"></a>
+<a name="prof_005fstart"></a>
+Next:&nbsp;<a rel="next" accesskey="n" href="#smask">smask</a>,
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#pp">pp</a>,
+Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
+
+</div>
+
+<h3 class="section">4.15 prof_start, prof_stop</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1398,7 +1552,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.13 smask, savemask, pushmask</h3>
+<h3 class="section">4.16 smask, savemask, pushmask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1505,7 +1659,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.14 quit</h3>
+<h3 class="section">4.17 quit</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1527,7 +1681,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.15 reclaim</h3>
+<h3 class="section">4.18 reclaim</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1547,7 +1701,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.16 restoremask</h3>
+<h3 class="section">4.19 restoremask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1563,7 +1717,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.17 rmask</h3>
+<h3 class="section">4.20 rmask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1588,7 +1742,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.18 rsh</h3>
+<h3 class="section">4.21 rsh</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1684,7 +1838,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.19 set_max_buf_len</h3>
+<h3 class="section">4.22 set_max_buf_len</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1707,7 +1861,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.20 show_explore</h3>
+<h3 class="section">4.23 show_explore</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1727,7 +1881,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.21 showmasks</h3>
+<h3 class="section">4.24 showmasks</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1811,7 +1965,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.22 stat</h3>
+<h3 class="section">4.25 stat</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1832,7 +1986,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.23 trim</h3>
+<h3 class="section">4.26 trim</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1860,12 +2014,13 @@ the subtree from the tree of gxp daemons. For example,
    <div class="node">
 <p><hr>
 <a name="use"></a>
+Next:&nbsp;<a rel="next" accesskey="n" href="#version">version</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#trim">trim</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.24 use, edges</h3>
+<h3 class="section">4.27 use, edges</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1970,6 +2125,21 @@ is allocated by the scheduler.
    <p><b>See Also:</b>
 <pre class="example">     
        <tt>explore</tt> <tt>rsh</tt>
+     
+</pre>
+   <div class="node">
+<p><hr>
+<a name="version"></a>
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#use">use</a>,
+Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
+
+</div>
+
+<h3 class="section">4.28 version</h3>
+
+<p><b>Usage:</b>
+<pre class="example">     
+       <tt>gxpc</tt> <tt>version</tt>
      
 </pre>
    <div class="node">
@@ -2146,22 +2316,26 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Refer
 <li><a href="#help">4.6 help</a>
 <li><a href="#log_005flevel">4.7 log_level, log_base_time</a>
 <li><a href="#make">4.8 make</a>
-<li><a href="#makeman">4.9 makeman</a>
-<li><a href="#ping">4.10 ping</a>
-<li><a href="#popmask">4.11 popmask</a>
-<li><a href="#prof_005fstart">4.12 prof_start, prof_stop</a>
-<li><a href="#smask">4.13 smask, savemask, pushmask</a>
-<li><a href="#quit">4.14 quit</a>
-<li><a href="#reclaim">4.15 reclaim</a>
-<li><a href="#restoremask">4.16 restoremask</a>
-<li><a href="#rmask">4.17 rmask</a>
-<li><a href="#rsh">4.18 rsh</a>
-<li><a href="#set_005fmax_005fbuf_005flen">4.19 set_max_buf_len</a>
-<li><a href="#show_005fexplore">4.20 show_explore</a>
-<li><a href="#showmasks">4.21 showmasks</a>
-<li><a href="#stat">4.22 stat</a>
-<li><a href="#trim">4.23 trim</a>
-<li><a href="#use">4.24 use, edges</a>
+<li><a href="#makectl">4.9 makectl</a>
+<li><a href="#makeman">4.10 makeman</a>
+<li><a href="#mapred">4.11 mapred</a>
+<li><a href="#ping">4.12 ping</a>
+<li><a href="#popmask">4.13 popmask</a>
+<li><a href="#pp">4.14 pp</a>
+<li><a href="#prof_005fstart">4.15 prof_start, prof_stop</a>
+<li><a href="#smask">4.16 smask, savemask, pushmask</a>
+<li><a href="#quit">4.17 quit</a>
+<li><a href="#reclaim">4.18 reclaim</a>
+<li><a href="#restoremask">4.19 restoremask</a>
+<li><a href="#rmask">4.20 rmask</a>
+<li><a href="#rsh">4.21 rsh</a>
+<li><a href="#set_005fmax_005fbuf_005flen">4.22 set_max_buf_len</a>
+<li><a href="#show_005fexplore">4.23 show_explore</a>
+<li><a href="#showmasks">4.24 showmasks</a>
+<li><a href="#stat">4.25 stat</a>
+<li><a href="#trim">4.26 trim</a>
+<li><a href="#use">4.27 use, edges</a>
+<li><a href="#version">4.28 version</a>
 </li></ul>
 <li><a name="toc_Tools-Reference" href="#Tools-Reference">5 Tools Reference</a>
 <li><a name="toc_Troubleshooting" href="#Troubleshooting">6 Troubleshooting</a>
