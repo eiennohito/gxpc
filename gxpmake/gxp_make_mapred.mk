@@ -11,8 +11,8 @@ output:=output
 reader:=ex_line_reader
 mapper:=ex_word_count_mapper
 reducer:=ex_count_reducer
-n_maps:=4
-n_reduces:=2
+n_mappers:=4
+n_reducers:=2
 
 partitioner:=ex_partitioner
 pre_reduce_sorter:=sort
@@ -32,8 +32,8 @@ all : $(output)
 
 .DELETE_ON_ERROR :
 
-map_idxs:=$(shell seq 0 $(shell expr $(n_maps) - 1))
-reduce_idxs:=$(shell seq 0 $(shell expr $(n_reduces) - 1))
+map_idxs:=$(shell seq 0 $(shell expr $(n_mappers) - 1))
+reduce_idxs:=$(shell seq 0 $(shell expr $(n_reducers) - 1))
 # reduce.1 reduce.2 ... reduce.R
 reduce_files:=$(addprefix $(int_dir)/reduce.,$(reduce_idxs))
 
@@ -61,7 +61,7 @@ endif
 # in small_step exueciton, read, map, and partition are all separate tasks
 # read a part of the input file and let the reader generate the sub-file (read.$(1))
 $(int_dir)/read.$(1) : $(int_dir) $(input)
-	$(reader) $(input) $(1),$(n_maps) > $$@
+	$(reader) $(input) $(1),$(n_mappers) > $$@
 # mapper takes the sub-file and generate a key-value file (map.$(1))
 $(int_dir)/map.$(1) : $(int_dir)/read.$(1) 
 	$(mapper) < $$^ > $$@
@@ -72,7 +72,7 @@ $(int_dir)/partition.$(1) : $(int_dir)/map.$(1)
 else
 # big_step execution, in which read, map, and partition are piped
 $(int_dir)/partition.$(1) : $(int_dir) $(input)
-	$(reader) $(input) $(1),$(n_maps) | $(mapper) | $(partitioner) $(foreach r,$(reduce_idxs),$$@.$(r))
+	$(reader) $(input) $(1),$(n_mappers) | $(mapper) | $(partitioner) $(foreach r,$(reduce_idxs),$$@.$(r))
 endif
 endef
 

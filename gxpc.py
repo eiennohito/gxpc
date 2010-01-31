@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.51 2010/01/31 13:21:34 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.52 2010/01/31 15:06:48 ttaauu Exp $
 # $Name:  $
 #
 
@@ -5186,10 +5186,10 @@ writes key-value pairs.
 in sorted order and writes arbitrary final outputs.
 
 You will frequently want to specify the following.
-  n_maps=<number of map tasks>       (default: 4)
-  n_reduces=<number of reduce tasks> (default: 2)
-  reader=<reader command>            (default: "ex_line_reader")
-  int_dir=<intermediate directory>   (default: "int_dir")
+  n_mappers=<number of map tasks>       (default: 4)
+  n_reducers=<number of reduce tasks>   (default: 2)
+  reader=<reader command>               (default: "ex_line_reader")
+  int_dir=<intermediate directory>      (default: "int_dir")
   keep_intermediates=y  will keep all intermediate files in int_dir
   small_step=y  will execute the entire computation in small steps
   dbg=y   equivalent to keep_intermediates=y small_step=y (useful for debugging)
@@ -5323,6 +5323,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.52  2010/01/31 15:06:48  ttaauu
+# n_maps/n_reduces -> n_mappers/n_reducers
+#
 # Revision 1.51  2010/01/31 13:21:34  ttaauu
 # added help for mapred and pp
 #
