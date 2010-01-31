@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.50 2010/01/31 05:31:28 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.51 2010/01/31 15:02:54 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2571,19 +2571,23 @@ class xmake_server:
         if shot.run.work.local:
             return self.local_man
         attrs = self.parse_cmd_attributes(shot.cmd)
+        hold = 0
         for man in self.free_men:
             if man.state == Man.state_active:
                 if self.check_constraint(shot, man, attrs):
                     self.free_men.remove(man)
                     return man
+                else:
+                    hold = 1
             else:
                 # the man is dead
                 self.free_men.remove(man)
                 Es(("xmake: man %s in state %d found in "
                     "free_men queue\n" % (man.name, man.stat)))
-        hold_limit = self.cur_time() + float(attrs.get("hold", "5.0"))
-        Es("xmake: hold until %f (%s)\n" % (hold_limit, shot.cmd))
-        shot.hold_limit = hold_limit
+        if hold:
+            hold_limit = self.cur_time() + float(attrs.get("hold", "5.0"))
+            if dbg>=2: Es("xmake: hold until %f (%s)\n" % (hold_limit, shot.cmd))
+            shot.hold_limit = hold_limit
         return None
 
     def find_matches(self):
@@ -3288,6 +3292,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.51  2010/01/31 15:02:54  ttaauu
+# *** empty log message ***
+#
 # Revision 1.50  2010/01/31 05:31:28  ttaauu
 # added mapreduce support
 #
