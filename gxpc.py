@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.49 2010/01/31 05:31:28 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.50 2010/01/31 11:08:06 ttaauu Exp $
 # $Name:  $
 #
 
@@ -5135,6 +5135,13 @@ Options:
         mapred_mk = os.path.join(gxp_dir, os.path.join("gxpmake", "gxp_make_mapred.mk"))
         self.make_makectl_cmd([ "-f", mapred_mk ] + args)
 
+    def do_pp_cmd(self, args):
+        # ugly : init2 just to get gxp_dir ...
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        gxp_dir = os.environ["GXP_DIR"]
+        pp_mk = os.path.join(gxp_dir, os.path.join("gxpmake", "gxp_make_pp.mk"))
+        self.make_makectl_cmd([ "-f", pp_mk ] + args)
+
     # ---------- dispatcher ----------
 
     def dispatch(self):
@@ -5209,6 +5216,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.50  2010/01/31 11:08:06  ttaauu
+# added parameter parallel framework
+#
 # Revision 1.49  2010/01/31 05:31:28  ttaauu
 # added mapreduce support
 #

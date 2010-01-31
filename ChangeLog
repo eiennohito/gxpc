@@ -84,4 +84,7 @@
 	* gxpmake/* : added built-in mapreduce
 	* gxpd.py : a small change to gxpd.py so it has gxpmake/ directory in PATH and PYTHONPATH
 	* gxpc.py : a small change to recognize gxp mapred command
+2010-1-31 Taura
+	* gxpmake/* : added built-in parameter parallel
+	* gxpc.py : a small change to recognize gxp mapred command
 
