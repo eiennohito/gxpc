@@ -88,3 +88,6 @@
 	* gxpmake/* : added built-in parameter parallel
 	* gxpc.py : a small change to recognize gxp mapred command
 
+2010-2-5 Taura
+	* gxpbin/xmake : default state.html is now gxp_make_state/index.html.
+	* gxpbin/xmake : it displays utime and systime on state/index.html.

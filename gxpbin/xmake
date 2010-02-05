@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.51 2010/01/31 15:02:54 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.52 2010/02/05 03:21:28 ttaauu Exp $
 # $Name:  $
 #
 
@@ -166,9 +166,9 @@ class xmake_cmd_opts(opt.cmd_opts):
         # log file
         self.log      = ("s", "xmake.log")
         # state file directory
-        self.state_dir = ("s", "./")
+        self.state_dir = ("s", "./gxp_make_state")
         # state file 
-        self.state    = ("s", "state.html")
+        self.state    = ("s", "index.html")
         # parallelism file
         self.parallelism_gpl = ("s", "parallelism.gpl")
         self.parallelism_terminal = ("s", "png") # gnuplot type
@@ -1319,7 +1319,7 @@ td.man_working {
 <td>started at</td>
 <td>finished at</td>
 <td>executed by</td>
-<td>turn around time</td>
+<td>real/user/sys time</td>
 <td>status</td>
 <td>output</td>
 </tr>''')
@@ -1342,6 +1342,13 @@ td.man_working {
                 end_t = "<br>"
                 elapsed = "<br>"
                 man = "<br>"
+                cls,sts,rusage = run.show_status()
+                if rusage is None:
+                    utime = ""
+                    stime = ""
+                else:
+                    utime = "%.2f" % float(rusage[0])
+                    stime = "%.2f" % float(rusage[1])
                 if s is not None:
                     man = run.man.name
                     start_t = time.ctime(s + self.server.start_t)
@@ -1350,7 +1357,7 @@ td.man_working {
                         elapsed = "%.2f" % (e - s)
                     else:
                         elapsed = "%.2f" % (cur_time - s)
-                cls,sts,rusage = run.show_status()
+                    ti = "%s/%s/%s" % (elapsed, utime, stime)
                 wp.write('<tr>')
                 if i == 0:
                     # first three columns are common in all runs
@@ -1367,7 +1374,7 @@ td.man_working {
                           '<td class="%s">%s</td> '
                           '<td><pre>%s</pre></td> '
                           % (start_t, end_t,
-                             man, elapsed, cls, sts, io)))
+                             man, ti, cls, sts, io)))
                 wp.write('</tr>\n')
                 i = i + 1
         wp.write('</table>\n')
@@ -3292,6 +3299,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.52  2010/02/05 03:21:28  ttaauu
+# default state.html is now gxp_make_state/index.html. it displays utime and systime on state/index.html. (ChangeLog 2010-2-5)
+#
 # Revision 1.51  2010/01/31 15:02:54  ttaauu
 # *** empty log message ***
 #
