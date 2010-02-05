@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.23 2010/01/31 05:31:28 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.24 2010/02/05 02:43:49 ttaauu Exp $
 # $Name:  $
 #
 
@@ -324,12 +324,20 @@ class installer(expectd.expectd):
         top_dirs = self.find_top_dirs(inst_files)
         inst_data = []
         inst_data_log = []
+        warned_non_existing_path = 0
         for path in inst_files:
             path = self.expand(path, None)
             # path is like /home/tau/proj/gxp3/hoge
             ancestor,rel_path = self.find_ancestor(path, top_dirs)
             assert ancestor is not None, (path, top_dirs, inst_files)
             inst_path = os.path.join(os.path.basename(ancestor), rel_path)
+            if not os.path.exists(path):
+                if warned_non_existing_path == 0:
+                    self.Em("inst_local.py: %s does not exist.  "
+                            "!!! please update your gxp with cvs up -d !!!\n"
+                            % path)
+                    warned_non_existing_path = 1
+                continue
             mode = os.stat(path)[0]
             # see what kind of file is it
             if stat.S_ISREG(mode):
@@ -608,6 +616,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.24  2010/02/05 02:43:49  ttaauu
+# fixed an unhandled execption when inst_local.py tries to pack non-existing files
+#
 # Revision 1.23  2010/01/31 05:31:28  ttaauu
 # added mapreduce support
 #
