@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.52 2010/01/31 15:06:48 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.53 2010/02/10 07:27:18 ttaauu Exp $
 # $Name:  $
 #
 
@@ -5089,9 +5089,11 @@ Options:
         return args
 
     def enter_interactive_shell(self, args):
-        return os.system("bash --rcfile hoge -i")
+        gxp_dir = self.get_gxp_dir()
+        return os.system("bash --rcfile %s/misc/shell_settings/bash -i"
+                         % gxp_dir)
 
-    def xusage_i_cmd(self, full):
+    def usage_i_cmd(self, full):
         u = r"""Usage:
   gxpc i
 """
@@ -5102,7 +5104,7 @@ Description:
 """
         return u
 
-    def xdo_i_cmd(self, args):
+    def do_i_cmd(self, args):
         if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
         # make sure we have session files before jobs run
         self.session.save(self.opts.verbosity)
@@ -5323,6 +5325,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.53  2010/02/10 07:27:18  ttaauu
+# experimental gxpc i command
+#
 # Revision 1.52  2010/01/31 15:06:48  ttaauu
 # n_maps/n_reduces -> n_mappers/n_reducers
 #
