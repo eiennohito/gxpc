@@ -99,7 +99,7 @@ def read_bytes_from_to(fd, begin, end, block_sz, wfd):
 
 def read_records(filename, f, n, 
                  record_sz=0, starter="", terminator="", 
-                 block_sz=1024, wfd=1):
+                 block_sz=1024*1024, wfd=1):
     """
     Read records in [f/n, (f+1)/n) portion of the filename.
     A record begins with "starter" and ends with "terminator".
