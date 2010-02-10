@@ -11,13 +11,13 @@ output:=output
 reader:=ex_line_reader
 mapper:=ex_word_count_mapper
 reducer:=ex_count_reducer
-n_mappers:=4
+n_mappers:=3
 n_reducers:=2
 
 partitioner:=ex_partitioner
-pre_reduce_sorter:=sort
+sorter:=sort
 combiner:=ex_count_reducer
-final_merger:=sort -m
+merger:=sort -m
 
 int_dir:=int_dir
 keep_intermediates:=n
@@ -103,12 +103,12 @@ ifneq ($(keep_intermediates),y)
 .INTERMEDIATE : $(int_dir)/sort_br.$(1)
 endif
 $(int_dir)/sort_br.$(1) : $(addprefix $(int_dir)/partition.,$(addsuffix .$(1),$(map_idxs)))
-	$(pre_reduce_sorter) $$^ > $$@
+	$(sorter) $$^ > $$@
 $(int_dir)/reduce.$(1) : $(int_dir)/sort_br.$(1)
 	$(reducer) < $$^ > $$@
 else
 $(int_dir)/reduce.$(1) : $(addprefix $(int_dir)/partition.,$(addsuffix .$(1),$(map_idxs)))
-	$(pre_reduce_sorter) $$^ | $(reducer) > $$@
+	$(sorter) $$^ | $(reducer) > $$@
 endif
 endef
 
@@ -119,8 +119,12 @@ $(foreach r,$(reduce_idxs),\
 # merge all reduce results
 #
 
+ifeq ($(merger),)
 $(output) : $(reduce_files)
-	$(final_merger) $^ > $@
+else
+$(output) : $(reduce_files)
+	$(merger) $^ > $@
+endif
 
 clean :
 	rm -rf $(int_dir)

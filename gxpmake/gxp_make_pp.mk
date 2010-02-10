@@ -1,5 +1,6 @@
+# parameters=a b c d e f
 output=output$(call expand_parameters,$(parameters))
-cmd=$(call expand_parameters_2,$(parameters)) cmd 
+cmd=$(call expand_parameters_2,$(parameters)) echo
 
 all :
 
@@ -19,7 +20,7 @@ endef
 
 define make_rule_recursive
 $(if $(1),\
-  $(foreach $(firstword $(1)),$($(firstword $(1))),$(call make_rule_recursive,$(wordlist 2,$(words $(1)),$(1)))),\
+  $(foreach $(firstword $(1)),$(or $($(firstword $(1))),""),$(call make_rule_recursive,$(wordlist 2,$(words $(1)),$(1)))),\
   $(eval $(call make_rule)))
 endef
 
