@@ -2,7 +2,7 @@
 
 import errno,os,pty,re,select,signal,string,sys
 
-dbg=0
+dbg=2
 efd = None
 
 def LOG(s):
@@ -25,7 +25,7 @@ def LOG(s):
 # It should be long enough so distant hosts can respond.
 #
 read_timeout = 5.0
-read_timeout_after_pw = None
+read_timeout_after_pw = 5.0
 
 # Probably you need not modify parameters below.
 write_timeout = 1.0
@@ -89,19 +89,19 @@ def wait_for_password_prompt(fd, passphrase):
         r,s = safe_read(fd, bytes_to_read, read_timeout, 1)
         if r == -1: return -1
         output_s = output_s + s
+        if dbg>=2: LOG("[%s]\n" % output_s)
         m = re.search("Password: ", output_s)
         if m: break
-        if dbg>=2: LOG("[%s]\n" % output_s)
 
-    r,s = safe_write(fd, "%s\n" % passphrase, write_timeout, 1)
+    r,s = safe_write(fd, "%s\r\n" % passphrase, write_timeout, 1)
     if r == -1: return -1
     while 1:
         r,s = safe_read(fd, bytes_to_read, read_timeout, 1)
         if r == -1: return -1
         output_s = output_s + s
+        if dbg>=2: LOG("[%s]\n" % output_s)
         m = re.search("Password: (.*)\r\n", output_s)
         if m: break
-        if dbg>=2: LOG("[%s]\n" % output_s)
     return 0
 
 def parent(fd, passphrase):
@@ -138,7 +138,7 @@ def main(argv):
         os.execvp(cmd[0], cmd)
     else:
         if dbg>=2:
-            efd = os.open("su_cmd.log", os.O_WRONLY|os.O_CREAT|os.O_TRUNC)
+            efd = 2 # os.open("su_cmd.log", os.O_WRONLY|os.O_CREAT|os.O_TRUNC)
         # parent. talk to child.
         r = parent(master, passphrase)
         # ensure child is gone
