@@ -2,7 +2,7 @@
 
 import errno,os,pty,re,select,signal,string,sys
 
-dbg=2
+dbg=1
 efd = None
 
 def LOG(s):
