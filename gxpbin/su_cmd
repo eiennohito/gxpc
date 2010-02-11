@@ -2,7 +2,7 @@
 
 import errno,os,pty,re,select,signal,string,sys
 
-dbg=1
+dbg=0
 efd = None
 
 def LOG(s):
@@ -132,9 +132,9 @@ def main(argv):
     if pid == 0:
         # child. run su
         if user is None:
-            cmd = [ "su", "-c" ] + argv[1:]
+            cmd = [ "su", "-c", string.join(argv[1:], " ") ]
         else:
-            cmd = [ "su", user, "-c" ] + argv[1:]
+            cmd = [ "su", user, "-c", string.join(argv[1:], " ") ]
         os.execvp(cmd[0], cmd)
     else:
         if dbg>=2:
