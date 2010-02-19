@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.52 2010/02/05 03:21:28 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.53 2010/02/19 04:29:43 ttaauu Exp $
 # $Name:  $
 #
 
@@ -293,7 +293,7 @@ gxpc make options:
       write log to FILE (default: "xmake.log")
   --update_interval_1 T1 :
       specify the inteval at which status file is updated in seconds
-      (default 10.0).
+      (default 2.0).
   --update_interval_2 T2 :
       specify the inteval at which status file is updated in seconds
       (default 20.0). more precisely, status file gets updated either when
@@ -3299,6 +3299,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.53  2010/02/19 04:29:43  ttaauu
+# fix help of --update_interval_1
+#
 # Revision 1.52  2010/02/05 03:21:28  ttaauu
 # default state.html is now gxp_make_state/index.html. it displays utime and systime on state/index.html. (ChangeLog 2010-2-5)
 #
