@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.53 2010/02/19 04:29:43 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.54 2010/02/24 08:32:08 ttaauu Exp $
 # $Name:  $
 #
 
@@ -185,6 +185,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         self.update_interval_1 = ("f", 2.0)
         self.update_interval_2 = ("f", 20.0)
         self.auto_update_interval = ("i", 60.0)
+        self.make_link_limit = ("f", 10.0)
         self.time_limit = ("s", None)
         # this apepars fragile
         # self.ping_timeout = ("f", 100.0)
@@ -272,7 +273,7 @@ gxpc make options:
       and see state html file.
   --state_dir DIR :
       specify directory where state.html and assocated files are written
-      (including xmake.log). created if not exist.
+      (including xmake.log). created if not exist. default : ./gxp_make_state
   --conf FILE :
       read FILE as the config file, in addition to ~/.gxpc_make.conf and
       gxpc_make.conf in the current dir.
@@ -283,14 +284,16 @@ gxpc make options:
       make kills (with SIGINT) works in progress.
   --make_env VAR:VAR:...:VAR
       specify the list of environment variables that should be passed from the
-      root host to individual commands.
+      root host to individual commands. if your makefile uses a global export=...
+      clause or a job-specific export=... clause, include the name of variables 
+      here. otherwise your job will fail to see those variables and probably fail.
   --sem SEM_SPECS :
       specify concurrency constraints for various jobs.
       see SEM_SPECS below.
   --state FILE :
-      write job/worker status to FILE (default: "state.html")
+      write job/worker status to FILE (default: "gxp_make_state/index.html")
   --log FILE :
-      write log to FILE (default: "xmake.log")
+      write log to FILE (default: "gxp_make_state/xmake.log")
   --update_interval_1 T1 :
       specify the inteval at which status file is updated in seconds
       (default 2.0).
@@ -305,6 +308,15 @@ gxpc make options:
       specify the interval at which status file is automatically
       reloaded by the browser (<meta http-equiv="refresh" content=T>
       gets inserted in the status file).
+  --make_link_limit T :
+      specify the maximum time (in sec) the gxpc make is allowed to spend 
+      to make links from the state html file. specifying 0.0 completely
+      supresses link generation. default is 10.0. gxpc make normally tries 
+      to make a <a hre=...> link from the status file to files that seem 
+      to exist, but this sometimes takes long time (to check if each string 
+      that appears a file name is actually a path name of an existing file). 
+      if gxpc ever takes more than this value to generate a status file,
+      it stops making links from that point.
   --make GNU_MAKE_PATH :
       specify the path of GNU make (default : "make")
   --gxpc GXPC_PATH :
@@ -1007,7 +1019,10 @@ class xmake_state_recorder:
     def __init__(self, opts, server):
         self.opts = opts
         self.server = server
-        self.make_link = 1
+        if self.opts.make_link_limit == 0.0:
+            self.make_link = 0
+        else:
+            self.make_link = 1
     
     def LOG(self, s):
         self.server.LOG(s)
@@ -1325,9 +1340,9 @@ td.man_working {
 </tr>''')
         for w in works:
             if self.make_link:
-                if self.cur_time() - cur_time > 10.0:
-                    self.LOG(("generating state file taking > 10.0sec, "
-                              "linking to files disabled\n"))
+                if self.cur_time() - cur_time > self.opts.make_link_limit:
+                    self.LOG(("generating state file taking > limit (%f sec), "
+                              "linking to files disabled\n" % self.opts.make_link_limit))
                     self.make_link = 0
             queued_t = time.ctime(w.req_time + self.server.start_t)
             cmds = string.join(self.modify_cmds(w.cmds), "<br><br>")
@@ -3299,6 +3314,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.54  2010/02/24 08:32:08  ttaauu
+# added --make_link_limit option to gxpc make. see 2010-2-24 entry in ChangeLog
+#
 # Revision 1.53  2010/02/19 04:29:43  ttaauu
 # fix help of --update_interval_1
 #

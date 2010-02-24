@@ -91,3 +91,7 @@
 2010-2-5 Taura
 	* gxpbin/xmake : default state.html is now gxp_make_state/index.html.
 	* gxpbin/xmake : it displays utime and systime on state/index.html.
+2010-2-24 Taura
+	* gxpbin/xmake : added --make_link_limit option to control how much
+	xmake is allowed to spend in making links.
+

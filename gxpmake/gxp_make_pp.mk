@@ -1,4 +1,4 @@
-# parameters=a b c d e f
+parameters=a b c d e f
 output=output$(call expand_parameters,$(parameters))
 cmd=$(call expand_parameters_2,$(parameters)) echo
 
