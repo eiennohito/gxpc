@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.54 2010/02/24 08:32:08 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.55 2010/02/28 12:20:20 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1372,7 +1372,7 @@ td.man_working {
                         elapsed = "%.2f" % (e - s)
                     else:
                         elapsed = "%.2f" % (cur_time - s)
-                    ti = "%s/%s/%s" % (elapsed, utime, stime)
+                ti = "%s/%s/%s" % (elapsed, utime, stime)
                 wp.write('<tr>')
                 if i == 0:
                     # first three columns are common in all runs
@@ -3314,6 +3314,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.55  2010/02/28 12:20:20  ttaauu
+# *** empty log message ***
+#
 # Revision 1.54  2010/02/24 08:32:08  ttaauu
 # added --make_link_limit option to gxpc make. see 2010-2-24 entry in ChangeLog
 #
