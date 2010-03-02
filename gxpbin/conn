@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import errno,os,random,re,select,socket,string,sys
+import errno,os,random,re,select,socket,string,sys,time
 
 import ifconfig,opt
 
@@ -747,15 +747,19 @@ class node_state:
         self.connected = {}             # rank -> [ so ]
         self.accepted = {}              # rank -> [ so ]
         self.failed = {}                # rank -> [ so ]
+        self.start_time = time.time()
         return self
 
     def __str__(self):
-        return ("%s : %d connecting %d writable %d half_accepted"
+        return ("%s : %.3f : %d connecting %d writable %d half_accepted"
                 " %d connected %d accepted %d to_accept" 
-                % (self.pm.nickname,
+                % (self.pm.nickname, self.cur_time(), 
                    len(self.connecting), len(self.writable),
                    len(self.half_accepted), len(self.connected), 
                    len(self.accepted), self.n_to_accept))
+
+    def cur_time(self):
+        return time.time() - self.start_time
 
     # ----------------------------
     # open server side socket
