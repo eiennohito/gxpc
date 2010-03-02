@@ -997,6 +997,21 @@ class node_state:
                 for cs in css: cs.close()
                 del self.connected[unique_name]
 
+    def show_pmpi_socks(self):
+        p = self.pm
+        connected = self.connected.items()
+        accepted = self.accepted.items()
+        failed = self.failed.items()
+        connected.sort()
+        failed.sort()
+        accepted.sort()
+        for unique_name,socks in connected:
+            for cs in socks:
+                Ws("OK : %s -> %s:%d \n" % (p.host, cs.addrs[0], cs.port))
+        for unique_name,socks in failed:
+            for cs in socks:
+                Ws("NG : %s -> %s:%d \n" % (p.host, cs.addrs[0], cs.port))
+
     def set_pmpi_socks(self):
         """
         make a primitive mpi object
@@ -1039,11 +1054,14 @@ class node_state:
         # we are essentially done. 
         if dbg>=2:
             Es("%s\n" % self)
-        # if A -> B and B -> A, remove one
-        if self.opts.remove_dups: self.remove_dups()
-        self.set_pmpi_socks()
-        # finally execute program
-        os.execvp(self.opts.args[0], self.opts.args)
+        if len(self.opts.args) == 0:
+            self.show_pmpi_socks()
+        else:
+            # if A -> B and B -> A, remove one
+            if self.opts.remove_dups: self.remove_dups()
+            self.set_pmpi_socks()
+            # finally execute program
+            os.execvp(self.opts.args[0], self.opts.args)
 
 def main():
     node_state().main()
