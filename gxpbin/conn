@@ -697,13 +697,14 @@ class connectall_cmd_opts(opt.cmd_opts):
         self.rcvbuf = ("i", None)
         self.connect_rules = ("s", None)
         self.default_prob = ("f", 1.0)
+        self.dbg = ("i", 0)
         self.help = (None, 0)
 
     def postcheck(self):
         # "10.1,10.2" --> [ re.compile("10.1"), re.compile("10.2") ]
         prio,msg = ifconfig.compile_prio(self.addrs_prio)
         if prio is None:
-            Es("connectall3 : %s\n" %  msg)
+            Es("conn : %s\n" %  msg)
             return -1
         self.addrs_prio = prio
         return 0
@@ -713,12 +714,14 @@ class connectall_cmd_opts(opt.cmd_opts):
 # ----------------------------
 class node_state:
     def init(self):
+        global dbg
         # parse options
         opts = connectall_cmd_opts()
         if opts.parse(sys.argv[1:]) == -1: return -1
         if opts.help:
             self.usage()
             return -1
+        dbg = opts.dbg
         self.opts = opts
         # file objs to exchange via gxp
         self.wp = os.fdopen(3, "wb")
