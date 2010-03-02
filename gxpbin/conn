@@ -1003,9 +1003,11 @@ class node_state:
         for ss in self.sss:
             p.add_ss(ss)
         # add client sockets
+        # we could add failed items here,
+        # but it is in most cases annoying 
+        # + self.failed.items()):
         for unique_name,socks in (self.connected.items()
-                                  + self.accepted.items()
-                                  + self.failed.items()):
+                                  + self.accepted.items()):
             for cs in socks:
                 p.add_cs(unique_name, cs)
         # set options (non-blocking, no-delay, snd/rcv buf)
