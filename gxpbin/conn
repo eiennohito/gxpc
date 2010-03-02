@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-import errno,os,re,select,socket,string,sys
+import errno,os,random,re,select,socket,string,sys
 
 import ifconfig,opt
 
@@ -852,6 +852,9 @@ class node_state:
             if self.match_src(fr) and self.match_dest(to, proto, cs):
                 return prob
         return default_prob
+
+    def gen_rand(self):
+        return random.random()
 
     def request_connects(self):
         rules = self.connect_rules
