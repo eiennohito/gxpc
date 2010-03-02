@@ -981,8 +981,11 @@ class node_state:
                     self.accepted[unique_name].append(r)
         # 2010/3/2
         if len(R) == 0 and len(W) == 0 and self.cur_time() > self.opts.timeout:
-            if dbg>=1:
-                Es("%s : quit after timeout\n" % self.pm.nickname)
+            for w in self.connecting.keys():
+                name = "%s:%d" % (w.host, w.port)
+                if not self.failed.has_key(name):
+                    self.failed[name] = []
+                self.failed[name].append(w)
             return 0
         else:
             return 1
