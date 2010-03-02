@@ -10,7 +10,7 @@ import ifconfig,opt
 """
 usage:
 
-   mw conn.py [OPTIONS] command
+   mw conn [OPTIONS] [command]
 
 connect processes by sockets and then invoke command.
 pass information about connections via environment variables.
@@ -26,6 +26,34 @@ def Ws(s):
 def Es(s):
     sys.stderr.write(s)
     sys.stderr.flush()
+
+def usage():
+    u = r"""NAME:
+   conn - connectivity checker
+
+SYNOPSIS:
+
+   mw conn [OPTIONS] [command]
+
+When run without any argument, all nodes try to connect to each other
+and report which node was able to connect to which node.  Ports are
+chosen by OS (todo: option to specify port).  When connection is blocked,
+it timeouts by 5 sec by default (use --timeout to specify other values).
+
+OPTIONS:
+
+  --timeout T      : specify timeout value in sec after which unestablished 
+                     connections are considered failed (default : 5.0).
+  --addrs_prio EXP : when hosts have multiple IP addresses, specify which 
+                     address should be preferred.  Some frequently used expressions
+                     for EXP are:
+                     g   -> to say global address should be preferred
+                     p   -> to say private address should be preferred
+                     192 -> to say addresses beginning with '192' should be preferred
+   --dbg N : (N = 1, 2, or 3).  specify verbosity level.  
+
+"""
+    Ws(u)
 
 # ----------------------------
 # graph_parse
@@ -720,7 +748,8 @@ class node_state:
         opts = connectall_cmd_opts()
         if opts.parse(sys.argv[1:]) == -1: return -1
         if opts.help:
-            self.usage()
+            if os.environ.get("GXP_EXEC_IDX", "0") == "0":
+                usage()
             return -1
         dbg = opts.dbg
         self.opts = opts
