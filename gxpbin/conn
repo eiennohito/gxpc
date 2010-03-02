@@ -1007,10 +1007,12 @@ class node_state:
         accepted.sort()
         for unique_name,socks in connected:
             for cs in socks:
-                Ws("OK : %s -> %s:%d \n" % (p.host, cs.addrs[0], cs.port))
+                Ws("OK : %s -> %s (%s:%d)\n" 
+                   % (p.host, cs.host, cs.addrs[0], cs.port))
         for unique_name,socks in failed:
             for cs in socks:
-                Ws("NG : %s -> %s:%d \n" % (p.host, cs.addrs[0], cs.port))
+                Ws("NG : %s -> %s (%s:%d)\n" 
+                   % (p.host, cs.host, cs.addrs[0], cs.port))
 
     def set_pmpi_socks(self):
         """
