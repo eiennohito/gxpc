@@ -764,7 +764,10 @@ class node_state:
     def bind_and_listen(self):
         p = self.pm
         self.sss = [ server_sock_tcp(p.host, p.addrs, p.env, None) ]
-        if dbg>=3: Es("%s : %s\n" % (p.nickname, self.sss))
+        if dbg>=3: 
+            Es("%s : %s\n" % (p.nickname, self.sss))
+        elif dbg>=1: 
+            Es("%s : %s\n" % (p.nickname, string.join(p.addrs, " ")))
         
     # ----------------------------
     # exchange endpoints (all-to-all)
