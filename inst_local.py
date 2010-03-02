@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.24 2010/02/05 02:43:49 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.25 2010/03/02 12:45:27 ttaauu Exp $
 # $Name:  $
 #
 
@@ -101,6 +101,7 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/gxpbin",
                       "$GXP_DIR/gxpbin/bomb",
                       "$GXP_DIR/gxpbin/bcp",
+                      "$GXP_DIR/gxpbin/conn",
                       "$GXP_DIR/gxpbin/gifconfig",
                       "$GXP_DIR/gxpbin/psfind",
                       "$GXP_DIR/gxpbin/nodefind",
@@ -616,6 +617,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.25  2010/03/02 12:45:27  ttaauu
+# added conn command ChangeLog 2010-3-2
+#
 # Revision 1.24  2010/02/05 02:43:49  ttaauu
 # fixed an unhandled execption when inst_local.py tries to pack non-existing files
 #

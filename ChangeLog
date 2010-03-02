@@ -94,4 +94,5 @@
 2010-2-24 Taura
 	* gxpbin/xmake : added --make_link_limit option to control how much
 	xmake is allowed to spend in making links.
-
+2010-3-2 Taura
+	* gxpbin/conn : added
