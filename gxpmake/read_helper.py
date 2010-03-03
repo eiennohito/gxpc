@@ -5,6 +5,9 @@
 import os,re,stat,sys
 dbg=1
 
+if not os.__dict__.has_key("SEEK_SET"):
+    os.SEEK_SET = 0
+
 def smart_parse_int(s):
     m = re.match("(\d+)([kKmMgGtTeE]?)", s)
     x = m.group(1)
