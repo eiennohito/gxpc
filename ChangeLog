@@ -96,3 +96,21 @@
 	xmake is allowed to spend in making links.
 2010-3-2 Taura
 	* gxpbin/conn : added
+2010-3-5 Taura
+	* gxpbin/ifconfig2.py : added
+	* gxpbin/opt2.py : added
+	these files are added so that client code in gxpbin does not have to
+	have gxp3/ in PYTHONPATH.  previously both gxpc.py and gxpd.py extend
+	PYTHONPATH automatically to include both gxp3 and gxpbin.  this makes
+	things slow in EC2, apparently due to many import statements first search
+	for these extended directories first. they are simply importing all symbols
+	from the corresponding original .py file (ifconfig.py and opt2.py, 
+	respectively) in the gxp3 directory.
+	* gxpc.py : cmd_interpreter.get_gxpc_environment 
+	no longer extend PYTHONPATH. also, append (instead of push) when extending
+	PATH.
+	* gxpd.py : gxpd.get_gxpd_environment
+	no longer extend PYTHONPATH. also, append (instead of push) when extending
+	PATH.
+	* inst_local.py : default_src_files
+	added opt2.py and ifconfig2.py

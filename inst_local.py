@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.25 2010/03/02 12:45:27 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.26 2010/03/05 05:27:08 ttaauu Exp $
 # $Name:  $
 #
 
@@ -109,6 +109,9 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/gxpbin/micer",
                       "$GXP_DIR/gxpbin/gxp_sched",
                       "$GXP_DIR/gxpbin/gxp_mom",
+                      "$GXP_DIR/gxpbin/gxpm2.py",
+                      "$GXP_DIR/gxpbin/ifconfig2.py",
+                      "$GXP_DIR/gxpbin/opt2.py",
                       "$GXP_DIR/gxpbin/xmake",
                       "$GXP_DIR/gxpbin/xmake.mk",
                       "$GXP_DIR/gxpbin/mksh",
@@ -617,6 +620,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.26  2010/03/05 05:27:08  ttaauu
+# stop extending PYTHONPATH. see 2010-3-5 ChangeLog
+#
 # Revision 1.25  2010/03/02 12:45:27  ttaauu
 # added conn command ChangeLog 2010-3-2
 #

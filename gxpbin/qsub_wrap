@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.17 2009/12/31 20:09:48 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.18 2010/03/05 05:27:09 ttaauu Exp $
 # $Name:  $
 #
 
@@ -787,8 +787,8 @@ qsub_wrap hostname
         if host is not None:
             self.connect_addr = host
             return 0
-        import ifconfig
-        addrs = ifconfig.get_my_addrs(addr_prio)
+        import ifconfig2
+        addrs = ifconfig2.get_my_addrs(addr_prio)
         if len(addrs) == 0:
             Es("%s : could not get addrs matching filters %s\n" \
                % (self.cmd, addr_prio))
@@ -1350,6 +1350,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: qsub_wrap,v $
+# Revision 1.18  2010/03/05 05:27:09  ttaauu
+# stop extending PYTHONPATH. see 2010-3-5 ChangeLog
+#
 # Revision 1.17  2009/12/31 20:09:48  ttaauu
 # *** empty log message ***
 #

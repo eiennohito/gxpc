@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.53 2010/02/10 07:27:18 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.54 2010/03/05 05:27:08 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1641,6 +1641,12 @@ class cmd_interpreter:
         else:
             return d
 
+    def append_path(self, orig, val):
+        if orig == "":
+            return val
+        else:
+            return "%s:%s" % (orig, val)
+
     def push_path(self, orig, val):
         if orig == "":
             return val
@@ -1652,17 +1658,22 @@ class cmd_interpreter:
         if gxp_dir is None: return None
         prefix,gxp_top = os.path.split(gxp_dir)
         gxpbin_dir = os.path.join(gxp_dir, "gxpbin")
-        path = os.environ.get("PATH", "")
-        path = self.push_path(path, gxp_dir)
-        path = self.push_path(path, gxpbin_dir)
-        pypath = os.environ.get("PYTHONPATH", "")
-        pypath = self.push_path(pypath, gxp_dir)
-        pypath = self.push_path(pypath, gxpbin_dir)
+        if 1:
+            path = os.environ.get("PATH", "")
+            path = self.append_path(path, gxp_dir)
+            path = self.append_path(path, gxpbin_dir)
+        if 1:
+            pypath = os.environ.get("PYTHONPATH", "")
+            pypath = self.append_path(pypath, gxp_dir)
+            pypath = self.append_path(pypath, gxpbin_dir)
+        # including these seem to make gxpc slower in
+        # some environments
         return gxpc_environment({ "GXP_DIR"      : gxp_dir,
                                   "GXP_TOP"      : gxp_top,
                                   "GXP_GUPID"    : self.gupid,
                                   "PATH"         : path,
-                                  "PYTHONPATH"   : pypath })
+                                  # "PYTHONPATH"   : pypath,
+                                   })
     # session management
 
     def mk_generic_session_file_pattern_regexp(self):
@@ -5325,6 +5336,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.54  2010/03/05 05:27:08  ttaauu
+# stop extending PYTHONPATH. see 2010-3-5 ChangeLog
+#
 # Revision 1.53  2010/02/10 07:27:18  ttaauu
 # experimental gxpc i command
 #

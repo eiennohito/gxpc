@@ -15,12 +15,12 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/bcp,v 1.7 2009/06/06 14:06:26 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/bcp,v 1.8 2010/03/05 05:27:09 ttaauu Exp $
 # $Name:  $
 #
 
 import errno,os,random,re,select,socket,string,sys,time
-import ifconfig,opt
+import ifconfig2,opt2
 
 
 dbg=1
@@ -33,7 +33,7 @@ def Es(s):
     sys.stderr.write(s)
     sys.stderr.flush()
     
-class bcp_cmd_opts(opt.cmd_opts):
+class bcp_cmd_opts(opt2.cmd_opts):
     def __init__(self):
         #             (type, default)
         # types supported
@@ -42,7 +42,7 @@ class bcp_cmd_opts(opt.cmd_opts):
         #   f : float
         #   l : list of strings
         #   None : flag
-	opt.cmd_opts.__init__(self)
+	opt2.cmd_opts.__init__(self)
         # log file
         self.min_pkt_sz = ("i", 10000)
         self.max_pkt_sz = ("i", 100000)
@@ -60,7 +60,7 @@ class bcp_cmd_opts(opt.cmd_opts):
                                         self.min_pkt_sz)))
             self.max_pkt_sz = self.min_pkt_sz
         # "10.1,10.2" --> [ re.compile("10.1"), re.compile("10.2") ]
-        prio,msg = ifconfig.compile_prio(self.connect_prio)
+        prio,msg = ifconfig2.compile_prio(self.connect_prio)
         if prio is None:
             Es("bcp : %s\n" %  msg)
             return -1
@@ -202,7 +202,7 @@ class ring_connector:
         ss.listen(10)
         self.ss = ss
         self.host = socket.gethostname()
-        ip_addrs = ifconfig.get_my_addrs(self.opts.connect_prio)
+        ip_addrs = ifconfig2.get_my_addrs(self.opts.connect_prio)
         self.ip_addr = ip_addrs[0]
         _,self.port = ss.getsockname()
 
@@ -750,6 +750,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: bcp,v $
+# Revision 1.8  2010/03/05 05:27:09  ttaauu
+# stop extending PYTHONPATH. see 2010-3-5 ChangeLog
+#
 # Revision 1.7  2009/06/06 14:06:26  ttaauu
 # added headers and logs
 #

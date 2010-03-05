@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.13 2010/01/31 05:31:28 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.14 2010/03/05 05:27:08 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2062,30 +2062,41 @@ class gxpd(ioman.ioman):
         else:
             return "%s:%s" % (val, orig)
 
+    def append_path(self, orig, val):
+        if orig == "":
+            return val
+        else:
+            return "%s:%s" % (orig, val)
+
     def get_gxpd_environment(self, root_gupid):
         gxp_dir = self.get_gxp_dir()
         if gxp_dir is None: return None
         if root_gupid == "": root_gupid = self.gupid
-        path = self.push_path(os.environ.get("PATH", ""),
-                              gxp_dir)
-        path = self.push_path(path,
-                              os.path.join(gxp_dir, "gxpbin"))
-        path = self.push_path(path,
-                              os.path.join(gxp_dir, "gxpmake"))
-        pypath = self.push_path(os.environ.get("PYTHONPATH", ""),
-                                gxp_dir)
-        pypath = self.push_path(pypath,
-                                os.path.join(gxp_dir, "gxpbin"))
-        pypath = self.push_path(pypath,
-                                os.path.join(gxp_dir, "gxpmake"))
+        if 1:
+            path = os.environ.get("PATH", "")
+            path = self.append_path(path, gxp_dir)
+            path = self.append_path(path,
+                                    os.path.join(gxp_dir, "gxpbin"))
+            path = self.append_path(path,
+                                    os.path.join(gxp_dir, "gxpmake"))
+        if 1:
+            pypath = os.environ.get("PYTHONPATH", "")
+            pypath = self.append_path(pypath, gxp_dir)
+            pypath = self.append_path(pypath,
+                                    os.path.join(gxp_dir, "gxpbin"))
+            pypath = self.append_path(pypath,
+                                    os.path.join(gxp_dir, "gxpmake"))
         prefix,gxp_top = os.path.split(gxp_dir)
+        # including these seem to make gxpc slower in
+        # some environments
         return gxpd_environment({ "GXP_DIR"        : gxp_dir,
                                   "GXP_TOP"        : gxp_top,
                                   "GXP_HOSTNAME"   : self.hostname,
                                   "GXP_GUPID"      : self.gupid,
                                   "GXP_ROOT_GUPID" : root_gupid,
                                   "PATH"           : path,
-                                  "PYTHONPATH"     : pypath })
+                                  # "PYTHONPATH"     : pypath,
+                                  })
 
     def set_gxpd_environment(self, remove_self, root_gupid):
         env = self.get_gxpd_environment(root_gupid)
@@ -2240,6 +2251,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.14  2010/03/05 05:27:08  ttaauu
+# stop extending PYTHONPATH. see 2010-3-5 ChangeLog
+#
 # Revision 1.13  2010/01/31 05:31:28  ttaauu
 # added mapreduce support
 #

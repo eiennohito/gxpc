@@ -2,7 +2,7 @@
 
 import errno,os,random,re,select,socket,string,sys,time
 
-import ifconfig,opt
+import ifconfig2,opt2
 
 # ,graph_parse
 # from pmpi import *
@@ -472,7 +472,7 @@ class pmpi:
         return os.getpid()
 
     def getaddrs(self, addr_prio):
-        return ifconfig.get_my_addrs(addr_prio)
+        return ifconfig2.get_my_addrs(addr_prio)
 
     def add_cs(self, name, cs):
         """
@@ -707,7 +707,7 @@ class pmpi:
 # options
 # ----------------------------
 
-class connectall_cmd_opts(opt.cmd_opts):
+class connectall_cmd_opts(opt2.cmd_opts):
     def __init__(self):
         #             (type, default)
         # types supported
@@ -716,7 +716,7 @@ class connectall_cmd_opts(opt.cmd_opts):
         #   f : float
         #   l : list of strings
         #   None : flag
-	opt.cmd_opts.__init__(self)
+	opt2.cmd_opts.__init__(self)
         self.addrs_prio = ("s", "")
         self.remove_dups = ("i", 1)
         self.blocking = ("i", 1)
@@ -731,7 +731,7 @@ class connectall_cmd_opts(opt.cmd_opts):
 
     def postcheck(self):
         # "10.1,10.2" --> [ re.compile("10.1"), re.compile("10.2") ]
-        prio,msg = ifconfig.compile_prio(self.addrs_prio)
+        prio,msg = ifconfig2.compile_prio(self.addrs_prio)
         if prio is None:
             Es("conn : %s\n" %  msg)
             return -1

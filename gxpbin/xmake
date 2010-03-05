@@ -15,14 +15,14 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.55 2010/02/28 12:20:20 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.56 2010/03/05 05:27:09 ttaauu Exp $
 # $Name:  $
 #
 
 import errno,os,sys,random,re,select,shlex,signal,socket,stat,string,time
 import cStringIO
 
-import gxpm,opt
+import gxpm2,opt2
     
 
 """
@@ -153,7 +153,7 @@ def Ws(s):
         except OSError,e:
             if e.args[0] != errno.EINTR: raise
 
-class xmake_cmd_opts(opt.cmd_opts):
+class xmake_cmd_opts(opt2.cmd_opts):
     def __init__(self):
         #             (type, default)
         # types supported
@@ -162,7 +162,7 @@ class xmake_cmd_opts(opt.cmd_opts):
         #   f : float
         #   l : list of strings
         #   None : flag
-	opt.cmd_opts.__init__(self)
+	opt2.cmd_opts.__init__(self)
         # log file
         self.log      = ("s", "xmake.log")
         # state file directory
@@ -2536,7 +2536,7 @@ class xmake_server:
         if m is None: return None
         sz = int(m)
         m = self.read_sz(fd, sz)
-        return gxpm.parse(m)
+        return gxpm2.parse(m)
 
     def recv_job_io(self):
         """
@@ -3314,6 +3314,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.56  2010/03/05 05:27:09  ttaauu
+# stop extending PYTHONPATH. see 2010-3-5 ChangeLog
+#
 # Revision 1.55  2010/02/28 12:20:20  ttaauu
 # *** empty log message ***
 #
