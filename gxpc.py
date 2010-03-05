@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.54 2010/03/05 05:27:08 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.55 2010/03/05 09:13:48 ttaauu Exp $
 # $Name:  $
 #
 
@@ -5262,6 +5262,19 @@ this command line.
         pp_mk = os.path.join(gxp_dir, os.path.join("gxpmake", "gxp_make_pp.mk"))
         self.make_makectl_cmd([ "-f", pp_mk ] + args)
 
+    def do_vgxp_cmd(self, args):
+        # ugly : init2 just to get gxp_dir ...
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        gxp_dir = os.environ["GXP_DIR"]
+        vgxp_launcher = os.path.join(gxp_dir, "vgxp/vgxp_launcher.pl")
+        os.execvp(vgxp_launcher, [ vgxp_launcher ] + args)
+
+    def usage_vgxp_cmd(self, args):
+        u = r"""Usage:
+  gxpc vgxp
+"""
+        return u
+
     # ---------- dispatcher ----------
 
     def dispatch(self):
@@ -5336,6 +5349,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.55  2010/03/05 09:13:48  ttaauu
+# added vgxp see ChangeLog 2010-3-5
+#
 # Revision 1.54  2010/03/05 05:27:08  ttaauu
 # stop extending PYTHONPATH. see 2010-3-5 ChangeLog
 #

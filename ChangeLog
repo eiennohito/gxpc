@@ -96,6 +96,8 @@
 	xmake is allowed to spend in making links.
 2010-3-2 Taura
 	* gxpbin/conn : added
+2010-3-2 Taura
+	* gxpbin/conn : bug fixed, help written, added good default behavior, etc.
 2010-3-5 Taura
 	* gxpbin/ifconfig2.py : added
 	* gxpbin/opt2.py : added
@@ -114,3 +116,5 @@
 	PATH.
 	* inst_local.py : default_src_files
 	added opt2.py and ifconfig2.py
+2010-3-5 Taura
+	* vgxp : added VGXP
