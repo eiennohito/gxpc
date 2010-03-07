@@ -32,8 +32,8 @@ all : $(output)
 
 .DELETE_ON_ERROR :
 
-map_idxs:=$(shell seq 0 $(shell expr $(n_mappers) - 1))
-reduce_idxs:=$(shell seq 0 $(shell expr $(n_reducers) - 1))
+map_idxs:=$(shell seq -w 0 $(shell expr $(n_mappers) - 1))
+reduce_idxs:=$(shell seq -w 0 $(shell expr $(n_reducers) - 1))
 # reduce.1 reduce.2 ... reduce.R
 reduce_files:=$(addprefix $(int_dir)/reduce.,$(reduce_idxs))
 
