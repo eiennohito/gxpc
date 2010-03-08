@@ -17,7 +17,7 @@
     <showruler>true</showruler>
   </canvas>
   <clusters>
-    <byhostname>3</byhostname>
+    <byhostname>2</byhostname>
     <cluster name="kyutech">
       <pattern>kyutech</pattern>
     </cluster>

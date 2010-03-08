@@ -15,7 +15,7 @@ use Digest::MD5;
 use warnings;
 use IPC::Open3;
 use Symbol;
-use Getopt::Std;
+use Getopt::Long;
 use File::Basename;
 
 my $pmaster_pid;
@@ -27,6 +27,12 @@ $SIG{INT} = &handle_sigint;
 #my $script_dir = File::Basename::dirname $0;
 #die "Can't cd to $script_dir: $!\n" unless chdir $script_dir;
 
+my $verbosity = 0;
+sub dp($@){
+  my $dlevel = shift;
+  print STDERR @_ if($dlevel <= $verbosity);
+}
+
 sub subst_variable($$){
   my ($vars, $varname) = @_;
   if(defined $ENV{$varname}){
@@ -34,7 +40,7 @@ sub subst_variable($$){
   } elsif(defined $vars->{$varname}){
     sv($vars, $vars->{$varname});
   } else {
-    print STDERR "Definition of $varname is not found!\n";
+    dp(0, "Definition of $varname is not found!\n");
     "";
   }
 }
@@ -57,9 +63,9 @@ sub copy_or_apply_template($@){
     close $rfh;
   };
   if($content eq $content2){
-    printf STDERR "IGNORE $target will not be modified.\n";
+    dp(3, "IGNORE $target will not be modified.\n");
   } else {
-    printf STDERR "%s %s %s\n", ($apply_template ? "APPLY_TEMPLATE" : "COPY"), $tmpl, $target;
+    dp(3, sprintf("%s %s %s\n", ($apply_template ? "APPLY_TEMPLATE" : "COPY"), $tmpl, $target));
     my $tmpfile = "$target.$$";
     open(my $wfh, ">", $tmpfile) || die("Cannot open $tmpfile for write");
     print $wfh $content;
@@ -90,14 +96,29 @@ read_vars($vars, "$script_dir/vgxpvars.txt");
 
 ## Parse args
 my %opts = ();
-getopts("d:w:m:i:h", \%opts);
+Getopt::Long::Configure "gnu_getopt";
+GetOptions(\%opts,
+#           "d:w:m:i:h",
+           "d|dir=s",
+           "w|web=s",
+           "m|master=s",
+           "i|interval=i",
+           "h|help",
+           "v|verbosity=i",
+           "start",
+           "stop",
+    );
 if($opts{h}){
   print STDERR << "EEE";
-$0 [-d dir] [-w URL] [-m filename] [-i interval] [-h]
-  -d: install dir
-  -w: base URL
-  -m: filename of master program
-  -i: check interval (in seconds)
+$0 [options]
+  -d(--dir):       install dir
+  -h(--help):      show help
+  -i(--interval):  check interval (in seconds)
+  -m(--master):    filename of master program
+  --start:         start VGXP in background
+  --stop:          stop VGXP
+  -v(--verbosity): set verbosity(0..3)
+  -w(--web):       base URL
 EEE
   exit 1;
 }
@@ -105,8 +126,11 @@ $vars->{INSTALL_DIR} = $opts{d} if $opts{d};
 $vars->{CODEBASE} = $opts{w} if $opts{w};
 $vars->{MASTER_PATH} = $opts{m} if $opts{m};
 $vars->{PMASTER_CHECK_INTERVAL} = $opts{i} if $opts{i};
+$vars->{VERBOSITY} = $opts{v} if $opts{v};
 
 ##
+
+$verbosity = sv($vars, "%VERBOSITY%");
 
 my @remote_files = qw(CM.pm SSHSocket.pm agent.pl);
 my @remote_files2 = qw(python pinfo.py);
@@ -115,6 +139,18 @@ my $pmaster = sv($vars, '%MASTER_PATH%');
 my $check_interval = sv($vars, '%PMASTER_CHECK_INTERVAL%');
 my $fname_notify = sv($vars, '%NOTIFY_FILENAME%');
 my $install_dir = sv($vars, '%INSTALL_DIR%');
+
+##
+
+sub terminate_pmaster(){
+  dp(0, "Stopping VGXP.\n");
+  system("pkill -f $pmaster");
+}
+
+if($opts{stop}){
+  terminate_pmaster;
+  exit 0;
+}
 
 ##
 
@@ -142,7 +178,7 @@ sub my_mkdir($){
   my $parent = File::Basename::dirname $dir;
   die "$parent not found" if ! -d $parent;
   if(! -d $dir){
-    print "MKDIR Creating directory $dir\n";
+    dp(3, "MKDIR Creating directory $dir\n");
     system("mkdir $dir");
     die("Cannot make directory") if ! -d $dir;
   }
@@ -151,6 +187,9 @@ sub my_mkdir($){
 my_mkdir $install_dir;
 copy_files($vars);
 system(sv($vars, "chmod +x $install_dir/%PROXYCGI_FILENAME%"));
+
+dp(0, "Files are installed in $install_dir\n");
+dp(0, sprintf("URL to access VGXP is %s\n", sv($vars, '%CODEBASE%')));
 
 # Launch VGXP
 
@@ -184,19 +223,23 @@ while(1){
   close $cmd_out;
   close $cmd_err;
   $mw_err =~ s/^(\d+)$/$pmaster_pid = $1;""/egm;
-  $mw_err =~ s/^(.*)$/print STDERR "ERR: $1\n" if length($1)/egm;
+  $mw_err =~ s/^(.*)$/dp(1, "ERR: $1\n") if length($1)/egm;
   wait;
+  if($opts{start}){
+    dp(0, "VGXP is started in background.\n");
+    exit 0;
+  }
   while(1){
     sleep($check_interval);
     if(-f $fname_notify){
       unlink $fname_notify;
-      print STDERR scalar(localtime), " Notify\n";
-      system("pkill $pmaster");
+      dp(1, scalar(localtime), " Notify\n");
       kill "INT", $pmaster_pid;
+      #system("pkill -f $pmaster");
     }elsif(kill(0,$pmaster_pid)){
       next;
     }else{
-      print STDERR "Dead child ", scalar(localtime), $/;
+      dp(1, "Dead child ", scalar(localtime), $/);
     }
     $pmaster_pid = 0;
     sleep(3);
