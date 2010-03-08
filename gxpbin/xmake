@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.56 2010/03/05 05:27:09 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.57 2010/03/08 11:07:14 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2604,11 +2604,13 @@ class xmake_server:
             else:
                 # the man is dead
                 self.free_men.remove(man)
-                Es(("xmake: man %s in state %d found in "
-                    "free_men queue\n" % (man.name, man.stat)))
+                if dbg>=2:
+                    Es(("xmake: man %s in state %d found in "
+                        "free_men queue\n" % (man.name, man.stat)))
         if hold:
             hold_limit = self.cur_time() + float(attrs.get("hold", "5.0"))
-            if dbg>=2: Es("xmake: hold until %f (%s)\n" % (hold_limit, shot.cmd))
+            if dbg>=2: 
+                Es("xmake: hold until %f (%s)\n" % (hold_limit, shot.cmd))
             shot.hold_limit = hold_limit
         return None
 
@@ -3314,6 +3316,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.57  2010/03/08 11:07:14  ttaauu
+# supress man ... in state ... found msg in xmake
+#
 # Revision 1.56  2010/03/05 05:27:09  ttaauu
 # stop extending PYTHONPATH. see 2010-3-5 ChangeLog
 #
