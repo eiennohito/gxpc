@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.26 2010/03/05 05:27:08 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.27 2010/03/09 16:00:39 ttaauu Exp $
 # $Name:  $
 #
 
@@ -130,6 +130,7 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/gxpmake/ex_count_reducer",
                       "$GXP_DIR/gxpmake/ex_line_reader",
                       "$GXP_DIR/gxpmake/ex_partitioner",
+                      "$GXP_DIR/gxpmake/ex_exchanger",
                       "$GXP_DIR/gxpmake/ex_record_reader",
                       "$GXP_DIR/gxpmake/ex_word_count_mapper",
                       "$GXP_DIR/gxpmake/ex_xml_reader",
@@ -620,6 +621,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.27  2010/03/09 16:00:39  ttaauu
+# *** empty log message ***
+#
 # Revision 1.26  2010/03/05 05:27:08  ttaauu
 # stop extending PYTHONPATH. see 2010-3-5 ChangeLog
 #
