@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.57 2010/03/08 11:07:14 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.58 2010/03/09 07:21:04 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2585,7 +2585,8 @@ class xmake_server:
         attrs = self.parse_cmd_attributes(shot.cmd)
         on = attrs.get("on")
         if on is None: return 1
-        Es("xmake: task constraint: on=%s\n" % on)
+        if dbg>=2:
+            Es("xmake: task constraint: on=%s\n" % on)
         if re.match(on, man.name): return 1
         return 0
 
@@ -3316,6 +3317,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.58  2010/03/09 07:21:04  ttaauu
+# *** empty log message ***
+#
 # Revision 1.57  2010/03/08 11:07:14  ttaauu
 # supress man ... in state ... found msg in xmake
 #
