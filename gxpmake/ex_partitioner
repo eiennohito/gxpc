@@ -23,7 +23,8 @@ def flush_buffers(wps, n_reducers, sz, flush_all):
         max_unflushed = sz / 8
     min_flushed = sz - max_unflushed
     threshold = (max_unflushed + n - 1) / n
-    written = 0
+    flushed = 0
+    unflushed = 0
     for reducer,wp in wps.items():
         chunk = wp.getvalue()
         l = len(chunk)
@@ -31,9 +32,13 @@ def flush_buffers(wps, n_reducers, sz, flush_all):
             wp.close()
             del wps[reducer]
             write_chunk(sys.stdout, reducer, chunk)
-            written = written + l
-    assert (written >= min_flushed), \
-        (written, min_flushed, n_reducers, sz, threshold)
+            flushed = flushed + l
+        else:
+            unflushed = unflushed + l
+    assert flushed + unflushed == sz, (flushed, unflushed, sz)
+    assert (flushed >= min_flushed), \
+        (flushed, min_flushed, unflushed, n_reducers, sz, threshold, flush_all)
+    return unflushed
 
 def partition(n_reducers):
     # default buffer size
@@ -48,7 +53,7 @@ def partition(n_reducers):
         wps[reducer].write(line)
         sz = sz + len(line)
         if sz > bufsz:
-            flush_buffers(wps, n_reducers, sz, 0)
+            sz = flush_buffers(wps, n_reducers, sz, 0)
     flush_buffers(wps, n_reducers, sz, 1)
     assert (len(wps) == 0), wps
 
