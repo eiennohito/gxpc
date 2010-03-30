@@ -20,6 +20,7 @@ sub connect_agents($) {
   open(CMD,"gxpc stat|");
   $_ = <CMD>;
   while(<CMD>){
+    # matches to " GUPID[host-user-date-pid] (= HOST TARGET)"
     my ($s,$d,$h,$t) = /^(\s*)(\S+)\s+\(=\s+(\S+)\s+(\S+)\)/;
     next if $d =~ /^None/;
     $s = length $s;
@@ -222,12 +223,11 @@ sub request_handler (\%\@) {
         $clients{$fileno} = 1;
         my $buf;
         if( -f "actives" ){
-            open(FILE,"actives");
+          open(FILE,"actives");
           my $actives = join("",<FILE>);
           $buf = $actives . "\n";
         } else {
-          #$buf = `gxpc e -h hongo 'echo \`hostname\` 1'` . "\n";
-          $buf = `gxpc e 'echo \`hostname\` 1'` . "\n";
+          $buf = join("", map {sprintf("%s %d\n", $_, (defined $proc_table{$_})?1:0)} (sort keys %hosts_available)) . "\n";
         }
         for my $host (keys %proc_table){
           for my $pid (keys %{$proc_table{$host}}){
