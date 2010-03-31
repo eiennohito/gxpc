@@ -17,10 +17,15 @@
     <showruler>true</showruler>
   </canvas>
   <clusters>
-    <byhostname>2</byhostname>
-    <cluster name="kyutech">
-      <pattern>kyutech</pattern>
-    </cluster>
+    <cluster name="some_group_name" hidden="true"/>
+
+    <static name="istxf" group="istbs"/>
+    <static name="shepherd" group="sheep"/>
+    <static name="some_host_name" group="group_name"/>
+    <regexp>
+      <pattern>([^\d\-]+)</pattern>
+      <index>1</index>
+    </regexp>
   </clusters>
   <graphdata>
     <gd name="LOAD0">
