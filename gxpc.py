@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.55 2010/03/05 09:13:48 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.56 2010/04/13 19:27:38 ttaauu Exp $
 # $Name:  $
 #
 
@@ -5133,7 +5133,8 @@ Description:
         # make sure we have session files before jobs run
         self.session.save(self.opts.verbosity)
         gxp_dir = os.environ["GXP_DIR"]
-        make = os.path.join(gxp_dir, os.path.join("gxpbin", "xmake"))
+        xmake = os.environ.get("GXP_XMAKE", "xmake")
+        make = os.path.join(gxp_dir, os.path.join("gxpbin", xmake))
         # pass session name to make sure child processes attach to
         # the right session
         if not os.environ.has_key("GXP_SESSION"):
@@ -5349,6 +5350,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.56  2010/04/13 19:27:38  ttaauu
+# *** empty log message ***
+#
 # Revision 1.55  2010/03/05 09:13:48  ttaauu
 # added vgxp see ChangeLog 2010-3-5
 #
