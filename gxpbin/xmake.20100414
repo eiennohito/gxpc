@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake.20100414,v 1.1 2010/04/13 16:11:24 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake.20100414,v 1.2 2010/04/13 19:20:48 ttaauu Exp $
 # $Name:  $
 #
 
@@ -181,7 +181,7 @@ class xmake_cmd_opts(opt2.cmd_opts):
         self.update_interval_1 = ("f", 2.0)
         self.update_interval_2 = ("f", 20.0)
         self.fast_update_period = ("f", 10.0)
-        self.auto_update_interval = ("i", 60.0)
+        self.refresh_interval = ("i", 60)
         self.time_limit = ("s", None)
         # this apepars fragile
         # self.ping_timeout = ("f", 100.0)
@@ -294,7 +294,7 @@ gxpc make options:
       least 10 state changes not reflected in the file, or
       (2) T2 seconds has passed since the last update and there is at
       least 1 state change not reflected in the file.
-  --auto_update_interval T :
+  --refresh_interval T :
       specify the interval at which status file is automatically
       reloaded by the browser (<meta http-equiv="refresh" content=T>
       gets inserted in the status file).
@@ -418,7 +418,7 @@ class run_status:
     interrupted = "interrupted"
     
 class Run:
-    def init(self, work, run_idx):
+    def init(self, work, run_idx, io_dir):
         self.work_idx = work.work_idx # work idx
         self.run_idx = run_idx   # the parent work this run is for
         self.status = run_status.queued
@@ -434,11 +434,14 @@ class Run:
         self.stime = None               # sys time
         self.minflt = None              # minor faults
         self.majflt = None              # major faults
+        self.io = ""
+        self.io_dir = io_dir
+        self.io_file = None
         self.rusage = ""                # currently not used
-        self.output = ""                # output (string)
         # volatile (not persistent) fields. not put in database
         self.work = work
         self.man = None
+        self.io_wp = None
         self.hold_limit = float("inf")
         return self
 
@@ -446,7 +449,11 @@ class Run:
         """
         return tuple to be put in database
         """
-        # self.rusage,self.output
+        # self.rusage
+        # when you chane code below, make sure you also
+        # change (1) restore_from_tuple, (2) create table runs
+        # below, (3) insert into runs below, 
+        # and (4) update runs statement below
         return (self.work_idx,
                 self.run_idx,
                 self.status,
@@ -461,7 +468,10 @@ class Run:
                 self.utime,
                 self.stime,
                 self.minflt,
-                self.majflt)
+                self.majflt,
+                self.io,
+                self.io_dir,
+                self.io_file)
 
     def restore_from_tuple(self, tup):
         """
@@ -484,7 +494,10 @@ class Run:
          self.utime,
          self.stime,
          self.minflt,
-         self.majflt) = tup
+         self.majflt,
+         self.io,
+         self.io_dir,
+         self.io_file) = tup
         return self
 
     def start(self, cur_time, man, emulate):
@@ -526,9 +539,27 @@ class Run:
         else:
             self.pid = pid
 
-    def update_time(self, cur_time):
+    def sync(self, cur_time):
+        if self.io_wp:
+            self.io_wp.flush()
         self.time_since_start = cur_time - self.time_start
         self.work.server.works.update_run(self)
+
+    def add_io(self, payload):
+        if self.io_file:
+            assert self.io_wp
+            self.io_wp.write(payload)
+        else:
+            io = self.io + payload
+            max_inline_io = 50
+            if len(io) > max_inline_io:
+                self.io_file = "run_%d" % self.run_idx
+                io_file = os.path.join(self.io_dir, self.io_file)
+                self.io_wp = open(io_file, "wb")
+                self.io_wp.write(io)
+                self.io = io[:max_inline_io] + "..."
+            else:
+                self.io = io
 
     def finish(self, cur_time,
                status, exit_status, termsig, etime, rusage):
@@ -543,7 +574,9 @@ class Run:
         work = self.work
         server = work.server
         self.time_end = cur_time
-        self.time_since_start = cur_time - self.time_start
+        if self.time_start is not None:
+            # may be none if the job has not started
+            self.time_since_start = cur_time - self.time_start
         self.status = status
         self.exit_status = exit_status
         self.termsig = termsig
@@ -560,7 +593,9 @@ class Run:
             del server.runs_running[self.run_idx]
             del man.runs_running[self.run_idx]
             self.man = None
-            # update database
+            if self.io_wp:
+                self.io_wp.close()
+            # ------ update database -------
             server.works.update_run(self)
             if man.state == man_state.active:
                 server.men_free.append(man) # this man is now free
@@ -664,7 +699,7 @@ class Work:
 
     def make_run(self):
         run_idx = self.server.id_gen.run_counter.get()
-        run = Run().init(self, run_idx)
+        run = Run().init(self, run_idx, self.server.opts.state_dir)
         self.server.runs_todo.append(run)
         self.server.works.add_run(self.work_idx, run)
 
@@ -847,7 +882,8 @@ create table runs (work_idx integer, run_idx integer, status text,
                    exit_status integer, termsig integer, man_name text,
                    time_start real, time_end real, time_since_start real,
                    etime real, utime real, stime real,
-                   minflt integer, majflt integer)
+                   minflt integer, majflt integer,
+                   io text, io_dir text, io_file text)
 """)
         return conn
 
@@ -867,7 +903,7 @@ create table runs (work_idx integer, run_idx integer, status text,
         """
         conn = self.conn
         conn.execute("""
-insert into runs values (?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?)
+insert into runs values (?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?)
 """, run.save_to_tuple())
 
     def update_run(self, run):
@@ -879,26 +915,16 @@ insert into runs values (?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?)
 update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?, 
                 termsig = ?, man_name = ?,
                 time_start = ?, time_end = ?, time_since_start = ?,
-                etime = ?, utime = ?, stime = ?, minflt = ?, majflt = ?
+                etime = ?, utime = ?, stime = ?, minflt = ?, majflt = ?,
+                io = ?, io_dir = ?, io_file = ?
             where run_idx = ?
 """, (run.save_to_tuple() + (run.run_idx,)))
 
-    def runs_of_work(self, work_idx):
-        """
-        list of runs (Run objects) associated with work_idx
-        """
-        conn = self.conn
-        c = conn.execute("select * from runs where work_idx = ?", 
-                         (work_idx,))
-        runs = []
-        for row in c:
-            runs.append(Run().restore_from_tuple(row))
-        return runs
+    def add_io(self, run_idx, payload):
+        pass
 
     def __len__(self):
         return self.n_works
-
-
 
     def list_jobs_aux(self, sql):
         conn = self.conn
@@ -915,8 +941,15 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
                 runs = []
             runs.append(Run().restore_from_tuple(r_tuple))
 
-    def list_jobs(self):
-        return self.list_jobs_aux("select * from (select work_idx from (select * from runs group by work_idx) order by time_since_start desc) natural join works natural join runs")
+    def list_jobs(self, title):
+        if title == "Long":
+            return self.list_jobs_aux("select * from (select work_idx from (select * from runs group by work_idx) order by time_since_start desc) natural join works natural join runs")
+        elif title == "Failed":
+            return self.list_jobs_aux("""select * from (select work_idx from (select * from runs group by work_idx) where status != "queued" and status != "running" and exit_status != 0) natural join works natural join runs""")
+        elif title == "Recent":
+            return self.list_jobs_aux("select * from (select work_idx from (select * from runs group by work_idx) order by work_idx desc) natural join works natural join runs")
+        else:
+            assert 0, title
 
     def commit(self):
         self.conn.commit()
@@ -925,48 +958,10 @@ def mk_work_db(dire, work_db):
     return work_db_sqlite3(dire, work_db)
 
 class work_table_generator:
-    def __init__(self, dire, works):
-        self.dire = dire
-        self.template = os.path.join(dire, "work_%d.html")
+    def __init__(self, works):
         self.db = works
         self.works_per_page = 500
 
-    def reset_time(self):
-        self.start_time = time.time() 
-
-    def cur_time(self):
-        return time.time() - self.start_time
-
-    def gen_header(self, wp, header_sections, body_sections):
-        wp.write("""
-<html>
-<head>
-<meta http-equiv="content-type" content="text/html; charset=utf-8"/>
-<title>GXP make jobs and parallelism</title>
-""")
-        for s in header_sections:
-            wp.write(s)
-        wp.write("""
-</head>
-<body>
-""")
-        for s in body_sections:
-            wp.write(s)
-        wp.write("""
-<a name="Jobs">
-<h1>Jobs</h1>
-<a href="#">page top</a>
-""")
-
-    def gen_trailer(self, wp, sections):
-        wp.write("<p>%.3f sec</p>" % self.cur_time())
-        for s in sections:
-            wp.write(s)
-        wp.write("""
-</body>
-</html>
-""")
-        
     def gen_header_row(self, wp):
         wp.write("<tr>"
                  "<td>idx</td>"
@@ -982,6 +977,8 @@ class work_table_generator:
                  "<td>system time</td>"
                  "<td>minor faults</td>"
                  "<td>major faults</td>"
+                 "<td>io</td>"
+                 "<td>io file</td>"
                  "</tr>\n")
 
     def pr_float(self, f):
@@ -1001,6 +998,19 @@ class work_table_generator:
             return "<br>"
         else:
             return s
+
+    def pr_str_safe(self, s):
+        s = string.replace(s, "<", "&lt;")
+        s = string.replace(s, ">", "&gt;")
+        s = string.replace(s, "\n", "<br>")
+        if s == "": s = "<br>"
+        return s
+
+    def pr_link(self, s):
+        if s is None:
+            return "<br>"
+        else:
+            return '<a href="%s">%s</a>' % (s, s)
 
     def pr_man(self, s):
         if s is None:
@@ -1048,10 +1058,12 @@ class work_table_generator:
                          "<td rowspan=%d>%s</td>"
                          "<td rowspan=%d>%.3f</td>" %
                          (n_runs, work.work_idx, 
-                          n_runs, work.cmd, 
+                          n_runs, self.pr_str_safe(work.cmd), 
                           n_runs, work.time_req))
             # generate 'run' columns
             wp.write('<td class="%s">%s</td>'
+                     '<td>%s</td>'
+                     '<td>%s</td>'
                      '<td>%s</td>'
                      '<td>%s</td>'
                      '<td>%s</td>'
@@ -1071,36 +1083,30 @@ class work_table_generator:
                       self.pr_float(run.utime),
                       self.pr_float(run.stime),
                       self.pr_int(run.minflt),
-                      self.pr_int(run.majflt)))
+                      self.pr_int(run.majflt),
+                      self.pr_str_safe(run.io),
+                      self.pr_link(run.io_file)))
             wp.write("</tr>\n")
             i = i + 1
 
-    def gen_table(self, header_sections, body_sections, trailer_sections):
-        self.db.commit()
-        self.reset_time()
-        wp = None
-        file_idx = 0
-        n_lines = 0
-        for work,runs in self.db.list_jobs():
-            if wp is None:
-                wp = open((self.template % file_idx), "wb")
-                file_idx = file_idx + 1
-                self.gen_header(wp, header_sections, body_sections)
-                wp.write("<table border=1>\n")
-                self.gen_header_row(wp)
-                n_lines = 0
+    def gen_table(self, wp, section_title):
+        wp.write(r"""<a name="%s Jobs">
+<h1>%s Jobs</h1>
+<a href="#">page top</a><br><br>
+<table border=1>
+""" % (section_title, section_title))
+        self.gen_header_row(wp)
+        for work,runs in self.db.list_jobs(section_title):
             self.gen_row(work, runs, wp)
-            n_lines = n_lines + 1
-            if n_lines == self.works_per_page:
-                wp.write("</table>\n")
-                self.gen_trailer(wp, trailer_sections)
-                wp.close()
-                wp = None
-        if wp:
-            wp.write("</table>\n")
-            self.gen_trailer(wp, trailer_sections)
-            wp.close()
-            wp = None
+        wp.write("""</table>
+""")
+
+    def gen_tables(self, wp):
+        self.db.commit()
+        self.gen_table(wp, "Failed")
+        self.gen_table(wp, "Long")
+        self.gen_table(wp, "Recent")
+
 
 class men_table_generator:
     def __init__(self, server, men):
@@ -1113,20 +1119,24 @@ class men_table_generator:
         else:
             return "man_%s" % man.state
 
-    def gen_table(self):
+    def sanitize_cmd(self, cmd):
+        cmd = string.replace(cmd, "<", "&lt;")
+        cmd = string.replace(cmd, ">", "&gt;")
+        return cmd
+
+    def gen_table(self, wp):
         """
         generate worker state
         """
-        wp = cStringIO.StringIO()
         men = self.server.men.items()
         men.sort()
-        wp.write(r'''<a name="Workers">
+        wp.write(r"""<a name="Workers">
 <h1>Workers</h1>
 <a href="#">page top</a><br><br>
 last_ping_time = %.3f<br>
 <table>
 <tr><td>name</td><td>jobs</td><td>last heard</td><td>state</td></tr>
-''' % self.server.pinger.time_last_ping)
+""" % self.server.pinger.time_last_ping)
         for name,man in men:
             wp.write("""<tr>""")
             if len(man.runs_running) == 0:
@@ -1134,7 +1144,7 @@ last_ping_time = %.3f<br>
             else:
                 cmds = []
                 for run in man.runs_running.values():
-                    cmds.append(run.work.cmd)
+                    cmds.append(self.sanitize_cmd(run.work.cmd))
             i = 0
             rowspan = len(cmds)
             for cmd in cmds:
@@ -1149,8 +1159,8 @@ last_ping_time = %.3f<br>
                 wp.write("""<td>%s</td>""" % cmd)
                 wp.write("""</tr>\n""")
                 i = i + 1
-        wp.write("""</table>\n""")
-        return wp.getvalue()
+        wp.write("""</table>
+""")
             
 
 class time_series_data:
@@ -1208,7 +1218,7 @@ class html_generator:
     def __init__(self, opts, server):
         self.opts = opts
         self.server = server
-        self.wgen = work_table_generator(opts.state_dir, server.works)
+        self.wgen = work_table_generator(server.works)
         self.mgen = men_table_generator(server, server.men)
         self.pgen = time_series_plot_generator(server,
                                                server.parallelism,
@@ -1217,8 +1227,25 @@ class html_generator:
                                                opts.parallelism_img,
                                                opts.parallelism_err,
                                                opts.parallelism_terminal)
-    def gen_style(self):
-        return r"""<style>
+    def gen_header(self, wp, finish):
+        if finish:
+            refresh_meta = ""
+        else:
+            refresh_meta = ('<meta http-equiv="refresh" content="%d"/>' % 
+                            self.opts.refresh_interval)
+        wp.write("""
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+%s
+<title>GXP make jobs and parallelism</title>
+""" % refresh_meta)
+        self.gen_style(wp)
+        wp.write("""</head>
+""")
+
+    def gen_style(self, wp):
+        wp.write(r"""<style>
 <!--
 h1 {
   background-color:#ccc;
@@ -1277,10 +1304,30 @@ td.man_3_gone {
 }
 -->
 </style>
-"""
-    def gen_section_basic(self):
+
+<!-- you may have this file to overwrite default style -->
+<link rel="stylesheet" href="state.css" type="text/css"/>
+
+""")
+
+    def gen_section_toc(self, wp):
+        wp.write("""
+<a name="Table of Contents">
+<h1>Contents</h1>
+<ul>
+<li><a href="#Parallelism">Parallelism</a>
+<li>Jobs
+<ul>
+  <li><a href="work.db">all jobs in sqlite3 database</a>
+  <li><a href="#Jobs">Jobs</a>
+</ul>
+<li><a href="#Workers">Workers</a>
+</ul>
+""")
+
+    def gen_section_basic(self, wp):
         server = self.server
-        return (r"""
+        wp.write(r"""
 <a name="Basic info">
 <h1>Basic info</h1>
 <a href="#">page top</a><br><br>
@@ -1318,9 +1365,9 @@ td.man_3_gone {
        server.gxpc_pid, server.tid, server.gxpc_status,
        server.gxpc_fd, server.gxpc_io_fd))
         
-    def gen_section_parallelism(self):
+    def gen_section_parallelism(self, wp):
         opts = self.opts
-        return ("""
+        wp.write("""
 <a name="Parallelism">
 <h1>Parallelism</h1>
 <a href="#">page top</a><br><br>
@@ -1333,15 +1380,42 @@ td.man_3_gone {
 """ % (opts.parallelism_gpl, opts.parallelism_err, 
        opts.parallelism_img, opts.parallelism_img))
 
+    def gen_trailer(self, wp):
+        wp.write("""
+</body>
+</html>
+""")
+
+    def gen_section_works(self, wp):
+        self.wgen.gen_tables(wp)
+
+    def gen_section_men(self, wp):
+        self.mgen.gen_table(wp)
+
+    def reset_time(self):
+        self.start_time = time.time() 
+
+    def cur_time(self):
+        return time.time() - self.start_time
+        
     def generate(self, finished):
-        sec_basic = self.gen_section_basic()
+        self.reset_time()
         self.pgen.gen_plot()    # parallelism
         # self.rgen.gen_plot()    # rusage
         # self.ldgen.gen_plot()   # load average
-        style = self.gen_style()
-        sec_para = self.gen_section_parallelism()
-        sec_men = self.mgen.gen_table()
-        self.wgen.gen_table([ style ], [ sec_basic, sec_para ], [ sec_men ])
+        filename = os.path.join(self.opts.state_dir, "index.html")
+        wp = open(filename, "wb")
+        self.gen_header(wp, finished)
+        self.gen_section_toc(wp)
+        self.gen_section_basic(wp)
+        self.gen_section_parallelism(wp)
+        self.gen_section_works(wp)
+        self.gen_section_men(wp)
+        wp.write("<p>(took %.3f sec to generate)</p>" % self.cur_time())
+        self.gen_trailer(wp)
+        wp.close()
+        
+
 
 class xmake_server:
     """
@@ -1873,9 +1947,16 @@ class xmake_server:
                 break
             # we can never know the we never receive io from
             # this job ...
-            idx = self.id_gen.get_run_idx(ev.rid)
-            if 0: self.run_db.add_io(idx, ev.payload)
-            # Ws("got from %d '%s'\n" % (idx, ev.payload))
+            run_idx = self.id_gen.get_run_idx(ev.rid)
+            run = self.runs_running.get(run_idx)
+            if run is None:
+                msg = ("warning: io from %d not recorded '%s'\n" 
+                       % (run_idx, ev.payload))
+                self.LOG(msg)
+                Es("xmake: %s" % msg)
+            else:
+                run.add_io(ev.payload)
+                self.works.update_run(run)
 
     def check_constraint(self, run, man):
         """
@@ -2112,7 +2193,7 @@ class xmake_server:
             or
             t0 > self.next_record_time_2):
             for run in self.runs_running.values():
-                run.update_time(t0)
+                run.sync(t0)
             self.hgen.generate(finished)
             t1 = self.cur_time()
             self.n_state_changes = 0
@@ -2619,6 +2700,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake.20100414,v $
+# Revision 1.2  2010/04/13 19:20:48  ttaauu
+# xmake.20100414
+#
 # Revision 1.1  2010/04/13 16:11:24  ttaauu
 # added xmake.20100414
 #
