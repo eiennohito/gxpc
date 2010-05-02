@@ -5,3 +5,11 @@
 	* gxpmake/ex_partitioner : new mapreduce implementation that does not 
 	create many intermediate files
 	* gxpmake/ex_exchanger : added for the new mapreduce implementation
+2010-05-02 Taura
+	* gxpbin/xmake : rewritten almost from scratch. major changes are
+	- it now uses sqlite3 for storing job records.
+	- still support other options with 
+	--work_db_class (sqlite3|sqlite3_mem|mem).
+	- removed many unused feaures (e.g., staging)
+	- html now shows rss and load average.
+	* gxpbin/xmake.2009 : old xmake

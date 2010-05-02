@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake.20100414,v 1.2 2010/04/13 19:20:48 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake.20100414,v 1.3 2010/05/02 03:14:53 ttaauu Exp $
 # $Name:  $
 #
 
@@ -161,16 +161,31 @@ class xmake_cmd_opts(opt2.cmd_opts):
         opt2.cmd_opts.__init__(self)
         # log file
         self.log      = ("s", "xmake.log")
+        #
+        self.work_db_class = ("s", "sqlite3")
         # state file directory
         self.state_dir = ("s", "./gxp_make_state")
         # state file 
         self.state    = ("s", "index.html")
         # parallelism file
         self.parallelism_gpl = ("s", "parallelism.gpl")
-        self.parallelism_dat = ("s", "parallelism.dat")
+        self.parallelism_dat = ("s", "parallelism.txt")
         self.parallelism_terminal = ("s", "png")
         self.parallelism_img = ("s", "parallelism.png")
         self.parallelism_err = ("s", "parallelism.err")
+        # rss
+        self.rss_gpl = ("s", "rss.gpl")
+        self.rss_dat = ("s", "rss.txt")
+        self.rss_terminal = ("s", "png")
+        self.rss_img = ("s", "rss.png")
+        self.rss_err = ("s", "rss.err")
+        # load avg
+        self.loadavg_gpl = ("s", "loadavg.gpl")
+        self.loadavg_dat = ("s", "loadavg.txt")
+        self.loadavg_terminal = ("s", "png")
+        self.loadavg_img = ("s", "loadavg.png")
+        self.loadavg_err = ("s", "loadavg.err")
+
         self.work_db = ("s", "work.db")
         self.shine_file = ("s", "shine")
         self.local_exec_cmd = ("s", None) 
@@ -355,6 +370,9 @@ class Man:
         self.time_last_heartbeat = cur_time
         self.runs_running = {} # run_idx -> run
         self.n_runs = 0
+
+    def prio(self):
+        return -self.n_runs
 
     def set_heartbeat(self, cur_time):
         self.time_last_heartbeat = cur_time
@@ -598,7 +616,8 @@ class Run:
             # ------ update database -------
             server.works.update_run(self)
             if man.state == man_state.active:
-                server.men_free.append(man) # this man is now free
+                # this man is now free
+                server.men_free.append((man.prio(), man))
             if server.logfp:
                 server.LOG("man %s in state %s finished a run\n"
                            % (man.name, man.state))
@@ -706,7 +725,7 @@ class Work:
     def retry(self):
         # retry
         msg = ("work '%s' will be retried\n" % self.cmd)
-        Es("xmake: %s" % msg)
+        # Es("xmake: %s" % msg)
         if self.server.logfp: self.server.LOG(msg)
         self.make_run()
 
@@ -739,27 +758,36 @@ current dir. Both are read (if exist) and the latter overrides the former.
 """)
         
     def parse_files(self, conf_files):
+        """
+        parse config files.
+        use only the LAST file that exist in conf_files.
+        if the user supplies one, use it.
+        """
         self.warn_deprecated_files()
+        conf_files = conf_files[:]
+        conf_files.reverse()
         for f in conf_files:
-            self.parse(os.path.expanduser(f))
-        
-    def parse(self, conf_file):
-        if os.path.exists(conf_file):
-            try:
-                fp = open(conf_file, "rb")
-            except IOError,e:
-                Es("xmake: failed to open %s %s\n" % (conf_file, e.args))
+            if self.parse(os.path.expanduser(f)) == 0:
                 return
-            for line in fp.readlines():
-                line = string.strip(line)
-                if line == "" or line[0] == "#": continue
-                m = re.match("cpu\s+([^\s]+)\s+(\d+)", line)
-                if m:
-                    host = m.group(1)
-                    n = int(m.group(2))
-                    self.cpu_count.append((host, n))
-                    continue
-            fp.close()
+
+    def parse(self, conf_file):
+        if not os.path.exists(conf_file): return -1
+        try:
+            fp = open(conf_file, "rb")
+        except IOError,e:
+            Es("xmake: failed to open %s %s\n" % (conf_file, e.args))
+            return
+        for line in fp.readlines():
+            line = string.strip(line)
+            if line == "" or line[0] == "#": continue
+            m = re.match("cpu\s+([^\s]+)\s+(\d+)", line)
+            if m:
+                host = m.group(1)
+                n = int(m.group(2))
+                self.cpu_count.append((host, n))
+                continue
+        fp.close()
+        return 0
 
     def get_cpu_count(self, host):
         for regexp,n in self.cpu_count:
@@ -821,8 +849,31 @@ class resource_usage:
         self.r = r
         return dr
 
-class work_db_mem:
-    def __init__(self):
+class work_db_base:
+    def __init__(self, dire, work_db):
+        bomb()
+    def add_work(self, work):
+        bomb()
+    def add_run(self, work_idx, run):
+        bomb()
+    def update_run(self, run):
+        bomb()
+    def add_io(self, run_idx, payload):
+        bomb()
+    def commit(self):
+        bomb()
+    def __len__(self):
+        bomb()
+    def __iter__(self):
+        bomb()
+
+        
+class work_db_mem(work_db_base):
+    def __init__(self, dire, work_db):
+        # these two variables are to indicate
+        # no links should be generated
+        self.dire = None
+        self.work_db = None
         self.works = []         # list of works
         self.runs = {}          # run idx -> run
         self.work_runs = {}     # work idx -> list of run_idxs
@@ -848,6 +899,9 @@ class work_db_mem:
         """
         pass
 
+    def add_io(self, run_idx, payload):
+        pass
+
     def __len__(self):
         return len(self.works)
 
@@ -859,20 +913,20 @@ class work_db_mem:
     def commit(self):
         pass
 
-class work_db_sqlite3:
-    def __init__(self, dire, work_db):
-        self.dire = dire
-        self.work_db = work_db
-        db = os.path.join(dire, work_db)
-        self.conn = self.mk_sqlite3_db(db)
-        self.n_works = 0
+    def list_jobs(self, title):
+        if 0: yield
 
-    def mk_sqlite3_db(self, db):
+class work_db_sqlite3_base(work_db_base):
+    def mk_sqlite3_db(self):
         import sqlite3
-        # conn = sqlite3.connect(":memory:")
-        if os.path.exists(db):
-            os.remove(db)
-        conn = sqlite3.connect(db)
+        self.n_works = 0
+        if self.work_db:
+            db = os.path.join(self.dire, self.work_db)
+            if os.path.exists(db):
+                os.remove(db)
+        else:
+            db = ":memory:"
+        conn = sqlite3.connect(":memory:")
         conn.execute("""
 create table works (work_idx integer, cmd text, cwd text, env text, time_req real)
 """)
@@ -930,6 +984,7 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
         conn = self.conn
         c = conn.execute(sql)
         work = None
+        n_works = 0
         for row in c:
             idx = row[0]
             w_tuple = (idx,) + row[1:5]  # UGLY
@@ -937,6 +992,8 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
             if work is None or work.work_idx != idx:
                 if work:
                     yield (work,runs)
+                    n_works = n_works + 1
+                    if n_works == 100: break
                 work = Work().restore_from_tuple(w_tuple)
                 runs = []
             runs.append(Run().restore_from_tuple(r_tuple))
@@ -947,6 +1004,7 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
         elif title == "Failed":
             return self.list_jobs_aux("""select * from (select work_idx from (select * from runs group by work_idx) where status != "queued" and status != "running" and exit_status != 0) natural join works natural join runs""")
         elif title == "Recent":
+            # where status != "queued" 
             return self.list_jobs_aux("select * from (select work_idx from (select * from runs group by work_idx) order by work_idx desc) natural join works natural join runs")
         else:
             assert 0, title
@@ -954,8 +1012,25 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
     def commit(self):
         self.conn.commit()
 
-def mk_work_db(dire, work_db):
-    return work_db_sqlite3(dire, work_db)
+class work_db_sqlite3(work_db_sqlite3_base):
+    def __init__(self, dire, work_db):
+        self.dire = dire
+        self.work_db = work_db
+        self.conn = self.mk_sqlite3_db()
+
+class work_db_sqlite3_mem(work_db_sqlite3_base):
+    def __init__(self, dire, work_db):
+        self.dire = None
+        self.work_db = None
+        self.conn = self.mk_sqlite3_db()
+
+def mk_work_db(work_db_class, dire, work_db):
+    # work_db_class = "mem"
+    # work_db_class = "sqlite3_mem"
+    # work_db_class = "sqlite3"
+    g = globals()
+    cls = g["work_db_%s" % work_db_class]
+    return cls(dire, work_db)
 
 class work_table_generator:
     def __init__(self, works):
@@ -1090,16 +1165,15 @@ class work_table_generator:
             i = i + 1
 
     def gen_table(self, wp, section_title):
-        wp.write(r"""<a name="%s Jobs">
+        wp.write(r'''<a name="%s Jobs">
 <h1>%s Jobs</h1>
 <a href="#">page top</a><br><br>
 <table border=1>
-""" % (section_title, section_title))
+''' % (section_title, section_title))
         self.gen_header_row(wp)
         for work,runs in self.db.list_jobs(section_title):
             self.gen_row(work, runs, wp)
-        wp.write("""</table>
-""")
+        wp.write("""</table>""")
 
     def gen_tables(self, wp):
         self.db.commit()
@@ -1130,13 +1204,14 @@ class men_table_generator:
         """
         men = self.server.men.items()
         men.sort()
-        wp.write(r"""<a name="Workers">
+        wp.write(r'''<a name="Workers">
 <h1>Workers</h1>
 <a href="#">page top</a><br><br>
 last_ping_time = %.3f<br>
 <table>
 <tr><td>name</td><td>jobs</td><td>last heard</td><td>state</td></tr>
-""" % self.server.pinger.time_last_ping)
+''' % self.server.pinger.time_last_ping)
+
         for name,man in men:
             wp.write("""<tr>""")
             if len(man.runs_running) == 0:
@@ -1159,8 +1234,7 @@ last_ping_time = %.3f<br>
                 wp.write("""<td>%s</td>""" % cmd)
                 wp.write("""</tr>\n""")
                 i = i + 1
-        wp.write("""</table>
-""")
+        wp.write("""</table>""")
             
 
 class time_series_data:
@@ -1172,10 +1246,13 @@ class time_series_data:
         self.wp = open(file_dat, "wb")
         self.wp.write("0.0 %f\n" % self.last_x)
         
-    def add_rel(self, t, dx):
+    def add_x(self, t, x):
         self.wp.write("%f %f\n" % (t, self.last_x))
-        self.wp.write("%f %f\n" % (t, self.last_x + dx))
-        self.last_x = self.last_x + dx
+        self.wp.write("%f %f\n" % (t, x))
+        self.last_x = x
+
+    def add_dx(self, t, dx):
+        self.add_x(t, self.last_x + dx)
 
     def sync(self):
         self.wp.flush()
@@ -1184,7 +1261,7 @@ class time_series_data:
         self.wp.close()
         
 class time_series_plot_generator:
-    def __init__(self, server, ts, dire, gpl, img, err, term):
+    def __init__(self, server, ts, dire, gpl, img, err, term, style, ylabel):
         self.server = server
         self.ts = ts                    # time series data
         self.dire = dire                # directory
@@ -1192,19 +1269,25 @@ class time_series_plot_generator:
         self.img = img                  # output (image) file name
         self.err = err                  # error file name
         self.term = term                # terminal (e.g., "png")
+        self.style = style
+        self.ylabel = ylabel
 
     def gen_plot(self):
+        # make sure the graph reflects current time
+        self.ts.add_dx(self.server.cur_time(), 0)
         self.ts.sync()
         gpl = os.path.join(self.dire, self.gpl)
         err = os.path.join(self.dire, self.err)
         gp = open(gpl, "wb")
         gp.write("""set terminal %s
 set style fill solid
-plot "%s" title "" with boxes
-""" % (self.term, self.ts.file_dat))
+set ylabel "%s"
+plot "%s" title "" with %s
+""" % (self.term, self.ylabel, self.ts.file_dat, self.style))
         gp.close()
-        cmd = "cd %s && gnuplot %s 2> %s > %s" % \
-            (self.dire, self.gpl, self.err, self.img)
+        img_t = "%s.tmp" % self.img
+        cmd = "cd %s && gnuplot %s 2> %s > %s && mv %s %s" % \
+            (self.dire, self.gpl, self.err, img_t, img_t, self.img)
         status = os.system(cmd)
         fp = open(err, "rb")
         msg = fp.read()
@@ -1226,7 +1309,24 @@ class html_generator:
                                                opts.parallelism_gpl,
                                                opts.parallelism_img,
                                                opts.parallelism_err,
-                                               opts.parallelism_terminal)
+                                               opts.parallelism_terminal,
+                                               "boxes", "outstanding jobs")
+        self.rgen = time_series_plot_generator(server,
+                                               server.rss,
+                                               opts.state_dir,
+                                               opts.rss_gpl,
+                                               opts.rss_img,
+                                               opts.rss_err,
+                                               opts.rss_terminal,
+                                               'lines linewidth 3 linecolor rgb "blue"', "Resident Set Size (MB)")
+        self.lgen = time_series_plot_generator(server,
+                                               server.loadavg,
+                                               opts.state_dir,
+                                               opts.loadavg_gpl,
+                                               opts.loadavg_img,
+                                               opts.loadavg_err,
+                                               opts.loadavg_terminal,
+                                               'lines linewidth 3 linecolor rgb "yellow"', "Last 1 min. Load Average")
     def gen_header(self, wp, finish):
         if finish:
             refresh_meta = ""
@@ -1311,23 +1411,32 @@ td.man_3_gone {
 """)
 
     def gen_section_toc(self, wp):
-        wp.write("""
+        if self.server.works.work_db:
+            work_db = ('<li><a href="%s">all jobs in sqlite3 database</a>'
+                       % self.server.works.work_db)
+        else:
+            work_db = ""
+        wp.write('''
 <a name="Table of Contents">
 <h1>Contents</h1>
 <ul>
 <li><a href="#Parallelism">Parallelism</a>
+<li><a href="#RSS">RSS</a>
+<li><a href="#Load Average">Load Average</a>
 <li>Jobs
 <ul>
-  <li><a href="work.db">all jobs in sqlite3 database</a>
-  <li><a href="#Jobs">Jobs</a>
+  %s
+  <li><a href="#Failed Jobs">Failed Jobs</a>
+  <li><a href="#Long Jobs">Long Jobs</a>
+  <li><a href="#Recent Jobs">Recent Jobs</a>
 </ul>
 <li><a href="#Workers">Workers</a>
 </ul>
-""")
+''' % work_db)
 
     def gen_section_basic(self, wp):
         server = self.server
-        wp.write(r"""
+        wp.write(r'''
 <a name="Basic info">
 <h1>Basic info</h1>
 <a href="#">page top</a><br><br>
@@ -1351,9 +1460,9 @@ td.man_3_gone {
 <tr><td>gxpc fd</td><td>%s</td></tr>
 <tr><td>gxpc io fd</td><td>%s</td></tr>
 </table>
-""" % (server.sys_argv,
+''' % (server.sys_argv,
        server.hostname,
-       os.getpid(), 
+       server.self_pid, 
        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(server.time_start)),
        server.cur_time(),
        len(server.runs_todo), len(server.works),
@@ -1365,20 +1474,41 @@ td.man_3_gone {
        server.gxpc_pid, server.tid, server.gxpc_status,
        server.gxpc_fd, server.gxpc_io_fd))
         
-    def gen_section_parallelism(self, wp):
+    def gen_section_graph(self, wp, section_title, gen_plot_time,
+                          gpl, dat, err, img):
         opts = self.opts
-        wp.write("""
-<a name="Parallelism">
-<h1>Parallelism</h1>
+        wp.write('''
+<a name="%s">
+<h1>%s</h1>
 <a href="#">page top</a><br><br>
-<p>if the following image is broken, gnuplot may have gotten an error</p>
+<p>took %.3f sec to generate the graph.</a>
+<p>if the following image is broken, gnuplot may have gotten an error.</p>
 <ul>
 <li><a href="%s">gnuplot source</a>
+<li><a href="%s">gnuplot data</a>
 <li><a href="%s">gnuplot error</a>
 </ul>
 <a href="%s"><img src="%s" width=640></a><br>
-""" % (opts.parallelism_gpl, opts.parallelism_err, 
-       opts.parallelism_img, opts.parallelism_img))
+''' % (section_title, section_title, gen_plot_time, gpl, dat, err, img, img))
+
+    def gen_section_parallelism(self, wp, gen_plot_time):
+        opts = self.opts
+        self.gen_section_graph(wp, "Parallelism", gen_plot_time,
+                               opts.parallelism_gpl, opts.parallelism_dat,
+                               opts.parallelism_err, opts.parallelism_img)
+
+    def gen_section_rss(self, wp, gen_plot_time):
+        opts = self.opts
+        self.gen_section_graph(wp, "RSS", gen_plot_time,
+                               opts.rss_gpl, opts.rss_dat,
+                               opts.rss_err, opts.rss_img)
+
+    def gen_section_loadavg(self, wp, gen_plot_time):
+        opts = self.opts
+        self.gen_section_graph(wp, "Load Average", gen_plot_time,
+                               opts.loadavg_gpl, opts.loadavg_dat,
+                               opts.loadavg_err, opts.loadavg_img)
+
 
     def gen_trailer(self, wp):
         wp.write("""
@@ -1392,29 +1522,37 @@ td.man_3_gone {
     def gen_section_men(self, wp):
         self.mgen.gen_table(wp)
 
-    def reset_time(self):
-        self.start_time = time.time() 
-
-    def cur_time(self):
-        return time.time() - self.start_time
-        
     def generate(self, finished):
-        self.reset_time()
+        t0 = self.server.cur_time()
         self.pgen.gen_plot()    # parallelism
-        # self.rgen.gen_plot()    # rusage
-        # self.ldgen.gen_plot()   # load average
+        t1 = self.server.cur_time()
+        self.rgen.gen_plot()    # rss
+        t2 = self.server.cur_time()
+        self.lgen.gen_plot()            # loadavg
+        t3 = self.server.cur_time()
         filename = os.path.join(self.opts.state_dir, "index.html")
-        wp = open(filename, "wb")
+        filename_t = os.path.join(self.opts.state_dir, "index.html.tmp")
+        wp = open(filename_t, "wb")
         self.gen_header(wp, finished)
         self.gen_section_toc(wp)
         self.gen_section_basic(wp)
-        self.gen_section_parallelism(wp)
+        self.server.LOG("generate parallelism\n")
+        self.gen_section_parallelism(wp, t1 - t0)
+        self.server.LOG("generate rss\n")
+        self.gen_section_rss(wp, t2 - t1)
+        self.server.LOG("generate load avg\n")
+        self.gen_section_loadavg(wp, t3 - t2)
+        self.server.LOG("generate works\n")
         self.gen_section_works(wp)
+        self.server.LOG("generate men\n")
         self.gen_section_men(wp)
-        wp.write("<p>(took %.3f sec to generate)</p>" % self.cur_time())
+        t4 = self.server.cur_time()
+        wp.write("<p>(took %.3f sec to generate)</p>" % (t4 - t0))
+        self.server.LOG("gen trailer\n")
         self.gen_trailer(wp)
         wp.close()
-        
+        self.server.LOG("rename\n")
+        os.rename(filename_t, filename)
 
 
 class xmake_server:
@@ -1461,8 +1599,11 @@ class xmake_server:
         # and the main thread receives it from rfd
         self.child_rfd = None
         self.child_wfd = None
+        self.n_sigchld_called = 0
         self.n_sigchild_written = None
         self.n_sigchild_read = None
+        # self pid
+        self.self_pid = None
         # pid of GNU make process
         self.make_pid = None
         self.make_status = None
@@ -1486,7 +1627,9 @@ class xmake_server:
         self.next_record_time_1 = None
         self.next_record_time_2 = None
         # parallelism profile
-        self.parallelism = None         # list of (t, p)s
+        self.parallelism = None         # parallelism profile
+        self.rss = None                 # rss profile
+        self.loadavg = None             # load avg
         # pinger
         self.pinger = None
         # parse work attributes GXPMAKE: x=y z=w ...
@@ -1832,7 +1975,7 @@ class xmake_server:
                 man = Man(len(self.men), man_name, capacity, cur_time)
                 self.men[man_name] = man
                 for i in range(capacity):
-                    self.men_free.append(man)
+                    self.men_free.append((man.prio(), man))
         elif rid == self.id_gen.ping:
             # notifications saying ping to a worker has finished
             if man:
@@ -1862,7 +2005,7 @@ class xmake_server:
         elif self.id_gen.run_pat.match(rid):
             run_idx = self.id_gen.get_run_idx(rid)
             run = self.runs_running.get(run_idx)
-            assert run, (rid, run_idx)
+            # assert run, (rid, run_idx)
             if run:
                 self.handle_finish(run, wait_status, rusage)
             else:
@@ -1881,7 +2024,7 @@ class xmake_server:
         if self.logfp:
             self.LOG("run %s finished with status=%s\n" % (run, wait_status))
         cur_time = self.cur_time()
-        self.parallelism.add_rel(cur_time, -1)
+        self.parallelism.add_dx(cur_time, -1)
         exit_status = termsig = None
         etime = 0.0
         if os.WIFEXITED(wait_status):
@@ -1950,9 +2093,9 @@ class xmake_server:
             run_idx = self.id_gen.get_run_idx(ev.rid)
             run = self.runs_running.get(run_idx)
             if run is None:
-                msg = ("warning: io from %d not recorded '%s'\n" 
+                msg = ("warning: io from %d not be recorded '%s'\n" 
                        % (run_idx, ev.payload))
-                self.LOG(msg)
+                if self.logfp: self.LOG(msg)
                 Es("xmake: %s" % msg)
             else:
                 run.add_io(ev.payload)
@@ -1975,16 +2118,17 @@ class xmake_server:
         find man for this run from free men.
         """
         hold = 0
-        for man in self.men_free:
+        for prio_man in self.men_free:
+            _,man = prio_man
             if man.state == man_state.active:
                 if self.check_constraint(run, man):
-                    self.men_free.remove(man)
+                    self.men_free.remove(prio_man)
                     return man
                 else:
                     hold = 1
             else:
                 # the man is dead
-                self.men_free.remove(man)
+                self.men_free.remove(prio_man)
                 if dbg>=2:
                     Es("xmake: man %s in state %d found in "
                        "men_free queue\n" % (man.name, man.stat))
@@ -2002,10 +2146,9 @@ class xmake_server:
             self.LOG("matching men and works\n")
         matches = []                          # work -> man
         new_runs_todo = []
-        while len(self.runs_todo) > 0:
+        self.men_free.sort()
+        while len(self.runs_todo) > 0 and len(self.men_free) > 0:
             run = self.runs_todo.pop(0)
-            # check if work is executable meeting resource constraints
-            # log becomes too large
             if dbg>=2:
                 if self.logfp:
                     self.LOG("finding match for run '%s'\n" % run)
@@ -2018,7 +2161,7 @@ class xmake_server:
                 matches.append((run, man))
             else:
                 new_runs_todo.append(run)
-        self.runs_todo = new_runs_todo
+        self.runs_todo = new_runs_todo + self.runs_todo
         if self.logfp:
             self.LOG("%d job matches found\n" % len(matches))
         return matches
@@ -2065,7 +2208,7 @@ class xmake_server:
             if self.n_sigchild_written - self.n_sigchild_read > 50:
                 break
         if n > 0:
-            self.parallelism.add_rel(cur_time, n)
+            self.parallelism.add_dx(cur_time, n)
         if self.logfp:
             self.LOG("%d jobs dispatched\n" % n)
         return n
@@ -2105,7 +2248,7 @@ class xmake_server:
                     assert run.run_idx not in self.runs_running
                     assert run.man is None
                 if n > 0:
-                    self.parallelism.add_rel(cur_time, -n)
+                    self.parallelism.add_dx(cur_time, -n)
                 assert len(man.runs_running) == 0
 
     def run_persistent_e(self, tid):
@@ -2182,6 +2325,46 @@ class xmake_server:
             Es("xmake : %s\n" % msg)
             self.interrupted = self.interrupted + 1
     
+    def get_self_rss(self):
+        fp = os.popen("ps h -o rss -p %d" % os.getpid())
+        while 1:
+            try:
+                result = fp.read()
+                break
+            except OSError,e:
+                if e.args[0] != errno.EINTR: raise
+            except IOError,e:
+                if e.args[0] != errno.EINTR: raise
+        result = string.strip(result)
+        try:
+            result = float(result)
+        except ValueError,e:
+            return -1
+        return result / 1024.0
+
+    def record_rss(self, cur_time):
+        self.rss.add_x(cur_time, self.get_self_rss())
+
+    def get_loadavg(self):
+        fp = os.popen("uptime")
+        while 1:
+            try:
+                result = fp.read()
+                break
+            except OSError,e:
+                if e.args[0] != errno.EINTR: raise
+            except IOError,e:
+                if e.args[0] != errno.EINTR: raise
+        m = re.search("load average: ([^,]*),", result)
+        if m is None: return -1
+        try:
+            return float(m.group(1))
+        except ValueError,e:
+            return -1
+
+    def record_loadavg(self, cur_time):
+        self.loadavg.add_x(cur_time, self.get_loadavg())
+
     def periodic(self, finished):
         self.check_shine_file()
         self.show_state()
@@ -2194,6 +2377,12 @@ class xmake_server:
             t0 > self.next_record_time_2):
             for run in self.runs_running.values():
                 run.sync(t0)
+            # not quite right. they should be measured
+            # more often. but if we do them everytime,
+            # this loop become too busy because each of
+            # them runs a process and raise sigchlds.
+            self.record_rss(t0)
+            self.record_loadavg(t0)
             self.hgen.generate(finished)
             t1 = self.cur_time()
             self.n_state_changes = 0
@@ -2252,6 +2441,7 @@ class xmake_server:
         """
         if 0 and self.logfp:    # too slow 
             self.LOG("sigchld handler %d\n" % self.child_wfd)
+        self.n_sigchld_called = self.n_sigchld_called + 1
         try:
             x = os.write(self.child_wfd, "x")
             assert x == 1
@@ -2294,7 +2484,8 @@ class xmake_server:
         # written < read.
         if x <= 0: x = 1
 
-        x = 100                 # why 100? not 1000 or 10000?
+        x = 10000                 # why 100? not 1000 or 10000?
+        a = ""
         try:
             a = os.read(self.child_rfd, x)
         except IOError,e:
@@ -2305,7 +2496,8 @@ class xmake_server:
             else:
                 raise
         if self.logfp:
-            self.LOG("got %s from child_rfd\n" % a)
+            self.LOG("got %d x's from child_rfd (%d sigchld calls)\n"
+                     % (len(a), self.n_sigchld_called))
         self.n_sigchild_read = self.n_sigchild_read + len(a)
         pids = []
         while 1:
@@ -2353,7 +2545,7 @@ class xmake_server:
     def kill_gxpc(self):
         if self.gxpc_pid is not None:
             if self.logfp:
-                self.LOG("killing initial process and children %s\n"
+                self.LOG("killing initial process and its children %s\n"
                          % self.gxpc_pid)
             os.kill(self.gxpc_pid, signal.SIGTERM)
 
@@ -2459,16 +2651,19 @@ class xmake_server:
 
     def wait_for_events(self):
         F = []
-        for x in [ self.child_rfd, self.so, 
+        for x in [ self.so, self.child_rfd, 
                    self.gxpc_fd, self.gxpc_io_fd ]:
             if x: F.append(x)
+
+        self.LOG("%d sigchld calls\n" % self.n_sigchld_called)
+
         # calc next timeout
         cur_time = self.cur_time()
         timeout = self.calc_next_timeout(cur_time)
         # n_dispatched_jobs == 0 and ???
         if timeout < 1.0: timeout = 1.0
         if self.logfp:
-            self.LOG("select(%d, timeout=%.2f)\n" % (len(F), timeout))
+            self.LOG("select(%d, timeout=%.2f) \n" % (len(F), timeout))
         R = []
         try:
             R,_,_ = select.select(F, [], [], timeout)
@@ -2556,6 +2751,7 @@ class xmake_server:
         self.pinger = ping_men(self, self.opts.ping_interval)
         # when run by gxpc make, GXP_SESSION must be set to make sure
         # children can attach the right session
+        self.self_pid = os.getpid()
         self.so,self.so_name = self.mk_server_socket()
         self.tid = "tid-%s" % os.path.basename(self.so_name)
         if dbg>=2:
@@ -2571,14 +2767,18 @@ class xmake_server:
         self.gxpc_partial_msg = ""
         self.parallelism = time_series_data(self.opts.state_dir,
                                             self.opts.parallelism_dat)
+        self.rss = time_series_data(self.opts.state_dir,
+                                    self.opts.rss_dat)
+        self.loadavg = time_series_data(self.opts.state_dir,
+                                        self.opts.loadavg_dat)
         self.conf = xmake_server_conf()
         self.conf.parse_files(self.opts.conf)
 
         # --------
-
         self.register_sigchld_handler() # register sig handler
         self.make_pid = self.run_make() # run GNU make
-        self.works = mk_work_db(self.opts.state_dir, self.opts.work_db)
+        self.works = mk_work_db(self.opts.work_db_class,
+                                self.opts.state_dir, self.opts.work_db)
         self.runs_todo = []     # runs received, but not yet matched with man
         self.matches = []   # (run,man)'s matched, but not yet started
         self.runs_running = {}  # runs running (idx -> Run object)
@@ -2700,6 +2900,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake.20100414,v $
+# Revision 1.3  2010/05/02 03:14:53  ttaauu
+# new xmake that runs with constant memory
+#
 # Revision 1.2  2010/04/13 19:20:48  ttaauu
 # xmake.20100414
 #
