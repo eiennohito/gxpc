@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.60 2010/05/02 06:23:14 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.61 2010/05/02 08:21:22 ttaauu Exp $
 # $Name:  $
 #
 
@@ -926,7 +926,7 @@ class work_db_sqlite3_base(work_db_base):
                 os.remove(db)
         else:
             db = ":memory:"
-        conn = sqlite3.connect(":memory:")
+        conn = sqlite3.connect(db)
         conn.execute("""
 create table works (work_idx integer, cmd text, cwd text, env text, time_req real)
 """)
@@ -1008,7 +1008,7 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
                     (select * from runs group by work_idx)
                     %s
                     %s)
-                    natural join works natural join runs""" % (order_by, where)
+                    natural join works natural join runs""" % (where, order_by)
         return self.list_jobs_sql(sql)
 
     def list_jobs(self, title):
@@ -2914,6 +2914,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.61  2010/05/02 08:21:22  ttaauu
+# *** empty log message ***
+#
 # Revision 1.60  2010/05/02 06:23:14  ttaauu
 # *** empty log message ***
 #
