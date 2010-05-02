@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.59 2010/05/02 03:14:52 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.60 2010/05/02 06:23:14 ttaauu Exp $
 # $Name:  $
 #
 
@@ -980,7 +980,7 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
     def __len__(self):
         return self.n_works
 
-    def list_jobs_aux(self, sql):
+    def list_jobs_sql(self, sql):
         conn = self.conn
         c = conn.execute(sql)
         work = None
@@ -998,14 +998,28 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
                 runs = []
             runs.append(Run().restore_from_tuple(r_tuple))
 
+    def list_jobs_aux(self, where, order_by):
+        if order_by:
+            order_by = "order by %s" % order_by
+        if where:
+            where = "where %s" % where
+        sql = """select * from
+                  (select work_idx from
+                    (select * from runs group by work_idx)
+                    %s
+                    %s)
+                    natural join works natural join runs""" % (order_by, where)
+        return self.list_jobs_sql(sql)
+
     def list_jobs(self, title):
         if title == "Long":
-            return self.list_jobs_aux("select * from (select work_idx from (select * from runs group by work_idx) order by time_since_start desc) natural join works natural join runs")
+            return self.list_jobs_aux("", "time_since_start desc")
         elif title == "Failed":
-            return self.list_jobs_aux("""select * from (select work_idx from (select * from runs group by work_idx) where status != "queued" and status != "running" and exit_status != 0) natural join works natural join runs""")
+            return self.list_jobs_aux("""status != "queued"
+                                     and status != "running"
+                                     and exit_status != 0""", "")
         elif title == "Recent":
-            # where status != "queued" 
-            return self.list_jobs_aux("select * from (select work_idx from (select * from runs group by work_idx) order by work_idx desc) natural join works natural join runs")
+            return self.list_jobs_aux("", "work_idx desc")
         else:
             assert 0, title
 
@@ -2900,6 +2914,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.60  2010/05/02 06:23:14  ttaauu
+# *** empty log message ***
+#
 # Revision 1.59  2010/05/02 03:14:52  ttaauu
 # new xmake that runs with constant memory
 #
