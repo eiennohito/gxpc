@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.61 2010/05/02 08:21:22 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.62 2010/05/02 09:21:33 ttaauu Exp $
 # $Name:  $
 #
 
@@ -185,6 +185,8 @@ class xmake_cmd_opts(opt2.cmd_opts):
         self.loadavg_terminal = ("s", "png")
         self.loadavg_img = ("s", "loadavg.png")
         self.loadavg_err = ("s", "loadavg.err")
+        #
+        self.work_list_limit = ("i", 300)
 
         self.work_db = ("s", "work.db")
         self.shine_file = ("s", "shine")
@@ -987,39 +989,45 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
         n_works = 0
         for row in c:
             idx = row[0]
-            w_tuple = (idx,) + row[1:5]  # UGLY
-            r_tuple = (idx,) + row[5:]   # UGLY
+            r_tuple = row[0:18]        # UGLY
+            w_tuple = (idx,) + row[18:]   # UGLY
             if work is None or work.work_idx != idx:
                 if work:
                     yield (work,runs)
                     n_works = n_works + 1
-                    if n_works == 100: break
                 work = Work().restore_from_tuple(w_tuple)
                 runs = []
             runs.append(Run().restore_from_tuple(r_tuple))
 
-    def list_jobs_aux(self, where, order_by):
+    def list_jobs_aux(self, where, order_by, limit):
         if order_by:
             order_by = "order by %s" % order_by
         if where:
             where = "where %s" % where
+        if limit is None:
+            limit = ""
+        else:
+            limit = "limit %d" % limit
         sql = """select * from
-                  (select work_idx from
-                    (select * from runs group by work_idx)
+                  (select * from runs
+                    %s
+                    group by work_idx
                     %s
                     %s)
-                    natural join works natural join runs""" % (where, order_by)
+                    natural join works""" % (where, order_by, limit)
         return self.list_jobs_sql(sql)
 
-    def list_jobs(self, title):
+    def list_jobs(self, title, limit):
         if title == "Long":
-            return self.list_jobs_aux("", "time_since_start desc")
+            return self.list_jobs_aux("", "time_since_start desc", limit)
         elif title == "Failed":
             return self.list_jobs_aux("""status != "queued"
                                      and status != "running"
-                                     and exit_status != 0""", "")
+                                     and exit_status != 0""", "", limit)
         elif title == "Recent":
-            return self.list_jobs_aux("", "work_idx desc")
+            return self.list_jobs_aux('status != "queued"', 
+                                      "work_idx desc", 
+                                      limit)
         else:
             assert 0, title
 
@@ -1047,9 +1055,9 @@ def mk_work_db(work_db_class, dire, work_db):
     return cls(dire, work_db)
 
 class work_table_generator:
-    def __init__(self, works):
+    def __init__(self, works, limit):
         self.db = works
-        self.works_per_page = 500
+        self.limit = limit
 
     def gen_header_row(self, wp):
         wp.write("<tr>"
@@ -1185,7 +1193,7 @@ class work_table_generator:
 <table border=1>
 ''' % (section_title, section_title))
         self.gen_header_row(wp)
-        for work,runs in self.db.list_jobs(section_title):
+        for work,runs in self.db.list_jobs(section_title, self.limit):
             self.gen_row(work, runs, wp)
         wp.write("""</table>""")
 
@@ -1315,7 +1323,7 @@ class html_generator:
     def __init__(self, opts, server):
         self.opts = opts
         self.server = server
-        self.wgen = work_table_generator(server.works)
+        self.wgen = work_table_generator(server.works, opts.work_list_limit)
         self.mgen = men_table_generator(server, server.men)
         self.pgen = time_series_plot_generator(server,
                                                server.parallelism,
@@ -2914,6 +2922,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.62  2010/05/02 09:21:33  ttaauu
+# *** empty log message ***
+#
 # Revision 1.61  2010/05/02 08:21:22  ttaauu
 # *** empty log message ***
 #
