@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.62 2010/05/02 09:21:33 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.63 2010/05/05 06:58:43 ttaauu Exp $
 # $Name:  $
 #
 
@@ -915,7 +915,7 @@ class work_db_mem(work_db_base):
     def commit(self):
         pass
 
-    def list_jobs(self, title):
+    def list_jobs(self, title, limit):
         if 0: yield
 
 class work_db_sqlite3_base(work_db_base):
@@ -2922,6 +2922,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.63  2010/05/05 06:58:43  ttaauu
+# *** empty log message ***
+#
 # Revision 1.62  2010/05/02 09:21:33  ttaauu
 # *** empty log message ***
 #
