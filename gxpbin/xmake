@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.64 2010/05/09 04:55:29 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.65 2010/05/09 08:41:26 ttaauu Exp $
 # $Name:  $
 #
 
@@ -185,6 +185,12 @@ class xmake_cmd_opts(opt2.cmd_opts):
         self.loadavg_terminal = ("s", "png")
         self.loadavg_img = ("s", "loadavg.png")
         self.loadavg_err = ("s", "loadavg.err")
+        # work counts
+        self.run_counts_gpl = ("s", "run_counts.gpl")
+        self.run_counts_dat = ("s", "run_counts.txt")
+        self.run_counts_terminal = ("s", "png")
+        self.run_counts_img = ("s", "run_counts.png")
+        self.run_counts_err = ("s", "run_counts.err")
         #
         self.work_list_limit = ("i", 100)
 
@@ -869,6 +875,25 @@ class work_db_base:
         bomb()
 
         
+class work_db_none(work_db_base):
+    def __init__(self, dire, work_db):
+        pass
+    def add_work(self, work):
+        pass
+    def add_run(self, work_idx, run):
+        pass
+    def update_run(self, run):
+        pass
+    def add_io(self, run_idx, payload):
+        pass
+    def commit(self):
+        pass
+    def __len__(self):
+        pass
+    def list_jobs(self, title, limit):
+        if 0: yield
+
+        
 class work_db_mem(work_db_base):
     def __init__(self, dire, work_db):
         # these two variables are to indicate
@@ -905,11 +930,6 @@ class work_db_mem(work_db_base):
 
     def __len__(self):
         return len(self.works)
-
-    def __iter__(self):
-        for work in self.works:
-            runs = self.work_runs[w.work_idx]
-            yield (work, runs)
 
     def commit(self):
         pass
@@ -1050,7 +1070,13 @@ def mk_work_db(work_db_class, dire, work_db):
     # work_db_class = "sqlite3_mem"
     # work_db_class = "sqlite3"
     g = globals()
-    cls = g["work_db_%s" % work_db_class]
+    classname = "work_db_%s" % work_db_class
+    if g.has_key(classname):
+        cls = g[classname]
+    else:
+        Es("xmake : warning : no class named %s, defaults to sqlite3\n"
+           % classname)
+        cls = work_db_sqlite3
     return cls(dire, work_db)
 
 class work_table_generator:
@@ -1258,29 +1284,6 @@ last_ping_time = %.3f<br>
         wp.write("""</table>""")
             
 
-class time_series_data_x:
-    def __init__(self, dire, dat):
-        self.dire = dire
-        self.file_dat = dat
-        self.last_x = 0.0
-        file_dat = os.path.join(dire, dat)
-        self.wp = open(file_dat, "wb")
-        self.wp.write("0.0 %f\n" % self.last_x)
-        
-    def add_x(self, t, x):
-        self.wp.write("%f %f\n" % (t, self.last_x))
-        self.wp.write("%f %f\n" % (t, x))
-        self.last_x = x
-
-    def add_dx(self, t, dx):
-        self.add_x(t, self.last_x + dx)
-
-    def sync(self):
-        self.wp.flush()
-
-    def close(self):
-        self.wp.close()
-        
 class time_series_data:
     def __init__(self, directory, data_file, dim):
         self.directory = directory
@@ -1315,7 +1318,7 @@ class time_series_data:
         self.wp.close()
         
 class time_series_plot_generator:
-    def __init__(self, server, ts, dire, gpl, img, err, term, style, ylabel):
+    def __init__(self, server, ts, dire, gpl, img, err, term, style, ylabel, titles):
         self.server = server
         self.ts = ts                    # time series data
         self.dire = dire                # directory
@@ -1325,6 +1328,7 @@ class time_series_plot_generator:
         self.term = term                # terminal (e.g., "png")
         self.style = style
         self.ylabel = ylabel
+        self.titles = titles
 
     def gen_plot(self):
         # make sure the graph reflects current time
@@ -1340,8 +1344,8 @@ set ylabel "%s"
         gp.write('plot ')
         for i in range(self.ts.dim):
             if i > 0: gp.write(', ')
-            gp.write(('"%s" using 1:%d title "%d" with %s'
-                      % (self.ts.data_file, i + 2, i, self.style)))
+            gp.write(('"%s" using 1:%d title "%s" with %s'
+                      % (self.ts.data_file, i + 2, self.titles[i], self.style)))
         gp.write('\n')
         gp.close()
         img_t = "%s.tmp" % self.img
@@ -1369,7 +1373,7 @@ class html_generator:
                                                opts.parallelism_img,
                                                opts.parallelism_err,
                                                opts.parallelism_terminal,
-                                               "boxes", "outstanding jobs")
+                                               "boxes", "outstanding jobs", [ "" ])
         self.rgen = time_series_plot_generator(server,
                                                server.rss,
                                                opts.state_dir,
@@ -1377,7 +1381,8 @@ class html_generator:
                                                opts.rss_img,
                                                opts.rss_err,
                                                opts.rss_terminal,
-                                               'lines linewidth 3 linecolor rgb "blue"', "Resident Set Size (MB)")
+                                               'lines linewidth 3 linecolor rgb "blue"', 
+                                               "Resident Set Size (MB)", [ "" ])
         self.lgen = time_series_plot_generator(server,
                                                server.loadavg,
                                                opts.state_dir,
@@ -1385,7 +1390,19 @@ class html_generator:
                                                opts.loadavg_img,
                                                opts.loadavg_err,
                                                opts.loadavg_terminal,
-                                               'lines linewidth 3 linecolor rgb "yellow"', "Last 1 min. Load Average")
+                                               'lines linewidth 3 linecolor rgb "yellow"', 
+                                               "Last 1 min. Load Average", [ "" ])
+        self.rcgen = time_series_plot_generator(server,
+                                                server.run_counts,
+                                                opts.state_dir,
+                                                opts.run_counts_gpl,
+                                                opts.run_counts_img,
+                                                opts.run_counts_err,
+                                                opts.run_counts_terminal,
+                                                'lines linewidth 3', 
+                                                [ "" ], [ "received", "sent", "finished" ])
+
+
     def gen_header(self, wp, finish):
         if finish:
             refresh_meta = ""
@@ -1482,6 +1499,7 @@ td.man_3_gone {
 <li><a href="#Parallelism">Parallelism</a>
 <li><a href="#RSS">RSS</a>
 <li><a href="#Load Average">Load Average</a>
+<li><a href="#Job Counts">Job Counts</a>
 <li>Jobs
 <ul>
   %s
@@ -1569,6 +1587,13 @@ td.man_3_gone {
                                opts.loadavg_err, opts.loadavg_img)
 
 
+    def gen_section_run_counts(self, wp, gen_plot_time):
+        opts = self.opts
+        self.gen_section_graph(wp, "Job Counts", gen_plot_time,
+                               opts.run_counts_gpl, opts.run_counts_dat,
+                               opts.run_counts_err, opts.run_counts_img)
+
+
     def gen_trailer(self, wp):
         wp.write("""
 </body>
@@ -1589,6 +1614,8 @@ td.man_3_gone {
         t2 = self.server.cur_time()
         self.lgen.gen_plot()            # loadavg
         t3 = self.server.cur_time()
+        self.rcgen.gen_plot()            # loadavg
+        t4 = self.server.cur_time()
         filename = os.path.join(self.opts.state_dir, "index.html")
         filename_t = os.path.join(self.opts.state_dir, "index.html.tmp")
         wp = open(filename_t, "wb")
@@ -1601,12 +1628,14 @@ td.man_3_gone {
         self.gen_section_rss(wp, t2 - t1)
         self.server.LOG("generate load avg\n")
         self.gen_section_loadavg(wp, t3 - t2)
+        self.server.LOG("generate run counts\n")
+        self.gen_section_run_counts(wp, t4 - t3)
         self.server.LOG("generate works\n")
         self.gen_section_works(wp)
         self.server.LOG("generate men\n")
         self.gen_section_men(wp)
-        t4 = self.server.cur_time()
-        wp.write("<p>(took %.3f sec to generate)</p>" % (t4 - t0))
+        t5 = self.server.cur_time()
+        wp.write("<p>(took %.3f sec to generate)</p>" % (t5 - t0))
         self.server.LOG("gen trailer\n")
         self.gen_trailer(wp)
         wp.close()
@@ -1689,6 +1718,7 @@ class xmake_server:
         self.parallelism = None         # parallelism profile
         self.rss = None                 # rss profile
         self.loadavg = None             # load avg
+        self.run_counts = None # run counts (received, dispatched, finished)
         # pinger
         self.pinger = None
         # parse work attributes GXPMAKE: x=y z=w ...
@@ -1983,6 +2013,7 @@ class xmake_server:
         work.make_run()
 
     def recv_works(self):
+        n = 0
         while 1:
             try:
                 R = []
@@ -1994,6 +2025,11 @@ class xmake_server:
                     raise
             if len(R) == 0: break
             self.recv_work()
+            n = n + 1
+        if n > 0:
+            # add received work
+            cur_time = self.cur_time()
+            self.run_counts.add_dx(cur_time, 0, n)
         
     def recv_notifications(self):
         """
@@ -2084,6 +2120,7 @@ class xmake_server:
             self.LOG("run %s finished with status=%s\n" % (run, wait_status))
         cur_time = self.cur_time()
         self.parallelism.add_dx(cur_time, 0, -1)
+        self.run_counts.add_dx(cur_time, 2, 1) # finished_runs += 1
         exit_status = termsig = None
         etime = 0.0
         if os.WIFEXITED(wait_status):
@@ -2267,6 +2304,7 @@ class xmake_server:
             if self.n_sigchild_written - self.n_sigchild_read > 50:
                 break
         if n > 0:
+            self.run_counts.add_dx(cur_time, 1, n) # sent runs += 1
             self.parallelism.add_dx(cur_time, 0, n)
         if self.logfp:
             self.LOG("%d jobs dispatched\n" % n)
@@ -2830,6 +2868,8 @@ class xmake_server:
                                     self.opts.rss_dat, 1)
         self.loadavg = time_series_data(self.opts.state_dir,
                                         self.opts.loadavg_dat, 1)
+        self.run_counts = time_series_data(self.opts.state_dir,
+                                           self.opts.run_counts_dat, 3)
         self.conf = xmake_server_conf()
         self.conf.parse_files(self.opts.conf)
 
@@ -2959,6 +2999,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.65  2010/05/09 08:41:26  ttaauu
+# *** empty log message ***
+#
 # Revision 1.64  2010/05/09 04:55:29  ttaauu
 # *** empty log message ***
 #
