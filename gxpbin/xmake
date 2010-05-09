@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.68 2010/05/09 12:55:09 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.69 2010/05/09 13:11:55 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1531,7 +1531,6 @@ td.man_3_gone {
 <tr><td>pid</td><td>%s</td></tr>
 <tr><td>start time</td><td>%s</td></tr>
 <tr><td>elapsed time (sec)</td><td>%.2f</td></tr>
-<tr><td>next update</td><td>%.2f</td></tr>
 <tr><td>waiting / total jobs</td><td>%d / %d</td></tr>
 <tr><td>free / total workers</td><td>%d / %d</td></tr>
 <tr><td>xmake args</td><td>%s</td></tr>
@@ -1551,7 +1550,6 @@ td.man_3_gone {
        server.self_pid, 
        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(server.time_start)),
        server.cur_time(),
-       server.next_record_time_2,
        len(server.runs_todo), len(server.works),
        len(server.men_free), server.men_total_capacity(),
        server.xmake_args, server.make_args, 
@@ -3028,6 +3026,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.69  2010/05/09 13:11:55  ttaauu
+# *** empty log message ***
+#
 # Revision 1.68  2010/05/09 12:55:09  ttaauu
 # *** empty log message ***
 #
