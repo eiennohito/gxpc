@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.65 2010/05/09 08:41:26 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.66 2010/05/09 09:14:04 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1400,7 +1400,7 @@ class html_generator:
                                                 opts.run_counts_err,
                                                 opts.run_counts_terminal,
                                                 'lines linewidth 3', 
-                                                [ "" ], [ "received", "sent", "finished" ])
+                                                "", [ "received", "sent", "finished" ])
 
 
     def gen_header(self, wp, finish):
@@ -2999,6 +2999,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.66  2010/05/09 09:14:04  ttaauu
+# *** empty log message ***
+#
 # Revision 1.65  2010/05/09 08:41:26  ttaauu
 # *** empty log message ***
 #
