@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.56 2010/04/13 19:27:38 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.57 2010/05/09 04:55:28 ttaauu Exp $
 # $Name:  $
 #
 
@@ -128,7 +128,7 @@ class login_method_configs:
         self.torque_n    = ("qsub_wrap --sys torque %cmd% "
                             "-- -l nodes=%nodes:-1%:ppn=%ppn:-1%")
         self.torque_host = ("qsub_wrap --sys torque %cmd% "
-                            "-- -l host=%target%")
+                            "-- -l nodes=%target%")
         self.torque_psched = ("qsub_wrap --sys torque_psched %cmd% "
                               "-- --node %target% --lib %lib:-libtorque.so%")
         self.condor        = "qsub_wrap --sys condor %cmd%"
@@ -2425,9 +2425,13 @@ class cmd_interpreter:
         # Ws("send : %s\n" % str)
         so = self.so
         if so is None: return -1
-        so.send(self.h_temp % (len(str), 0))
-        so.send(str)
-        so.send(self.t_temp % (len(str), 0, 0))
+        if 1:
+            msg = (self.h_temp % (len(str), 0)) + str + (self.t_temp % (len(str), 0, 0))
+            so.send(msg)
+        else:
+            so.send(self.h_temp % (len(str), 0))
+            so.send(str)
+            so.send(self.t_temp % (len(str), 0, 0))
         return 0
 
     def asend(self, str):
@@ -5350,6 +5354,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.57  2010/05/09 04:55:28  ttaauu
+# *** empty log message ***
+#
 # Revision 1.56  2010/04/13 19:27:38  ttaauu
 # *** empty log message ***
 #

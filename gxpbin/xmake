@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.63 2010/05/05 06:58:43 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.64 2010/05/09 04:55:29 ttaauu Exp $
 # $Name:  $
 #
 
@@ -186,7 +186,7 @@ class xmake_cmd_opts(opt2.cmd_opts):
         self.loadavg_img = ("s", "loadavg.png")
         self.loadavg_err = ("s", "loadavg.err")
         #
-        self.work_list_limit = ("i", 300)
+        self.work_list_limit = ("i", 100)
 
         self.work_db = ("s", "work.db")
         self.shine_file = ("s", "shine")
@@ -712,8 +712,7 @@ class Work:
 
     def finish_or_retry(self, status, exit_status, termsig):
         if status == run_status.worker_died \
-               or status == run_status.worker_left \
-               or exit_status == 115:
+               or status == run_status.worker_left:
             self.retry()
         else:
             self.send_exit_status(exit_status, termsig)
@@ -1259,7 +1258,7 @@ last_ping_time = %.3f<br>
         wp.write("""</table>""")
             
 
-class time_series_data:
+class time_series_data_x:
     def __init__(self, dire, dat):
         self.dire = dire
         self.file_dat = dat
@@ -1282,6 +1281,39 @@ class time_series_data:
     def close(self):
         self.wp.close()
         
+class time_series_data:
+    def __init__(self, directory, data_file, dim):
+        self.directory = directory
+        self.data_file = data_file
+        self.last_x = (0.0,) * dim
+        self.dim = dim
+        data_file = os.path.join(directory, data_file)
+        self.wp = open(data_file, "wb")
+        self.template = (" %f" * dim) + "\n"
+        self.wp.write("0.0")
+        self.wp.write(self.template % self.last_x)
+        
+    def refresh(self, t):
+        self.wp.write("%f" % t)
+        self.wp.write(self.template % self.last_x)
+
+    def add_x(self, t, i, x):
+        new_x = self.last_x[:i] + (x,) + self.last_x[i+1:]
+        self.wp.write("%f" % t)
+        self.wp.write(self.template % self.last_x)
+        self.wp.write("%f" % t)
+        self.wp.write(self.template % new_x)
+        self.last_x = new_x
+
+    def add_dx(self, t, i, dx):
+        self.add_x(t, i, self.last_x[i] + dx)
+
+    def sync(self):
+        self.wp.flush()
+
+    def close(self):
+        self.wp.close()
+        
 class time_series_plot_generator:
     def __init__(self, server, ts, dire, gpl, img, err, term, style, ylabel):
         self.server = server
@@ -1296,7 +1328,7 @@ class time_series_plot_generator:
 
     def gen_plot(self):
         # make sure the graph reflects current time
-        self.ts.add_dx(self.server.cur_time(), 0)
+        self.ts.refresh(self.server.cur_time())
         self.ts.sync()
         gpl = os.path.join(self.dire, self.gpl)
         err = os.path.join(self.dire, self.err)
@@ -1304,8 +1336,13 @@ class time_series_plot_generator:
         gp.write("""set terminal %s
 set style fill solid
 set ylabel "%s"
-plot "%s" title "" with %s
-""" % (self.term, self.ylabel, self.ts.file_dat, self.style))
+""" % (self.term, self.ylabel))
+        gp.write('plot ')
+        for i in range(self.ts.dim):
+            if i > 0: gp.write(', ')
+            gp.write(('"%s" using 1:%d title "%d" with %s'
+                      % (self.ts.data_file, i + 2, i, self.style)))
+        gp.write('\n')
         gp.close()
         img_t = "%s.tmp" % self.img
         cmd = "cd %s && gnuplot %s 2> %s > %s && mv %s %s" % \
@@ -2046,7 +2083,7 @@ class xmake_server:
         if self.logfp:
             self.LOG("run %s finished with status=%s\n" % (run, wait_status))
         cur_time = self.cur_time()
-        self.parallelism.add_dx(cur_time, -1)
+        self.parallelism.add_dx(cur_time, 0, -1)
         exit_status = termsig = None
         etime = 0.0
         if os.WIFEXITED(wait_status):
@@ -2230,7 +2267,7 @@ class xmake_server:
             if self.n_sigchild_written - self.n_sigchild_read > 50:
                 break
         if n > 0:
-            self.parallelism.add_dx(cur_time, n)
+            self.parallelism.add_dx(cur_time, 0, n)
         if self.logfp:
             self.LOG("%d jobs dispatched\n" % n)
         return n
@@ -2270,7 +2307,7 @@ class xmake_server:
                     assert run.run_idx not in self.runs_running
                     assert run.man is None
                 if n > 0:
-                    self.parallelism.add_dx(cur_time, -n)
+                    self.parallelism.add_dx(cur_time, 0, -n)
                 assert len(man.runs_running) == 0
 
     def run_persistent_e(self, tid):
@@ -2365,7 +2402,7 @@ class xmake_server:
         return result / 1024.0
 
     def record_rss(self, cur_time):
-        self.rss.add_x(cur_time, self.get_self_rss())
+        self.rss.add_x(cur_time, 0, self.get_self_rss())
 
     def get_loadavg(self):
         fp = os.popen("uptime")
@@ -2385,7 +2422,7 @@ class xmake_server:
             return -1
 
     def record_loadavg(self, cur_time):
-        self.loadavg.add_x(cur_time, self.get_loadavg())
+        self.loadavg.add_x(cur_time, 0, self.get_loadavg())
 
     def periodic(self, finished):
         self.check_shine_file()
@@ -2788,11 +2825,11 @@ class xmake_server:
          self.gxpc_io_fd) = self.run_persistent_e(self.tid)
         self.gxpc_partial_msg = ""
         self.parallelism = time_series_data(self.opts.state_dir,
-                                            self.opts.parallelism_dat)
+                                            self.opts.parallelism_dat, 1)
         self.rss = time_series_data(self.opts.state_dir,
-                                    self.opts.rss_dat)
+                                    self.opts.rss_dat, 1)
         self.loadavg = time_series_data(self.opts.state_dir,
-                                        self.opts.loadavg_dat)
+                                        self.opts.loadavg_dat, 1)
         self.conf = xmake_server_conf()
         self.conf.parse_files(self.opts.conf)
 
@@ -2922,6 +2959,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.64  2010/05/09 04:55:29  ttaauu
+# *** empty log message ***
+#
 # Revision 1.63  2010/05/05 06:58:43  ttaauu
 # *** empty log message ***
 #

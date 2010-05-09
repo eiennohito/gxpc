@@ -10,7 +10,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.8 2009/09/17 18:47:53 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.9 2010/05/09 04:55:29 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2099,7 +2099,7 @@ class ioman:
         self.timeout_channels = []      # timeout channels (read/write)
         self.hot_channels = {}          # 
         self.cold_channels = {}         # 
-        self.all_channels = {}          # w channels no msg waiting
+        self.xall_channels = {}          # w channels no msg waiting
         self.max_buf_len = 10000        # default 10KB
 
         # child processes (pid -> process object)
@@ -2131,7 +2131,7 @@ class ioman:
         """
         add a new channel to watch
         """
-        self.all_channels[ch] = 1
+        if 0: self.all_channels[ch] = 1
         ch.set_ioman(self)
         self.mark_dormant(ch)
 
@@ -2139,45 +2139,33 @@ class ioman:
         """
         add a new channel to watch
         """
-        self.all_channels[ch] = 1
+        if 0: self.all_channels[ch] = 1
         ch.set_ioman(self)
         self.mark_cold(ch)              # hot?
 
     def mark_garbage(self, ch):
-        """
-        add a new channel to watch
-        """
         if self.hot_channels.has_key(ch):
             del self.hot_channels[ch]
         if self.cold_channels.has_key(ch):
             del self.cold_channels[ch]
-        del self.all_channels[ch]
+        if 0: del self.all_channels[ch]
 
     def mark_dormant(self, ch):
-        """
-        add a new channel to watch
-        """
-        assert self.all_channels.has_key(ch)
+        if 0: assert self.all_channels.has_key(ch)
         if self.hot_channels.has_key(ch):
             del self.hot_channels[ch]
         if self.cold_channels.has_key(ch):
             del self.cold_channels[ch]
 
     def mark_cold(self, ch):
-        """
-        add a new channel to watch
-        """
-        assert self.all_channels.has_key(ch)
+        if 0: assert self.all_channels.has_key(ch)
         if self.hot_channels.has_key(ch):
             del self.hot_channels[ch]
         if not self.cold_channels.has_key(ch):
             self.cold_channels[ch] = 1
 
     def mark_hot(self, ch):
-        """
-        add a new channel to watch
-        """
-        assert self.all_channels.has_key(ch)
+        if 0: assert self.all_channels.has_key(ch)
         if not self.hot_channels.has_key(ch):
             self.hot_channels[ch] = 1
         if not self.cold_channels.has_key(ch):
@@ -2187,7 +2175,7 @@ class ioman:
         """
         return list of all channels
         """
-        return self.all_channels.keys()
+        return self.cold_channels.keys()
 
     def add_process(self, p):
         """
@@ -2305,6 +2293,9 @@ class ioman:
         else:
             channels = self.cold_channels
 
+        if dbg>=2:
+            LOG("ioman.reset_ready_channels : checking %d channels\n" \
+                % len(channels))
         total_buf_len = 0
         for ch in channels.keys():
             if ch.is_garbage():
@@ -2496,6 +2487,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.9  2010/05/09 04:55:29  ttaauu
+# *** empty log message ***
+#
 # Revision 1.8  2009/09/17 18:47:53  ttaauu
 # ioman.py,gxpm.py,gxpd.py,gxpc.py,xmake: changes to track rusage of children and show them in state.txt
 #

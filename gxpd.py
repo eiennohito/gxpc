@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.14 2010/03/05 05:27:08 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.15 2010/05/09 04:55:28 ttaauu Exp $
 # $Name:  $
 #
 
@@ -212,6 +212,11 @@ class task_tree_node:
         self.weight = 1
         # note : self.processes give pid -> proc
 
+    def show(self):
+        return ("task_tree_node(%s, %d parents, %d children, %d procs, %d proc_by_rid)"
+                % (self.tid, len(self.parent_peers), len(self.child_peers),
+                   len(self.processes), len(self.proc_by_rid)))
+
     def forward_up(self, m, msg):
         """
         send msg m to all parents.
@@ -235,9 +240,11 @@ class task_tree_node:
         # what we should do if we have no parents at all?
 
     def close_connection_to_parent(self, parent):
+        if dbg>=2:
+            ioman.LOG("close_connection_to_parent:\n")
         x = parent.write_eof()
         if dbg>=1 and x == -1:
-            ioman.LOG("up close to parent failed\n")
+            ioman.LOG("close_connection_to_parent: parent.write_eof() failed\n")
 
     def close_up(self):
         """
@@ -724,6 +731,8 @@ class gxpd(ioman.ioman):
                       % (p.pid, p.rid))
         # delete p from its group
         del task.processes[p.pid]
+        # 2010 5/5 fixed memory leak bugs
+        del task.proc_by_rid[rid]
         # let the client know the process is dead
         m = gxpm.up(self.gupid, task.tid,
                     gxpm.event_die("proc", rid,
@@ -992,7 +1001,8 @@ class gxpd(ioman.ioman):
             addrs = map(lambda x: ("  %s\n" % (x,)),
                         self.listen_addrs)
             pong.listen_addrs = string.join(addrs, "")
-            pong.tasks = string.join(self.tasks.keys(), " ")
+            # pong.tasks = string.join(self.tasks.keys(), " ")
+            pong.tasks = map(lambda x: x.show(), self.tasks.values())
             pong.cwd = os.getcwd()
             env = map(lambda (var,val): ("  %s=%s\n" % (var, val)),
                       self.gxpd_env.dict.items())
@@ -1277,13 +1287,21 @@ class gxpd(ioman.ioman):
                           "rid %s not in task %s\n" \
                           % (rid, task.tid))
             return
+        if dbg>=2:
+            ioman.LOG("do_action_feed : rid=%s fd=%s %d bytes %d procs\n"
+                      % (rid, fd, len(action.payload), len(procs)))
         for proc in procs:
             if proc.w_channels.has_key(fd):
                 # really send the stuff (or EOF)
                 ch = proc.w_channels[fd]
                 if action.payload == "":
+                    if dbg>=2:
+                        ioman.LOG("do_action_feed : ch.write_eof()\n")
                     ch.write_eof()
                 else:
+                    if dbg>=2:
+                        ioman.LOG("do_action_feed : ch.write_stream(%d bytes)\n"
+                                  % len(action.payload))
                     ch.write_stream(action.payload)
             else:
                 if dbg>=1:
@@ -2251,6 +2269,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.15  2010/05/09 04:55:28  ttaauu
+# *** empty log message ***
+#
 # Revision 1.14  2010/03/05 05:27:08  ttaauu
 # stop extending PYTHONPATH. see 2010-3-5 ChangeLog
 #

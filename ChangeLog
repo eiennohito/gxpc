@@ -13,3 +13,10 @@
 	- removed many unused feaures (e.g., staging)
 	- html now shows rss and load average.
 	* gxpbin/xmake.2009 : old xmake
+2010-05-05 Taura
+	* gxpd.py (gxpd.cleanup_process) : fixed a memory leak bug in
+	which task.proc_by_rid does not shrink when a process dies.
+	besides obvious memory leak, this makes jobs in gxp make are
+	getting slower as it runs.
+2010-05-06 Taura
+	* gxpc.py (login_method_configs.__init__) : fixed torque_host bug.
