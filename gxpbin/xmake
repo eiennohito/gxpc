@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.66 2010/05/09 09:14:04 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.67 2010/05/09 12:22:36 ttaauu Exp $
 # $Name:  $
 #
 
@@ -546,8 +546,9 @@ class Run:
             cmdx.append("--export")
             cmdx.append(var_val)
         cmdx.append(cmd)
-        if server.logfp:
-            server.LOG("dispatching job to %s (%s)\n" % (self.man_name, cmdx))
+        if dbg>=2:
+            if server.logfp:
+                server.LOG("dispatching job to %s (%s)\n" % (self.man_name, cmdx))
         # really run process
         self.time_start = cur_time
         self.status = run_status.running
@@ -626,9 +627,10 @@ class Run:
             if man.state == man_state.active:
                 # this man is now free
                 server.men_free.append((man.prio(), man))
-            if server.logfp:
-                server.LOG("man %s in state %s finished a run\n"
-                           % (man.name, man.state))
+            if dbg>=2:
+                if server.logfp:
+                    server.LOG("man %s in state %s finished a run\n"
+                               % (man.name, man.state))
         else:
             # this happens when we reach the time limit and this work
             # must be aborted before dispatched to any man
@@ -877,9 +879,11 @@ class work_db_base:
         
 class work_db_none(work_db_base):
     def __init__(self, dire, work_db):
-        pass
+        self.dire = None
+        self.work_db = None
+        self.n_works = 0
     def add_work(self, work):
-        pass
+        self.n_works = self.n_works + 1
     def add_run(self, work_idx, run):
         pass
     def update_run(self, run):
@@ -889,7 +893,8 @@ class work_db_none(work_db_base):
     def commit(self):
         pass
     def __len__(self):
-        pass
+        return self.n_works
+
     def list_jobs(self, title, limit):
         if 0: yield
 
@@ -1523,6 +1528,7 @@ td.man_3_gone {
 <tr><td>pid</td><td>%s</td></tr>
 <tr><td>start time</td><td>%s</td></tr>
 <tr><td>elapsed time (sec)</td><td>%.2f</td></tr>
+<tr><td>next update</td><td>%.2f</td></tr>
 <tr><td>waiting / total jobs</td><td>%d / %d</td></tr>
 <tr><td>free / total workers</td><td>%d / %d</td></tr>
 <tr><td>xmake args</td><td>%s</td></tr>
@@ -1542,6 +1548,7 @@ td.man_3_gone {
        server.self_pid, 
        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(server.time_start)),
        server.cur_time(),
+       server.next_record_time_2,
        len(server.runs_todo), len(server.works),
        len(server.men_free), server.men_total_capacity(),
        server.xmake_args, server.make_args, 
@@ -1712,8 +1719,8 @@ class xmake_server:
         # record_state timing control
         self.hgen = None
         self.last_record_time = None
-        self.next_record_time_1 = None
-        self.next_record_time_2 = None
+        self.next_record_time_1 = 0.0
+        self.next_record_time_2 = 0.0
         # parallelism profile
         self.parallelism = None         # parallelism profile
         self.rss = None                 # rss profile
@@ -2004,8 +2011,9 @@ class xmake_server:
         """
         conn,addr = self.so.accept()
         cmd,cwd,envs = self.recv_work_aux(conn)
-        if self.logfp:
-            self.LOG("got work cmd=%s cwd=%s env=%s\n" % (cmd, cwd, envs))
+        if dbg>=2:
+            if self.logfp:
+                self.LOG("received cmd=%s cwd=%s env=%s\n" % (cmd, cwd, envs))
         cur_time = self.cur_time()
         work_idx = self.id_gen.work_counter.get()
         work = Work().init(work_idx, cmd, cwd, envs, cur_time, self, conn)
@@ -2013,6 +2021,8 @@ class xmake_server:
         work.make_run()
 
     def recv_works(self):
+        if self.logfp:
+            self.LOG("receiving works\n")
         n = 0
         while 1:
             try:
@@ -2020,7 +2030,8 @@ class xmake_server:
                 R,_,_ = select.select([self.so], [], [], 0.0)
             except select.error,e:
                 if e.args[0] == errno.EINTR:
-                    self.LOG("select interrupted in recv_works\n")
+                    if self.logfp:
+                        self.LOG("select interrupted in recv_works\n")
                 else:
                     raise
             if len(R) == 0: break
@@ -2030,6 +2041,8 @@ class xmake_server:
             # add received work
             cur_time = self.cur_time()
             self.run_counts.add_dx(cur_time, 0, n)
+        if self.logfp:
+            self.LOG("received %d works\n" % n)
         
     def recv_notifications(self):
         """
@@ -2038,23 +2051,26 @@ class xmake_server:
         (gupid, tid, src, rid, pid, status, rusage)
         hongo104-tau-2008-04-26-13-05-48-11662 tid_make_24108_9380 proc 1 13335 0
         """
+        if self.logfp:
+            self.LOG("receiving notifications\n")
         lines = self.readlines(self.gxpc_fd)
         if len(lines) == 0:
             if self.logfp:
                 self.LOG("got EOF from notify channel %s\n" % self.gxpc_cmd)
             self.gxpc_fd = None
             return ""
-        if self.logfp:
-            self.LOG("got %d notifications\n" % len(lines))
         for line in lines:
             self.recv_notification(line)
+        if self.logfp:
+            self.LOG("received %d notifications\n" % len(lines))
 
     def recv_notification(self, line):
         """
         handle a message from gxpc saying a process has finished
         """
-        if self.logfp:
-            self.LOG("notified of a remote process termination %s\n" % line)
+        if dbg>=2:
+            if self.logfp:
+                self.LOG("notified of a remote process termination %s\n" % line)
         (man_name, tid, src_, rid, pid_, wait_status, rusage) = eval(line)
         assert man_name != ""
         man = self.men.get(man_name)
@@ -2116,8 +2132,9 @@ class xmake_server:
         # a working process has just finished.
         # already finished
         assert (run.time_end is None), run.time_end
-        if self.logfp:
-            self.LOG("run %s finished with status=%s\n" % (run, wait_status))
+        if dbg>=2:
+            if self.logfp:
+                self.LOG("run %s finished with status=%s\n" % (run, wait_status))
         cur_time = self.cur_time()
         self.parallelism.add_dx(cur_time, 0, -1)
         self.run_counts.add_dx(cur_time, 2, 1) # finished_runs += 1
@@ -2175,13 +2192,15 @@ class xmake_server:
                 R,_,_ = select.select([ fd ], [], [], 0.0)
             except select.error,e:
                 if e.args[0] == errno.EINTR:
-                    self.LOG("select interrupted in recv_job_io\n")
+                    if self.logfp:
+                        self.LOG("select interrupted in recv_job_io\n")
                 else:
                     raise
             if len(R) == 0: break
             ev = self.recv_event_io(fd)
             if ev is None:
-                self.LOG("EOF from gxpc job io\n")
+                if self.logfp:
+                    self.LOG("EOF from gxpc job io\n")
                 self.gxpc_io_fd = None
                 break
             # we can never know the we never receive io from
@@ -2251,8 +2270,9 @@ class xmake_server:
             # look for man who can execute it
             man = self.find_man_for_run(run)
             if man:
-                if self.logfp:
-                    self.LOG("run '%s' assignged %s\n" % (run, man.name))
+                if dbg>=2:
+                    if self.logfp:
+                        self.LOG("run '%s' assignged %s\n" % (run, man.name))
                 run.man_name = man.name  # assign man to run
                 matches.append((run, man))
             else:
@@ -2299,9 +2319,11 @@ class xmake_server:
             # check if a job is returning
             # may be too much overhead
             if n >= 1000 and self.check_readable(self.gxpc_fd):
+                self.LOG("job dispatches break after %d jobs dispatched\n" % n)
                 break
             # check if there are many zombie children
             if self.n_sigchild_written - self.n_sigchild_read > 50:
+                self.LOG("job dispatches break after %d jobs to handle zombies\n" % n)
                 break
         if n > 0:
             self.run_counts.add_dx(cur_time, 1, n) # sent runs += 1
@@ -2418,7 +2440,7 @@ class xmake_server:
         mtime = st[stat.ST_MTIME]
         if self.time_start < mtime:
             msg = "found shine file (%s) updated, terminating..." % shine
-            self.LOG("%s\n" % msg)
+            if self.logfp: self.LOG("%s\n" % msg)
             Es("xmake : %s\n" % msg)
             self.interrupted = self.interrupted + 1
     
@@ -2575,7 +2597,7 @@ class xmake_server:
         w = self.n_sigchild_written
         r = self.n_sigchild_read
         if self.logfp:
-            self.LOG("handling child death (w=%d,r=%d)\n" % (w, r))
+            self.LOG("reaping children (w=%d,r=%d)\n" % (w, r))
         x = w - r
         # I don't know why, but it really happens that
         # written < read.
@@ -2607,25 +2629,30 @@ class xmake_server:
             rusage = self.ru.get_child_rusage()
             pids.append((pid, status, rusage))
         for pid,status,rusage in pids:
-            if self.logfp:
-                self.LOG("child (%d) terminated with %d\n" % (pid, status))
-            if pid == self.make_pid:
+            if dbg>=2:
                 if self.logfp:
-                    self.LOG("it is the child make\n")
+                    self.LOG("child (%d) terminated with %d\n" % (pid, status))
+            if pid == self.make_pid:
+                if dbg>=2:
+                    if self.logfp:
+                        self.LOG("it is the child make\n")
                 self.make_pid = None
                 self.make_status = status
             elif pid == self.gxpc_pid:
-                if self.logfp:
-                    self.LOG("it is the initial process\n")
+                if dbg>=2:
+                    if self.logfp:
+                        self.LOG("it is the initial process\n")
                 self.gxpc_pid = None
                 self.gxpc_status = status
             elif pid == self.pinger.pid:
-                if self.logfp:
-                    self.LOG("it is a ping job\n")
+                if dbg>=2:
+                    if self.logfp:
+                        self.LOG("it is a ping job\n")
                 self.pinger.pid = None
             else:
-                if self.logfp:
-                    self.LOG("it is a remote job\n")
+                if dbg>=2:
+                    if self.logfp:
+                        self.LOG("it is a remote job\n")
             self.n_state_changes = self.n_state_changes + 1
         if self.logfp:
             self.LOG("%d children reaped\n" % len(pids))
@@ -2752,15 +2779,14 @@ class xmake_server:
                    self.gxpc_fd, self.gxpc_io_fd ]:
             if x: F.append(x)
 
-        self.LOG("%d sigchld calls\n" % self.n_sigchld_called)
-
         # calc next timeout
         cur_time = self.cur_time()
         timeout = self.calc_next_timeout(cur_time)
         # n_dispatched_jobs == 0 and ???
         if timeout < 1.0: timeout = 1.0
         if self.logfp:
-            self.LOG("select(%d, timeout=%.2f) \n" % (len(F), timeout))
+            self.LOG("wait_for_events %d sigchld calls, select(%d, timeout=%.2f)\n"
+                     % (self.n_sigchld_called, len(F), timeout))
         R = []
         try:
             R,_,_ = select.select(F, [], [], timeout)
@@ -2999,6 +3025,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.67  2010/05/09 12:22:36  ttaauu
+# *** empty log message ***
+#
 # Revision 1.66  2010/05/09 09:14:04  ttaauu
 # *** empty log message ***
 #
