@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.67 2010/05/09 12:22:36 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.68 2010/05/09 12:55:09 ttaauu Exp $
 # $Name:  $
 #
 
@@ -964,6 +964,9 @@ create table runs (work_idx integer, run_idx integer, status text,
                    etime real, utime real, stime real,
                    minflt integer, majflt integer,
                    io text, io_dir text, io_file text)
+""")
+        conn.execute("""
+create index idx_runs on runs(run_idx)        
 """)
         return conn
 
@@ -3025,6 +3028,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.68  2010/05/09 12:55:09  ttaauu
+# *** empty log message ***
+#
 # Revision 1.67  2010/05/09 12:22:36  ttaauu
 # *** empty log message ***
 #
