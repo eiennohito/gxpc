@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.69 2010/05/09 13:11:55 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.70 2010/05/11 08:02:35 ttaauu Exp $
 # $Name:  $
 #
 
@@ -578,13 +578,13 @@ class Run:
             self.io_wp.write(payload)
         else:
             io = self.io + payload
-            max_inline_io = 50
+            max_inline_io = 128 * 1024  # 128KB
             if len(io) > max_inline_io:
                 self.io_file = "run_%d" % self.run_idx
                 io_file = os.path.join(self.io_dir, self.io_file)
                 self.io_wp = open(io_file, "wb")
                 self.io_wp.write(io)
-                self.io = io[:max_inline_io] + "..."
+                self.io = io[:max_inline_io]
             else:
                 self.io = io
 
@@ -622,6 +622,7 @@ class Run:
             self.man = None
             if self.io_wp:
                 self.io_wp.close()
+                self.io_wp = None
             # ------ update database -------
             server.works.update_run(self)
             if man.state == man_state.active:
@@ -859,52 +860,87 @@ class resource_usage:
         return dr
 
 class work_db_base:
-    def __init__(self, dire, work_db):
-        bomb()
-    def add_work(self, work):
-        bomb()
-    def add_run(self, work_idx, run):
-        bomb()
-    def update_run(self, run):
-        bomb()
-    def add_io(self, run_idx, payload):
-        bomb()
-    def commit(self):
-        bomb()
-    def __len__(self):
-        bomb()
-    def __iter__(self):
-        bomb()
+    def __init__(self, dire, work_db, limit):
+        """
+        dire : directory work_db is in
+        work_db : base name of work/run database
+        """
+        self.dire = dire
+        self.work_db = work_db
+        self.limit = limit
 
+    def add_work(self, work):
+        """
+        add a new work object
+        """
+        pass
+    
+    def add_run(self, work_idx, run):
+        """
+        add a new run for work object (indexed by work_idx)
+        """
+        pass
+    
+    def update_run(self, run):
+        """
+        reflect the fact that run has been updated
+        """
+        pass
+    
+    def add_io(self, run_idx, payload):
+        """
+        add IO to run_idx
+        """
+        pass
+    def commit(self):
+        pass
+    
+    def __len__(self):
+        return 0
+    
+    def list_long_jobs(self):
+        """
+        list jobs ordered by "time_since_start desc"
+        """
+        if 0: yield
+        
+    def list_failed_jobs(self):
+        """
+        leave only jobs that are:
+        - not queued/running
+        - exit status != 0
+        """
+        if 0: yield
+
+    def list_recent_jobs(self):
+        """
+        leave only jobs that are running or finished
+        ordered by work_idx
+        """
+        if 0: yield
+
+    def list_jobs(self, title):
+        if title == "Long":
+            return self.list_long_jobs()
+        elif title == "Failed":
+            return self.list_failed_jobs()
+        elif title == "Recent":
+            return self.list_recent_jobs()
+        else:
+            assert 0, title
         
 class work_db_none(work_db_base):
-    def __init__(self, dire, work_db):
-        self.dire = None
-        self.work_db = None
+    def __init__(self, dire, work_db, limit):
+        work_db_base.__init__(self, None, None, limit)
         self.n_works = 0
     def add_work(self, work):
         self.n_works = self.n_works + 1
-    def add_run(self, work_idx, run):
-        pass
-    def update_run(self, run):
-        pass
-    def add_io(self, run_idx, payload):
-        pass
-    def commit(self):
-        pass
     def __len__(self):
         return self.n_works
-
-    def list_jobs(self, title, limit):
-        if 0: yield
-
         
 class work_db_mem(work_db_base):
-    def __init__(self, dire, work_db):
-        # these two variables are to indicate
-        # no links should be generated
-        self.dire = None
-        self.work_db = None
+    def __init__(self, dire, work_db, limit):
+        work_db_base.__init__(self, None, None, limit)
         self.works = []         # list of works
         self.runs = {}          # run idx -> run
         self.work_runs = {}     # work idx -> list of run_idxs
@@ -924,25 +960,50 @@ class work_db_mem(work_db_base):
         self.runs[run.run_idx] = run
         self.work_runs[work_idx + 0].append(run)
 
-    def update_run(self, run):
-        """
-        record the fact that run_idx is updated
-        """
-        pass
-
-    def add_io(self, run_idx, payload):
-        pass
-
     def __len__(self):
         return len(self.works)
 
-    def commit(self):
-        pass
+    def list_long_jobs(self):
+        """
+        list jobs ordered by "time_since_start desc"
+        """
+        works = []
+        for w in self.works:
+            run = self.work_runs[w.work_idx][-1]
+            if run.time_since_start is not None:
+                works.append((-run.time_since_start, w))
+        works.sort()
+        works = works[:self.limit]
+        for _,w in works:
+            yield (w, self.work_runs[w.work_idx])
 
-    def list_jobs(self, title, limit):
-        if 0: yield
+    def list_failed_jobs(self):
+        works = []
+        for w in self.works:
+            run = self.work_runs[w.work_idx][-1]
+            if run.status != run_status.queued and \
+               run.status != run_status.running and \
+               run.exit_status != 0:
+                works.append((w.work_idx, w))
+        works.sort()
+        works = works[:self.limit]
+        for _,w in works:
+            yield (w, self.work_runs[w.work_idx])
+
+    def list_recent_jobs(self):
+        works = []
+        for w in self.works:
+            works.append((-w.work_idx, w))
+        works.sort()
+        works = works[:self.limit]
+        for _,w in works:
+            yield (w, self.work_runs[w.work_idx])
 
 class work_db_sqlite3_base(work_db_base):
+    def __init__(self, dire, work_db, limit):
+        work_db_base.__init__(self, dire, work_db, limit)
+        self.conn = self.mk_sqlite3_db()
+        
     def mk_sqlite3_db(self):
         import sqlite3
         self.n_works = 0
@@ -1010,6 +1071,8 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
         return self.n_works
 
     def list_jobs_sql(self, sql):
+        """
+        """
         conn = self.conn
         c = conn.execute(sql)
         work = None
@@ -1026,15 +1089,15 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
                 runs = []
             runs.append(Run().restore_from_tuple(r_tuple))
 
-    def list_jobs_aux(self, where, order_by, limit):
+    def list_jobs_aux(self, where, order_by):
         if order_by:
             order_by = "order by %s" % order_by
         if where:
             where = "where %s" % where
-        if limit is None:
+        if self.limit is None:
             limit = ""
         else:
-            limit = "limit %d" % limit
+            limit = "limit %d" % self.limit
         sql = """select * from
                   (select * from runs
                     %s
@@ -1044,36 +1107,30 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
                     natural join works""" % (where, order_by, limit)
         return self.list_jobs_sql(sql)
 
-    def list_jobs(self, title, limit):
-        if title == "Long":
-            return self.list_jobs_aux("", "time_since_start desc", limit)
-        elif title == "Failed":
-            return self.list_jobs_aux("""status != "queued"
-                                     and status != "running"
-                                     and exit_status != 0""", "", limit)
-        elif title == "Recent":
-            return self.list_jobs_aux('status != "queued"', 
-                                      "work_idx desc", 
-                                      limit)
-        else:
-            assert 0, title
+    def list_long_jobs(self):
+        return self.list_jobs_aux("", "time_since_start desc")
+        
+    def list_failed_jobs(self):
+        return self.list_jobs_aux("""status != "queued"
+        and status != "running"
+        and exit_status != 0""", "")
+
+    def list_recent_jobs(self):
+        return self.list_jobs_aux('status != "queued"', 
+                                  "work_idx desc")
 
     def commit(self):
         self.conn.commit()
 
 class work_db_sqlite3(work_db_sqlite3_base):
-    def __init__(self, dire, work_db):
-        self.dire = dire
-        self.work_db = work_db
-        self.conn = self.mk_sqlite3_db()
+    def __init__(self, dire, work_db, limit):
+        work_db_sqlite3_base.__init__(self, dire, work_db, limit)
 
 class work_db_sqlite3_mem(work_db_sqlite3_base):
-    def __init__(self, dire, work_db):
-        self.dire = None
-        self.work_db = None
-        self.conn = self.mk_sqlite3_db()
+    def __init__(self, dire, work_db, limit):
+        work_db_sqlite3_base.__init__(self, None, None, limit)
 
-def mk_work_db(work_db_class, dire, work_db):
+def mk_work_db(work_db_class, dire, work_db, limit):
     # work_db_class = "mem"
     # work_db_class = "sqlite3_mem"
     # work_db_class = "sqlite3"
@@ -1085,7 +1142,7 @@ def mk_work_db(work_db_class, dire, work_db):
         Es("xmake : warning : no class named %s, defaults to sqlite3\n"
            % classname)
         cls = work_db_sqlite3
-    return cls(dire, work_db)
+    return cls(dire, work_db, limit)
 
 class work_table_generator:
     def __init__(self, works, limit):
@@ -1135,6 +1192,16 @@ class work_table_generator:
         s = string.replace(s, "\n", "<br>")
         if s == "": s = "<br>"
         return s
+
+    def pr_str_safe_len_limit(self, s, limit):
+        s = string.replace(s, "<", "&lt;")
+        s = string.replace(s, ">", "&gt;")
+        s = string.replace(s, "\n", "<br>")
+        if s == "": s = "<br>"
+        if len(s) > limit:
+            return "..." + s[:limit]
+        else:
+            return s
 
     def pr_link(self, s):
         if s is None:
@@ -1214,7 +1281,7 @@ class work_table_generator:
                       self.pr_float(run.stime),
                       self.pr_int(run.minflt),
                       self.pr_int(run.majflt),
-                      self.pr_str_safe(run.io),
+                      self.pr_str_safe_len_limit(run.io, 1024),
                       self.pr_link(run.io_file)))
             wp.write("</tr>\n")
             i = i + 1
@@ -1226,7 +1293,7 @@ class work_table_generator:
 <table border=1>
 ''' % (section_title, section_title))
         self.gen_header_row(wp)
-        for work,runs in self.db.list_jobs(section_title, self.limit):
+        for work,runs in self.db.list_jobs(section_title):
             self.gen_row(work, runs, wp)
         wp.write("""</table>""")
 
@@ -1296,6 +1363,7 @@ class time_series_data:
     def __init__(self, directory, data_file, dim):
         self.directory = directory
         self.data_file = data_file
+        self.last_t = 0.0
         self.last_x = (0.0,) * dim
         self.dim = dim
         data_file = os.path.join(directory, data_file)
@@ -1307,6 +1375,7 @@ class time_series_data:
     def refresh(self, t):
         self.wp.write("%f" % t)
         self.wp.write(self.template % self.last_x)
+        self.last_t = t
 
     def add_x(self, t, i, x):
         new_x = self.last_x[:i] + (x,) + self.last_x[i+1:]
@@ -1314,6 +1383,7 @@ class time_series_data:
         self.wp.write(self.template % self.last_x)
         self.wp.write("%f" % t)
         self.wp.write(self.template % new_x)
+        self.last_t = t
         self.last_x = new_x
 
     def add_dx(self, t, i, dx):
@@ -1527,6 +1597,7 @@ td.man_3_gone {
 <a href="#">page top</a><br><br>
 <table class="basic_info">
 <tr><td>command line</td><td>%s</td></tr>
+<tr><td>work dir</td><td>%s</td></tr>
 <tr><td>master hostname</td><td>%s</td></tr>
 <tr><td>pid</td><td>%s</td></tr>
 <tr><td>start time</td><td>%s</td></tr>
@@ -1546,6 +1617,7 @@ td.man_3_gone {
 <tr><td>gxpc io fd</td><td>%s</td></tr>
 </table>
 ''' % (server.sys_argv,
+       server.cwd,
        server.hostname,
        server.self_pid, 
        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(server.time_start)),
@@ -1642,6 +1714,7 @@ td.man_3_gone {
         self.gen_section_works(wp)
         self.server.LOG("generate men\n")
         self.gen_section_men(wp)
+        wp.flush()
         t5 = self.server.cur_time()
         wp.write("<p>(took %.3f sec to generate)</p>" % (t5 - t0))
         self.server.LOG("gen trailer\n")
@@ -1751,6 +1824,7 @@ class xmake_server:
         e_args = []
         args = make_args
         self.sys_argv = sys_argv
+        self.cwd = os.getcwd()
         for a in sys_argv[1:]:
             if a == "--":
                 # whatever comes after '--' is passed to xmake_args
@@ -2262,7 +2336,7 @@ class xmake_server:
             self.LOG("matching men and works\n")
         matches = []                          # work -> man
         new_runs_todo = []
-        self.men_free.sort()
+        # self.men_free.sort()
         while len(self.runs_todo) > 0 and len(self.men_free) > 0:
             run = self.runs_todo.pop(0)
             if dbg>=2:
@@ -2462,8 +2536,10 @@ class xmake_server:
             return -1
         return result / 1024.0
 
-    def record_rss(self, cur_time):
-        self.rss.add_x(cur_time, 0, self.get_self_rss())
+    def record_rss(self, cur_time, force):
+        last_t = self.rss.last_t
+        if force or cur_time > last_t + 10.0:
+            self.rss.add_x(cur_time, 0, self.get_self_rss())
 
     def get_loadavg(self):
         fp = os.popen("uptime")
@@ -2482,8 +2558,10 @@ class xmake_server:
         except ValueError,e:
             return -1
 
-    def record_loadavg(self, cur_time):
-        self.loadavg.add_x(cur_time, 0, self.get_loadavg())
+    def record_loadavg(self, cur_time, force):
+        last_t = self.rss.last_t
+        if force or cur_time > last_t + 10.0:
+            self.loadavg.add_x(cur_time, 0, self.get_loadavg())
 
     def periodic(self, finished):
         self.check_shine_file()
@@ -2501,12 +2579,15 @@ class xmake_server:
             # more often. but if we do them everytime,
             # this loop become too busy because each of
             # them runs a process and raise sigchlds.
-            self.record_rss(t0)
-            self.record_loadavg(t0)
+            self.record_rss(t0, 1)      # force
+            self.record_loadavg(t0, 1)  # force
             self.hgen.generate(finished)
             t1 = self.cur_time()
             self.n_state_changes = 0
             self.calc_next_update(t0, t1)
+        else:
+            self.record_rss(t0, 0)
+            self.record_loadavg(t0, 0)
 
     def calc_next_update(self, t0, t1):
         dt = t1 - t0
@@ -2904,7 +2985,7 @@ class xmake_server:
         self.register_sigchld_handler() # register sig handler
         self.make_pid = self.run_make() # run GNU make
         self.works = mk_work_db(self.opts.work_db_class,
-                                self.opts.state_dir, self.opts.work_db)
+                                self.opts.state_dir, self.opts.work_db, self.opts.work_list_limit)
         self.runs_todo = []     # runs received, but not yet matched with man
         self.matches = []   # (run,man)'s matched, but not yet started
         self.runs_running = {}  # runs running (idx -> Run object)
@@ -3026,6 +3107,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.70  2010/05/11 08:02:35  ttaauu
+# *** empty log message ***
+#
 # Revision 1.69  2010/05/09 13:11:55  ttaauu
 # *** empty log message ***
 #

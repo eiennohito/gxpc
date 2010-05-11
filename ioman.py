@@ -10,7 +10,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.9 2010/05/09 04:55:29 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.10 2010/05/11 08:02:35 ttaauu Exp $
 # $Name:  $
 #
 
@@ -811,6 +811,7 @@ class wevent_IO_ERROR(wevent):
 class wevent_TIMEOUT(wevent):
     def __init__(self):
         wevent.__init__(self, ch_event.TIMEOUT)
+        self.err_msg = "timeout"
 
 class aevent_OK(aevent):
     def __init__(self, new_so, addr):
@@ -2487,6 +2488,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.10  2010/05/11 08:02:35  ttaauu
+# *** empty log message ***
+#
 # Revision 1.9  2010/05/09 04:55:29  ttaauu
 # *** empty log message ***
 #

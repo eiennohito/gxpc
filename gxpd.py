@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.15 2010/05/09 04:55:28 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.16 2010/05/11 08:02:35 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1659,7 +1659,7 @@ class gxpd(ioman.ioman):
                 rid = proc.rid
                 m = gxpm.up(gupid, tid,
                             gxpm.event_io("peer", ev.kind, rid, pid, ch_name,
-                                          ev.data, ev.err_msg))
+                                          "", ev.err_msg))
                 task.forward_up(m, gxpm.unparse(m))
                 if fix_2007_12_25:
                     if proc.upgrading_status == child_peer.upgrading_status_succeeded:
@@ -2269,6 +2269,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.16  2010/05/11 08:02:35  ttaauu
+# *** empty log message ***
+#
 # Revision 1.15  2010/05/09 04:55:28  ttaauu
 # *** empty log message ***
 #
