@@ -11,12 +11,13 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.70 2010/05/11 08:02:35 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.71 2010/05/11 10:36:55 ttaauu Exp $
 # $Name:  $
 #
 
 import errno,os,sys,random,re,select,shlex,signal,socket,stat,string,time
 import cStringIO
+import heapq
 
 import gxpm2,opt2
     
@@ -942,7 +943,7 @@ class work_db_mem(work_db_base):
     def __init__(self, dire, work_db, limit):
         work_db_base.__init__(self, None, None, limit)
         self.works = []         # list of works
-        self.runs = {}          # run idx -> run
+        # self.runs = {}          # run idx -> run
         self.work_runs = {}     # work idx -> list of run_idxs
 
     def add_work(self, work):
@@ -957,7 +958,7 @@ class work_db_mem(work_db_base):
         work_idx : index of work the run is associated with
         run : run object
         """
-        self.runs[run.run_idx] = run
+        # self.runs[run.run_idx] = run
         self.work_runs[work_idx + 0].append(run)
 
     def __len__(self):
@@ -984,7 +985,7 @@ class work_db_mem(work_db_base):
             if run.status != run_status.queued and \
                run.status != run_status.running and \
                run.exit_status != 0:
-                works.append((w.work_idx, w))
+                works.append((run.time_end, w))
         works.sort()
         works = works[:self.limit]
         for _,w in works:
@@ -993,11 +994,143 @@ class work_db_mem(work_db_base):
     def list_recent_jobs(self):
         works = []
         for w in self.works:
-            works.append((-w.work_idx, w))
+            run = self.work_runs[w.work_idx][-1]
+            if run.status != run_status.queued:
+                works.append((-run.time_start, w))
         works.sort()
         works = works[:self.limit]
         for _,w in works:
             yield (w, self.work_runs[w.work_idx])
+
+
+class work_db_smart_mem(work_db_base):
+    def __init__(self, dire, work_db, limit):
+        work_db_base.__init__(self, None, None, limit)
+        self.works = []                 # only queued or running
+        # self.runs = {}          # run idx -> run
+        self.work_runs = {}             # work idx -> list of run_idxs
+        self.finished_long_works = []   # <= limit
+        self.finished_failed_works = [] # <= limit
+        self.finished_recent_works = [] # <= limit
+
+    def add_work(self, work):
+        """
+        work : Work object
+        """
+        self.works.append(work)
+        self.work_runs[work.work_idx] = []
+
+    def add_run(self, work_idx, run):
+        """
+        work_idx : index of work the run is associated with
+        run : run object
+        """
+        # self.runs[run.run_idx] = run
+        self.work_runs[work_idx].append(run)
+
+    def __len__(self):
+        return len(self.works)          # WRONG
+
+    def push_with_limit(self, h, x, limit):
+        """
+        h is a heap, holding upto LIMIT LARGEST items,
+        with SMALLEST items FIRST. 
+        """
+        if len(h) < limit:
+            heapq.heappush(h, x)
+            return 1                    # inserted
+        elif x > h[0]:
+            heapq.heapreplace(h, x)
+            return 1                    # inserted
+        else:
+            return 0
+
+    def update_lists(self):
+        new_works = []
+        new_work_runs = {}
+        Es("update_lists : before %d works %d runs\n" % (len(self.works), len(self.work_runs)))
+        for w in self.works:
+            run = self.work_runs[w.work_idx][-1]
+            if run.status != run_status.queued and \
+               run.status != run_status.running:
+                # run status should no longer change
+                assert run.time_since_start is not None
+                assert run.time_start is not None
+                assert run.time_end is not None
+                # FAILED
+                if run.status != run_status.queued and \
+                       run.status != run_status.running and \
+                       run.exit_status != 0:
+                    self.push_with_limit(self.finished_failed_works,
+                                         (-run.time_end, w), self.limit)
+                # LONG
+                self.push_with_limit(self.finished_long_works,
+                                     (run.time_since_start, w), self.limit)
+                # RECENT
+                self.push_with_limit(self.finished_recent_works,
+                                     (run.time_start, w), self.limit)
+            else:
+                new_works.append(w)
+                new_work_runs[w.work_idx] = self.work_runs[w.work_idx]
+        for _,w in self.finished_failed_works:
+            new_work_runs[w.work_idx] = self.work_runs[w.work_idx]
+        for _,w in self.finished_long_works:
+            new_work_runs[w.work_idx] = self.work_runs[w.work_idx]
+        for _,w in self.finished_recent_works:
+            new_work_runs[w.work_idx] = self.work_runs[w.work_idx]
+        self.works = new_works
+        self.work_runs = new_work_runs
+        Es("update_lists : after %d works %d runs\n" % (len(self.works), len(self.work_runs)))
+
+    def list_long_jobs(self):
+        """
+        list jobs ordered by "time_since_start desc"
+        """
+        finished_long_works = self.finished_long_works[:]
+        for w in self.works:
+            run = self.work_runs[w.work_idx][-1]
+            if run.time_since_start is not None:
+                self.push_with_limit(finished_long_works,
+                                     (run.time_since_start, w), self.limit)
+        works = []
+        while len(finished_long_works) > 0:
+            _,w = heapq.heappop(finished_long_works)
+            works.insert(0, w)
+        for w in works:
+            yield (w, self.work_runs[w.work_idx])
+
+    def list_failed_jobs(self):
+        finished_failed_works = self.finished_failed_works[:]
+        for w in self.works:
+            run = self.work_runs[w.work_idx][-1]
+            if run.status != run_status.queued and \
+               run.status != run_status.running and \
+               run.exit_status != 0:
+                self.push_with_limit(finished_failed_works,
+                                     (-run.time_end, w), self.limit)
+        works = []
+        while len(finished_failed_works) > 0:
+            _,w = heapq.heappop(finished_failed_works)
+            works.insert(0, w)
+        for w in works:
+            yield (w, self.work_runs[w.work_idx])
+
+    def list_recent_jobs(self):
+        finished_recent_works = self.finished_recent_works[:]
+        for w in self.works:
+            run = self.work_runs[w.work_idx][-1]
+            if run.status != run_status.queued:
+                self.push_with_limit(finished_recent_works,
+                                     (-run.time_start, w), self.limit)
+        works = []
+        while len(finished_recent_works) > 0:
+            _,w = heapq.heappop(finished_recent_works)
+            works.insert(0, w)
+        for w in works:
+            yield (w, self.work_runs[w.work_idx])
+
+    def commit(self):
+        self.update_lists()
 
 class work_db_sqlite3_base(work_db_base):
     def __init__(self, dire, work_db, limit):
@@ -3107,6 +3240,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.71  2010/05/11 10:36:55  ttaauu
+# *** empty log message ***
+#
 # Revision 1.70  2010/05/11 08:02:35  ttaauu
 # *** empty log message ***
 #
