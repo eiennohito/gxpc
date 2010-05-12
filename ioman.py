@@ -1,4 +1,5 @@
-# Copyright (c) 2005 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2005-2009 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2005-2009 by Yoshikazu Kamoshida. All rights reserved.
 #
 # THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY 
 # EXPRESSED OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
@@ -10,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.10 2010/05/11 08:02:35 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.11 2010/05/12 14:00:30 ttaauu Exp $
 # $Name:  $
 #
 
@@ -192,7 +193,45 @@ class non_interruptible_select:
         else:
             return apply_no_intr(select.select, (R, W, E, T))
         
-nointr_select = non_interruptible_select()
+class non_interruptible_select_by_poll:
+    def select(self, R, W, E, T=None):
+        d = {}
+        for f in R:
+            fd = f.fileno()
+            d[fd] = select.POLLIN
+        for f in W:
+            fd = f.fileno()
+            d[fd] = d.get(fd, 0) | select.POLLOUT
+        for f in E:
+            fd = f.fileno()
+            d[fd] = d.get(fd, 0) | select.POLLIN | select.POLLOUT
+        p = select.poll()
+        for (fd, mask) in d.items():
+            p.register(fd, mask)
+        if T is None:
+            list = apply_no_intr(p.poll, ())
+        else:
+            list = apply_no_intr(p.poll, (T*1000,))
+        R0 = []
+        W0 = []
+        E0 = []
+        d = dict(list)
+        for f in R:
+            if (d.get(f.fileno(), 0) & (select.POLLIN|select.POLLHUP)) != 0:
+                R0.append(f)
+        for f in W:
+            if (d.get(f.fileno(), 0) & (select.POLLOUT)) != 0:
+                W0.append(f)
+        for f in E:
+            if (d.get(f.fileno(), 0) & select.POLLERR) != 0:
+                E0.append(f)
+        return R0,W0,E0
+
+
+if hasattr(select, "poll"):
+    nointr_select = non_interruptible_select_by_poll()
+else:
+    nointr_select = non_interruptible_select()
 
 # -------------------------------------------------------------------
 # a simple layer hiding some of the platform/python version
@@ -2488,6 +2527,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.11  2010/05/12 14:00:30  ttaauu
+# added select_by_poll implementation by Kamoshida. ChangeLog 2010-05-12
+#
 # Revision 1.10  2010/05/11 08:02:35  ttaauu
 # *** empty log message ***
 #

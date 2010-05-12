@@ -20,3 +20,8 @@
 	getting slower as it runs.
 2010-05-06 Taura
 	* gxpc.py (login_method_configs.__init__) : fixed torque_host bug.
+2010-05-12 Taura
+	* ioman.py (non_interruptible_select_by_poll) : added select
+	emulation by call contributed by Yoshikazu Kamoshida. Python's
+	select has a limitation that it only allows fd < 1024. poll-based
+	implementation does not have this restriction.
