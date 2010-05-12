@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.71 2010/05/11 10:36:55 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.72 2010/05/12 00:35:52 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1006,6 +1006,7 @@ class work_db_mem(work_db_base):
 class work_db_smart_mem(work_db_base):
     def __init__(self, dire, work_db, limit):
         work_db_base.__init__(self, None, None, limit)
+        self.n_works = 0
         self.works = []                 # only queued or running
         # self.runs = {}          # run idx -> run
         self.work_runs = {}             # work idx -> list of run_idxs
@@ -1017,6 +1018,7 @@ class work_db_smart_mem(work_db_base):
         """
         work : Work object
         """
+        self.n_works = self.n_works + 1
         self.works.append(work)
         self.work_runs[work.work_idx] = []
 
@@ -1029,7 +1031,7 @@ class work_db_smart_mem(work_db_base):
         self.work_runs[work_idx].append(run)
 
     def __len__(self):
-        return len(self.works)          # WRONG
+        return self.n_works
 
     def push_with_limit(self, h, x, limit):
         """
@@ -1048,7 +1050,7 @@ class work_db_smart_mem(work_db_base):
     def update_lists(self):
         new_works = []
         new_work_runs = {}
-        Es("update_lists : before %d works %d runs\n" % (len(self.works), len(self.work_runs)))
+        # Es("update_lists : before %d works %d runs\n" % (len(self.works), len(self.work_runs)))
         for w in self.works:
             run = self.work_runs[w.work_idx][-1]
             if run.status != run_status.queued and \
@@ -1080,7 +1082,7 @@ class work_db_smart_mem(work_db_base):
             new_work_runs[w.work_idx] = self.work_runs[w.work_idx]
         self.works = new_works
         self.work_runs = new_work_runs
-        Es("update_lists : after %d works %d runs\n" % (len(self.works), len(self.work_runs)))
+        # Es("update_lists : after %d works %d runs\n" % (len(self.works), len(self.work_runs)))
 
     def list_long_jobs(self):
         """
@@ -1914,6 +1916,7 @@ class xmake_server:
         self.runs_todo = None           # runs to do
         self.runs_running = None        # runs running
         self.matches = None             # found mathces yet to dispatch
+        self.run_pids = None
         # dict of all men (man name -> man)
         self.men = None
         # list of free men
@@ -2393,7 +2396,10 @@ class xmake_server:
         """
         receive job outputs
         """
+        if self.logfp:
+            self.LOG("receiving IOs\n")
         fd = self.gxpc_io_fd
+        n = 0
         while 1:
             try:
                 R = []
@@ -2405,6 +2411,7 @@ class xmake_server:
                 else:
                     raise
             if len(R) == 0: break
+            n = n + 1
             ev = self.recv_event_io(fd)
             if ev is None:
                 if self.logfp:
@@ -2423,6 +2430,8 @@ class xmake_server:
             else:
                 run.add_io(ev.payload)
                 self.works.update_run(run)
+        if self.logfp:
+            self.LOG("received %d IOs\n" % n)
 
     def check_constraint(self, run, man):
         """
@@ -2522,11 +2531,15 @@ class xmake_server:
         while len(self.matches) > 0:
             run,man = self.matches.pop(0)
             run.start(cur_time, man, self.opts.emulate)
+            self.run_pids[run.pid] = None
             n = n + 1
             self.n_state_changes = self.n_state_changes + 1
             # check if a job is returning
             # may be too much overhead
-            if n >= 1000 and self.check_readable(self.gxpc_fd):
+            if len(self.run_pids) >= 2000:
+                self.LOG("job dispatches break after %d jobs dispatched\n" % n)
+                break
+            if n >= 1000: #  and self.check_readable(self.gxpc_fd)
                 self.LOG("job dispatches break after %d jobs dispatched\n" % n)
                 break
             # check if there are many zombie children
@@ -2537,7 +2550,7 @@ class xmake_server:
             self.run_counts.add_dx(cur_time, 1, n) # sent runs += 1
             self.parallelism.add_dx(cur_time, 0, n)
         if self.logfp:
-            self.LOG("%d jobs dispatched\n" % n)
+            self.LOG("%d jobs dispatched, %d unreaped children\n" % (n, len(self.run_pids)))
         return n
 
     def check_worker_status(self, cur_time):
@@ -2847,7 +2860,12 @@ class xmake_server:
             if dbg>=2:
                 if self.logfp:
                     self.LOG("child (%d) terminated with %d\n" % (pid, status))
-            if pid == self.make_pid:
+            if self.run_pids.has_key(pid):
+                if dbg>=2:
+                    if self.logfp:
+                        self.LOG("it is a run process\n")
+                del self.run_pids[pid]
+            elif pid == self.make_pid:
                 if dbg>=2:
                     if self.logfp:
                         self.LOG("it is the child make\n")
@@ -2867,7 +2885,7 @@ class xmake_server:
             else:
                 if dbg>=2:
                     if self.logfp:
-                        self.LOG("it is a remote job\n")
+                        self.LOG("it is other processes\n")
             self.n_state_changes = self.n_state_changes + 1
         if self.logfp:
             self.LOG("%d children reaped\n" % len(pids))
@@ -3122,6 +3140,7 @@ class xmake_server:
         self.runs_todo = []     # runs received, but not yet matched with man
         self.matches = []   # (run,man)'s matched, but not yet started
         self.runs_running = {}  # runs running (idx -> Run object)
+        self.run_pids = {}
         self.men = {}       # men (workers) gupid -> man object
         self.men_free = []  # list of free men
         self.interrupted = 0
@@ -3240,6 +3259,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.72  2010/05/12 00:35:52  ttaauu
+# smart_mem and throttling
+#
 # Revision 1.71  2010/05/11 10:36:55  ttaauu
 # *** empty log message ***
 #
