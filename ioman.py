@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.11 2010/05/12 14:00:30 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.12 2010/05/13 13:48:59 ttaauu Exp $
 # $Name:  $
 #
 
@@ -228,7 +228,7 @@ class non_interruptible_select_by_poll:
         return R0,W0,E0
 
 
-if hasattr(select, "poll"):
+if 0 and hasattr(select, "poll"):
     nointr_select = non_interruptible_select_by_poll()
 else:
     nointr_select = non_interruptible_select()
@@ -2527,6 +2527,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.12  2010/05/13 13:48:59  ttaauu
+# work_db_mem becomes smart and now default
+#
 # Revision 1.11  2010/05/12 14:00:30  ttaauu
 # added select_by_poll implementation by Kamoshida. ChangeLog 2010-05-12
 #

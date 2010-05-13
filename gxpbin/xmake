@@ -11,11 +11,12 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.73 2010/05/13 08:06:03 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.74 2010/05/13 13:49:02 ttaauu Exp $
 # $Name:  $
 #
 
-import errno,os,sys,random,re,select,shlex,signal,socket,stat,string,time
+import errno,os,sys,random,re,select,shlex,signal,socket
+import stat,string,time,types
 import cStringIO
 import heapq
 
@@ -163,7 +164,7 @@ class xmake_cmd_opts(opt2.cmd_opts):
         # log file
         self.log      = ("s", "xmake.log")
         #
-        self.work_db_class = ("s", "sqlite3")
+        self.work_db_class = ("s", "mem")
         # state file directory
         self.state_dir = ("s", "./gxp_make_state")
         # state file 
@@ -931,6 +932,11 @@ class work_db_base:
             assert 0, title
         
 class work_db_none(work_db_base):
+    """
+    database that only counts the number of works.
+    no jobs appear in html page. only used to see the overhead
+    of other schemes.
+    """
     def __init__(self, dire, work_db, limit):
         work_db_base.__init__(self, None, None, limit)
         self.n_works = 0
@@ -939,11 +945,16 @@ class work_db_none(work_db_base):
     def __len__(self):
         return self.n_works
         
-class work_db_mem(work_db_base):
+class work_db_naive_mem(work_db_base):
+    """
+    database that keeps every jobs on memory.
+    it grows memory indefinitely, so should be avoided
+    in large runs. not very useful any more because 
+    we have a simply-better smart_mem.
+    """
     def __init__(self, dire, work_db, limit):
         work_db_base.__init__(self, None, None, limit)
         self.works = []         # list of works
-        # self.runs = {}          # run idx -> run
         self.work_runs = {}     # work idx -> list of run_idxs
 
     def add_work(self, work):
@@ -958,7 +969,6 @@ class work_db_mem(work_db_base):
         work_idx : index of work the run is associated with
         run : run object
         """
-        # self.runs[run.run_idx] = run
         self.work_runs[work_idx + 0].append(run)
 
     def __len__(self):
@@ -979,6 +989,10 @@ class work_db_mem(work_db_base):
             yield (w, self.work_runs[w.work_idx])
 
     def list_failed_jobs(self):
+        """
+        list jobs that have been failed, oldest first.
+        oldest means finished earliest.
+        """
         works = []
         for w in self.works:
             run = self.work_runs[w.work_idx][-1]
@@ -1003,20 +1017,34 @@ class work_db_mem(work_db_base):
             yield (w, self.work_runs[w.work_idx])
 
 
-class work_db_smart_mem(work_db_base):
+class work_db_mem(work_db_base):
+    """
+    this is a class that keeps only jobs that may appear in
+    html in memory and throw away other jobs. more specifically,
+    it keeps the following on memory.
+    - 100 longest jobs among finished jobs
+    - 100 failed and oldest jobs among finished jobs
+    - 100 newest jobs among finished jobs
+    - jobs not finished yet (running and queued).
+
+    queued jobs never appear in html page, but they are on 
+    memory anyways, so we do not bother to avoid having them on
+    memory.
+    """
     def __init__(self, dire, work_db, limit):
-        work_db_base.__init__(self, None, None, limit)
+        work_db_base.__init__(self, dire, work_db, limit)
         self.n_works = 0
         self.works = []                 # only queued or running
-        # self.runs = {}          # run idx -> run
         self.work_runs = {}             # work idx -> list of run_idxs
         self.finished_long_works = []   # <= limit
         self.finished_failed_works = [] # <= limit
         self.finished_recent_works = [] # <= limit
+        self.wp = open(os.path.join(dire, work_db), "wb")
 
     def add_work(self, work):
         """
         work : Work object
+        this is a new work, so we simply keep it on memory.
         """
         self.n_works = self.n_works + 1
         self.works.append(work)
@@ -1025,9 +1053,10 @@ class work_db_smart_mem(work_db_base):
     def add_run(self, work_idx, run):
         """
         work_idx : index of work the run is associated with
-        run : run object
+        run : run object.
+        similar to add_work, this is a new run, so
+        keep it on memory for now.
         """
-        # self.runs[run.run_idx] = run
         self.work_runs[work_idx].append(run)
 
     def __len__(self):
@@ -1037,25 +1066,91 @@ class work_db_smart_mem(work_db_base):
         """
         h is a heap, holding upto LIMIT LARGEST items,
         with SMALLEST items FIRST. 
+        this is a heap structure to keep a constant
+        number of largest items.
         """
-        if len(h) < limit:
+        if len(h) < limit:      # heap is small so we insert it
             heapq.heappush(h, x)
-            return 1                    # inserted
-        elif x > h[0]:
+            return 1
+        elif x > h[0]:          # heap is already the maximum length
+            assert (len(h) == limit), len(h)
             heapq.heapreplace(h, x)
-            return 1                    # inserted
+            return 1                    # insert it
         else:
             return 0
 
+    def pr_status(self, run):
+        if run.status == run_status.finished:
+            if run.exit_status is not None:
+                return "exit %d" % run.exit_status
+            elif run.termsig is not None:
+                return "killed %d" % run.termsig
+        return run.status
+
+    def mk_work_run_tuple(self, work, run):
+        sr = string.replace
+        return ("%d\t"
+                "%s\t"
+                "%.3f\t" 
+                "%d\t" 
+                "%s\t" 
+                "%s\t" 
+                "%.3f\t" 
+                "%.3f\t" 
+                "%.3f\t" 
+                "%.3f\t" 
+                "%.3f\t" 
+                "%.3f\t" 
+                "%d\t" 
+                "%d\t" 
+                "%d\t" 
+                "%s" %
+                (work.work_idx,
+                 sr(sr(work.cmd, "\t", " "), "\n", " "),
+                 work.time_req,
+                 run.run_idx,
+                 self.pr_status(run),
+                 run.man_name,
+                 run.time_start,
+                 run.time_end,
+                 run.time_since_start,
+                 run.etime,
+                 run.utime,
+                 run.stime,
+                 run.minflt,
+                 run.majflt,
+                 run.pid,
+                 sr(sr(run.io, "\t", " "), "\n", "\n#\t")))
+
     def update_lists(self):
+        """
+        this is a preprocessing step before generating html page.
+        we need to get 100 longest jobs among BOTH finished and RUNNING
+        jobs.
+        we keep only finished jobs in heaps and not runninjobs, 
+        because running jobs change their age (e.g., time_since_start), 
+        so their positions in heap will keep changing.
+        thus, we compute them by merging the list of finished jobs
+        and running ones.
+        """
         new_works = []
         new_work_runs = {}
-        # Es("update_lists : before %d works %d runs\n" % (len(self.works), len(self.work_runs)))
+        # iterate over jobs that were running/queued when we saw them 
+        # the last time, and move jobs that are now finished to
+        # appropriate heaps.
+        # as a result, some works will be dropped off works list.
+        # then corresponding entries in work_runs need to be 
+        # freed as well. we actually accomplish this gc by rebuilding
+        # new work_runs structure that keep still-necessary entries.
         for w in self.works:
             run = self.work_runs[w.work_idx][-1]
             if run.status != run_status.queued and \
                run.status != run_status.running:
-                # run status should no longer change
+                for r in self.work_runs[w.work_idx]:
+                    self.wp.write("%s\n" % self.mk_work_run_tuple(w, r))
+                # w is now finished.
+                # move it to longest/failed/recent heaps
+                # as appropriate
                 assert run.time_since_start is not None
                 assert run.time_start is not None
                 assert run.time_end is not None
@@ -1072,8 +1167,10 @@ class work_db_smart_mem(work_db_base):
                 self.push_with_limit(self.finished_recent_works,
                                      (run.time_start, w), self.limit)
             else:
+                # w is still running or queued
                 new_works.append(w)
                 new_work_runs[w.work_idx] = self.work_runs[w.work_idx]
+        # copy entries for finished works that are necessary
         for _,w in self.finished_failed_works:
             new_work_runs[w.work_idx] = self.work_runs[w.work_idx]
         for _,w in self.finished_long_works:
@@ -1082,18 +1179,25 @@ class work_db_smart_mem(work_db_base):
             new_work_runs[w.work_idx] = self.work_runs[w.work_idx]
         self.works = new_works
         self.work_runs = new_work_runs
-        # Es("update_lists : after %d works %d runs\n" % (len(self.works), len(self.work_runs)))
+        self.wp.flush()
 
     def list_long_jobs(self):
         """
         list jobs ordered by "time_since_start desc"
+        assume update_list() has been performed, so 
+        finished_long_works is a heap of 100 longest finished jobs.
+        we merge it with still running/queued jobs, to
+        get what we want (100 longest finished or unfinished jobs).
         """
         finished_long_works = self.finished_long_works[:]
+        # merge running/queued jobs with finished ones.
         for w in self.works:
             run = self.work_runs[w.work_idx][-1]
             if run.time_since_start is not None:
                 self.push_with_limit(finished_long_works,
                                      (run.time_since_start, w), self.limit)
+        # heap is sorted by time_since_start, with the smallest
+        # one first, so we reverse it here
         works = []
         while len(finished_long_works) > 0:
             _,w = heapq.heappop(finished_long_works)
@@ -1102,6 +1206,13 @@ class work_db_smart_mem(work_db_base):
             yield (w, self.work_runs[w.work_idx])
 
     def list_failed_jobs(self):
+        """
+        almost the same as list_long_jobs, only difference 
+        being that
+        - we filter out queued/running jobs, which by definition 
+        has never failed.
+        - we get 100 oldest jobs (whose time_end's are earliest)
+        """
         finished_failed_works = self.finished_failed_works[:]
         for w in self.works:
             run = self.work_runs[w.work_idx][-1]
@@ -1118,6 +1229,11 @@ class work_db_smart_mem(work_db_base):
             yield (w, self.work_runs[w.work_idx])
 
     def list_recent_jobs(self):
+        """
+        almost the same as list_long_jobs, only difference 
+        being that
+        - we get 100 recent jobs (whose time_start's are latest)
+        """
         finished_recent_works = self.finished_recent_works[:]
         for w in self.works:
             run = self.work_runs[w.work_idx][-1]
@@ -1135,6 +1251,10 @@ class work_db_smart_mem(work_db_base):
         self.update_lists()
 
 class work_db_sqlite3_base(work_db_base):
+    """
+    database class that materializes data by sqlite3 database.
+    it uses python sqlite3 module.
+    """
     def __init__(self, dire, work_db, limit):
         work_db_base.__init__(self, dire, work_db, limit)
         self.conn = self.mk_sqlite3_db()
@@ -1248,11 +1368,11 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
     def list_failed_jobs(self):
         return self.list_jobs_aux("""status != "queued"
         and status != "running"
-        and exit_status != 0""", "")
+        and exit_status != 0""", "time_end")
 
     def list_recent_jobs(self):
         return self.list_jobs_aux('status != "queued"', 
-                                  "work_idx desc")
+                                  "time_start desc")
 
     def commit(self):
         self.conn.commit()
@@ -1271,12 +1391,15 @@ def mk_work_db(work_db_class, dire, work_db, limit):
     # work_db_class = "sqlite3"
     g = globals()
     classname = "work_db_%s" % work_db_class
+    if classname == "work_db_smart_mem":
+        Es("xmake : warning : smart_mem is renamed to mem\n")
+        classname = "work_db_mem"
     if g.has_key(classname):
         cls = g[classname]
     else:
-        Es("xmake : warning : no class named %s, defaults to sqlite3\n"
+        Es("xmake : warning : no class named %s, defaults to mem\n"
            % classname)
-        cls = work_db_sqlite3
+        cls = work_db_mem
     return cls(dire, work_db, limit)
 
 class work_table_generator:
@@ -3259,6 +3382,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.74  2010/05/13 13:49:02  ttaauu
+# work_db_mem becomes smart and now default
+#
 # Revision 1.73  2010/05/13 08:06:03  ttaauu
 # fixed syntax error with yield
 #

@@ -25,3 +25,8 @@
 	emulation by call contributed by Yoshikazu Kamoshida. Python's
 	select has a limitation that it only allows fd < 1024. poll-based
 	implementation does not have this restriction.
+2010-05-13 Taura
+	* xmake (work_db_naive_mem, work_db_mem) : original leaky work_db_mem
+	now renamed to work_db_naive_mem. work_db_smart_mem now became
+	work_db_mem, and became the default.
+	
