@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.72 2010/05/12 00:35:52 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.73 2010/05/13 08:06:03 ttaauu Exp $
 # $Name:  $
 #
 
@@ -903,7 +903,7 @@ class work_db_base:
         """
         list jobs ordered by "time_since_start desc"
         """
-        if 0: yield
+        if 0: yield None
         
     def list_failed_jobs(self):
         """
@@ -911,14 +911,14 @@ class work_db_base:
         - not queued/running
         - exit status != 0
         """
-        if 0: yield
+        if 0: yield None
 
     def list_recent_jobs(self):
         """
         leave only jobs that are running or finished
         ordered by work_idx
         """
-        if 0: yield
+        if 0: yield None
 
     def list_jobs(self, title):
         if title == "Long":
@@ -3259,6 +3259,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.73  2010/05/13 08:06:03  ttaauu
+# fixed syntax error with yield
+#
 # Revision 1.72  2010/05/12 00:35:52  ttaauu
 # smart_mem and throttling
 #
