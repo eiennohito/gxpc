@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.74 2010/05/13 13:49:02 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.75 2010/05/15 19:29:23 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1717,7 +1717,7 @@ class html_generator:
                                                opts.rss_img,
                                                opts.rss_err,
                                                opts.rss_terminal,
-                                               'lines linewidth 3 linecolor rgb "blue"', 
+                                               'lines linewidth 3',   #  linecolor rgb "blue"
                                                "Resident Set Size (MB)", [ "" ])
         self.lgen = time_series_plot_generator(server,
                                                server.loadavg,
@@ -1726,7 +1726,7 @@ class html_generator:
                                                opts.loadavg_img,
                                                opts.loadavg_err,
                                                opts.loadavg_terminal,
-                                               'lines linewidth 3 linecolor rgb "yellow"', 
+                                               'lines linewidth 3', #  linecolor rgb "yellow"
                                                "Last 1 min. Load Average", [ "" ])
         self.rcgen = time_series_plot_generator(server,
                                                 server.run_counts,
@@ -3382,6 +3382,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.75  2010/05/15 19:29:23  ttaauu
+# removed linecolor
+#
 # Revision 1.74  2010/05/13 13:49:02  ttaauu
 # work_db_mem becomes smart and now default
 #
