@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.57 2010/05/09 04:55:28 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.58 2010/05/15 14:13:25 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1197,6 +1197,7 @@ class interpreter_opts(opt.cmd_opts):
         self.help = (None, 0)
         self.verbosity = ("i", 1)
         self.root_target_name = ("s", None)
+        self.target_prefix = ("s", None)
         self.create_session = ("i", 0)
         self.session = ("s", None)
         self.create_daemon = ("i", 0)
@@ -2202,18 +2203,23 @@ class cmd_interpreter:
                      "--seq", "explore-root-gxpd",
                      "--rsh", "sh",
                      "--rsh", "-c",
-                     "--rsh", "%(cmd)s",
-                     "--first_args_template",  "--remove_self",
-                     "--first_args_template",  "--continue_after_close",
-                     "--first_args_template",  "--name_prefix",
-                     "--first_args_template",  prefix,
-                     "--second_args_template", "--remove_self",
-                     "--second_args_template", "--continue_after_close",
-                     "--second_args_template", "--remove_self",
-                     "--second_args_template", "--continue_after_close",
-                     "--second_args_template", "--name_prefix",
-                     "--second_args_template", prefix,
-                     ]
+                     "--rsh", "%(cmd)s" ]
+            # target_prefix
+            tpx = self.opts.target_prefix
+            if tpx is not None:
+                argv = argv + [  "--target_prefix", tpx ]
+            # args passed to gxpd
+            argv = argv + [ "--first_args_template",  "--remove_self",
+                            "--first_args_template",  "--continue_after_close",
+                            "--first_args_template",  "--name_prefix",
+                            "--first_args_template",  prefix,
+                            "--second_args_template", "--remove_self",
+                            "--second_args_template", "--continue_after_close",
+                            "--second_args_template", "--remove_self",
+                            "--second_args_template", "--continue_after_close",
+                            "--second_args_template", "--name_prefix",
+                            "--second_args_template", prefix,
+                            ]
             rtn = self.opts.root_target_name
             if rtn is not None:
                 argv = argv + [ "--first_args_template",  "--target_label",
@@ -4467,6 +4473,10 @@ See Also:
             opt_args.append("--install_timeout %f" % opts.install_timeout)
         if opts.target_prefix is not None:
             opt_args.append("--target_prefix %s" % opts.target_prefix)
+            # explore option
+        elif self.opts.target_prefix is not None:
+            # global option
+            opt_args.append("--target_prefix %s" % self.opts.target_prefix)
         if opts.verbosity is not None:
             opt_args.append("--dbg %d" % opts.verbosity)
         for python in opts.python:
@@ -5354,6 +5364,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.58  2010/05/15 14:13:25  ttaauu
+# added --target_prefix to global options. ChangeLog 2010-5-15
+#
 # Revision 1.57  2010/05/09 04:55:28  ttaauu
 # *** empty log message ***
 #

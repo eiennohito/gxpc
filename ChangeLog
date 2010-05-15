@@ -29,4 +29,18 @@
 	* xmake (work_db_naive_mem, work_db_mem) : original leaky work_db_mem
 	now renamed to work_db_naive_mem. work_db_smart_mem now became
 	work_db_mem, and became the default.
+2010-05-15 Taura
+	* gxpc.py (interpreter_opts) : added --target_prefix to global options.
+	this option used to be an explore-specific option, but it now became
+	both global and explore-specific. adding this to a global option allows
+	the user to specify the directory to which gxp3 is copied when gxpd
+	brings up first.
+	* gxpc.py (cmd_interpreter.really_create_daemon) : according to the
+	above item, if --target_prefix is passed as a global option, pass it 
+	to inst_local.py, so that gxp3 will be copied to the specified 
+	directory. by these additions: it is now possible to do something like
+	  gxpc --target_prefix /tmp/`whoami`/.gxp_tmp use sh .
+	  gxpc explore sh x 10
+	
+	
 	
