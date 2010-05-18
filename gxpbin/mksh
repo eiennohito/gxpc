@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh,v 1.15 2010/01/17 17:17:28 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh,v 1.16 2010/05/18 12:39:11 ttaauu Exp $
 # $Name:  $
 #
 
@@ -107,6 +107,7 @@ def submit_or_exec(so_name, cmd):
 
 def translate_cwd():
     cwd = os.path.normpath(os.getcwd())
+    return cwd
     for var,trans in [ ("HOME", "~") ]:
         prefix = os.environ.get(var)
         if prefix is None: continue
@@ -136,6 +137,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: mksh,v $
+# Revision 1.16  2010/05/18 12:39:11  ttaauu
+# xmake --translate_dir option. 2010-05-18
+#
 # Revision 1.15  2010/01/17 17:17:28  ttaauu
 # xmake now supports --make_env. see 2010-1-18 Taura
 #

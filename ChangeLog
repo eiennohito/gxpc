@@ -41,6 +41,13 @@
 	directory. by these additions: it is now possible to do something like
 	  gxpc --target_prefix /tmp/`whoami`/.gxp_tmp use sh .
 	  gxpc explore sh x 10
-	
+2010-05-18 Taura
+	* gxpbin/mksh (translate_cwd): now mksh does not translate current 
+	directory. translation is now done by xmake, with respect to 
+	specified options.
+	* gxpbin/xmake (xmake_server.recv_work_aux): now it translates cwd
+	received from mksh.  it looks at --translate_dir options, plus
+	default $HOME -> ~
+
 	
 	

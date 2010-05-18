@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.77 2010/05/18 08:16:47 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.78 2010/05/18 12:39:11 ttaauu Exp $
 # $Name:  $
 #
 
@@ -202,6 +202,8 @@ class xmake_cmd_opts(opt2.cmd_opts):
         #
         self.conf = ("s*", [ "~/.gxpc_make.conf", "~/.gxp_make.conf",
                              "gxpc_make.conf", "gxp_make.conf" ])
+        # see postcheck 
+        self.translate_dir = ("s*", [])
         #
         self.update_interval_1 = ("f", 2.0)
         self.update_interval_2 = ("f", 20.0)
@@ -278,6 +280,20 @@ class xmake_cmd_opts(opt2.cmd_opts):
                 return -1
             else:
                 self.gxpc = os.path.join(gxp_dir, "gxpc")
+        # add default translation
+        translate_dir = []
+        for src_dst in self.translate_dir:
+            src_and_dst = string.split(src_dst, ",", 1)
+            if len(src_and_dst) == 1:
+                Es("xmake : ignore invalid translate_dir (%s). should be 'src=dst'\n")
+                continue
+            [ src,dst ] = src_and_dst
+            translate_dir.append((src, dst))
+        # translate home dir to ~
+        home = os.environ.get("HOME")
+        if home:
+            translate_dir.append((home, "~"))
+        self.translate_dir = translate_dir
         
     def usage(self):
         u = r"""usage:
@@ -2337,6 +2353,14 @@ class xmake_server:
         if elem is None or len(elem) != elem_len: return None
         return elem
 
+    def translate_dir(self, cwd):
+        dire = cwd
+        for src,dst in self.opts.translate_dir:
+            n = len(src)
+            if dire == src or (dire[:n] == src and dire[n] == os.path.sep):
+                dire = dst + dire[n:]
+        return dire
+
     def recv_work_aux(self, conn):
         """
         receive a work from mksh.
@@ -2345,6 +2369,7 @@ class xmake_server:
         if cmd is None or cmd == "": return None,None,None
         cwd = self.recv_element(conn)
         if cwd is None or cwd == "": return None,None,None
+        cwd = self.translate_dir(cwd)
         envs = []
         while 1:
             varval = self.recv_element(conn)
@@ -3396,6 +3421,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.78  2010/05/18 12:39:11  ttaauu
+# xmake --translate_dir option. 2010-05-18
+#
 # Revision 1.77  2010/05/18 08:16:47  ttaauu
 # *** empty log message ***
 #
