@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.76 2010/05/18 07:03:23 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.77 2010/05/18 08:16:47 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1847,6 +1847,20 @@ td.man_3_gone {
 </ul>
 ''' % work_db)
 
+    def status_to_str(self, status):
+        if status is None:
+            return '<td class="job_running">running</td>'
+        elif os.WIFEXITED(status):
+            s = os.WEXITSTATUS(status)
+            if s == 0:
+                return ('<td class="job_success">exit %d</td>' % s)
+            else:
+                return ('<td class="job_failed">exit %d</td>' % s)
+        elif os.WIFSIGNALED(status):
+            return ('<td class="job_killed">killed %d</td>' % os.WTERMSIG(status))
+        else:
+            return ('<td class="job_unknown">unknown %s</td>' % status)
+
     def gen_section_basic(self, wp):
         server = self.server
         wp.write(r'''
@@ -1865,12 +1879,12 @@ td.man_3_gone {
 <tr><td>xmake args</td><td>%s</td></tr>
 <tr><td>make args</td><td>%s</td></tr>
 <tr><td>make pid</td><td>%s</td></tr>
-<tr><td>make status</td><td>%s</td></tr>
+<tr><td>make status</td>%s</tr>
 <tr><td>socket</td><td>%s</td></tr>
 <tr><td>gxpc cmd</td><td>%s</td></tr>
 <tr><td>gxpc pid</td><td>%s</td></tr>
 <tr><td>gxpc tid</td><td>%s</td></tr>
-<tr><td>gxpc status</td><td>%s</td></tr>
+<tr><td>gxpc status</td>%s</tr>
 <tr><td>gxpc fd</td><td>%s</td></tr>
 <tr><td>gxpc io fd</td><td>%s</td></tr>
 </table>
@@ -1883,10 +1897,10 @@ td.man_3_gone {
        len(server.runs_todo), len(server.works),
        len(server.men_free), server.men_total_capacity(),
        server.xmake_args, server.make_args, 
-       server.make_pid, server.make_status,
+       server.make_pid, self.status_to_str(server.make_status),
        server.so_name, 
        server.gxpc_cmd,
-       server.gxpc_pid, server.tid, server.gxpc_status,
+       server.gxpc_pid, server.tid, self.status_to_str(server.gxpc_status),
        server.gxpc_fd, server.gxpc_io_fd))
         
     def gen_section_graph(self, wp, section_title, gen_plot_time,
@@ -3382,6 +3396,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.77  2010/05/18 08:16:47  ttaauu
+# *** empty log message ***
+#
 # Revision 1.76  2010/05/18 07:03:23  ttaauu
 # *** empty log message ***
 #
