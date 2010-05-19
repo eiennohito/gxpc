@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.58 2010/05/15 14:13:25 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.59 2010/05/19 03:41:10 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2315,12 +2315,15 @@ class cmd_interpreter:
                % (gupid, tid, ev.src, ev.fd, ev.kind, ev.payload, ev.err_msg))
         # fp,co = self.outmap[ev.fd]
         fp,co = self.outmap.get(ev.fd, (None, None))
+        if 1 and ev.src == "proc" and self.log_io_fp:
+            evs = gxpm.unparse(ev)
+            self.safe_write(self.log_io_fp, "%9d %s" % (len(evs), evs))
         if ev.payload != "":
             if ev.src == "proc":
                 # self.event_log.append((time.time(), ev.payload))
                 # if fp is None: Es("what?\n")
                 # Es("fp=%s, payload=%s\n" % (fp, ev.payload))
-                if self.log_io_fp:
+                if 0 and self.log_io_fp:
                     evs = gxpm.unparse(ev)
                     self.safe_write(self.log_io_fp, "%9d %s" % (len(evs), evs))
 
@@ -2354,13 +2357,13 @@ class cmd_interpreter:
 
     def handle_event_die(self, gupid, tid, ev):
         if self.opts.verbosity>=2:
-            Es("gxpc: handle_event_die(%s, %s, ev.status=%s, ev.rusage=%s)\n" \
-               % (gupid, tid, ev.status, ev.rusage))
+            Es("gxpc: handle_event_die(%s, %s, ev.status=%s, ev.rusage=%s, ev.time_start=%s, ev.time_end=%s)\n" \
+               % (gupid, tid, ev.status, ev.rusage, ev.time_start, ev.time_end))
         # Ws("shindayo\n")
         self.session.last_term_status[gupid] = int(ev.status)
         if self.notify_proc_exit_fp:
             # self.opts.notify_proc_exit > 0
-            s = (gupid, tid, ev.src, ev.rid, ev.pid, ev.status, ev.rusage)
+            s = (gupid, tid, ev.src, ev.rid, ev.pid, ev.status, ev.rusage, ev.time_start, ev.time_end)
             self.safe_write(self.notify_proc_exit_fp, "%s\n" % (s,))
             # ("%s %s %s %s %s %s %s\n"
             # % (gupid, tid, ev.src, ev.rid, ev.pid, ev.status, ev.rusage))
@@ -5364,6 +5367,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.59  2010/05/19 03:41:10  ttaauu
+# gxpd/gxpc capture time at which processes started/ended at remote daemons. xmake now receives and displays them. xmake now never misses IO from jobs. ChangeLog 2010-05-19
+#
 # Revision 1.58  2010/05/15 14:13:25  ttaauu
 # added --target_prefix to global options. ChangeLog 2010-5-15
 #

@@ -48,6 +48,21 @@
 	* gxpbin/xmake (xmake_server.recv_work_aux): now it translates cwd
 	received from mksh.  it looks at --translate_dir options, plus
 	default $HOME -> ~
+2010-05-19 Taura
+	* ioman.py (child_process.__init__): captures time_start of a child
+	process
+	* ioman.py (rchannel_wait_child.process_event): captures time_end
+	of a child process
+	* gxpd.py (gxpd.cleanup_process): captures and sends time_start
+	and time_end of a process.
+	* gxpc.py (cmd_interpreter.handle_event_die): receives time_start
+	and time_end of a process from gxpd and sends it to notify channel.
+	* gxpm.py (event_die): extend fields to event_die to communicate
+	time_start/time_end information between gxpd and gxpc
+	* gxpbin/xmake (Run): extend fields with worker_time_start and
+	worker_time_end to receive when a process started/ended at workers.
+	many associated changes to display these information.
+	* gxpbin/xmake (Run.add_io): now it never misses IO from processes.
 
 	
 	

@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.16 2010/05/11 08:02:35 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.17 2010/05/19 03:41:10 ttaauu Exp $
 # $Name:  $
 #
 
@@ -736,7 +736,8 @@ class gxpd(ioman.ioman):
         # let the client know the process is dead
         m = gxpm.up(self.gupid, task.tid,
                     gxpm.event_die("proc", rid,
-                                   pid, p.term_status, p.rusage))
+                                   pid, p.term_status, p.rusage,
+                                   p.time_start, p.time_end))
         task.forward_up(m, gxpm.unparse(m))
         # 2007 12/2 tau
         # fixed a descriptor-leak bug that does not close
@@ -2269,6 +2270,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.17  2010/05/19 03:41:10  ttaauu
+# gxpd/gxpc capture time at which processes started/ended at remote daemons. xmake now receives and displays them. xmake now never misses IO from jobs. ChangeLog 2010-05-19
+#
 # Revision 1.16  2010/05/11 08:02:35  ttaauu
 # *** empty log message ***
 #

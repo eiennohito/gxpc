@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpm.py,v 1.7 2009/09/27 17:15:14 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpm.py,v 1.8 2010/05/19 03:41:10 ttaauu Exp $
 # $Name:  $
 #
 
@@ -431,7 +431,7 @@ class event_die(event):
     """
     an event indicating a process is dead.
     """
-    def __init__(self, src, rid, pid, status, rusage):
+    def __init__(self, src, rid, pid, status, rusage, time_start, time_end):
         # src : proc or peer
         self.src = src
         # relative process ID within a task
@@ -442,6 +442,10 @@ class event_die(event):
         self.status = status
         # rusage of the process
         self.rusage = rusage
+        # local time (via time.time()) at which the process was
+        # started/finished
+        self.time_start = time_start
+        self.time_end = time_end
 
 class event_peerstatus(event):
         
@@ -501,6 +505,9 @@ class syn:
         self.event = event
 
 # $Log: gxpm.py,v $
+# Revision 1.8  2010/05/19 03:41:10  ttaauu
+# gxpd/gxpc capture time at which processes started/ended at remote daemons. xmake now receives and displays them. xmake now never misses IO from jobs. ChangeLog 2010-05-19
+#
 # Revision 1.7  2009/09/27 17:15:14  ttaauu
 # added comment on gxpm.py
 #

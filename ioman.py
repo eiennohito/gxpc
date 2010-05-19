@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.12 2010/05/13 13:48:59 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.13 2010/05/19 03:41:10 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1544,11 +1544,11 @@ class rchannel_wait_child(rchannel):
                     break
                 else:
                     raise
-            if self.ru: 
-                rusage = self.ru.get_child_rusage()
-            else:
-                rusage = None
-            p = self.iom.del_process(pid, term_status, rusage)
+            time_end = time.time()
+            p = self.iom.del_process(pid)
+            p.term_status = term_status
+            p.rusage = self.ru.get_child_rusage()
+            p.time_end = time_end
             dead_processes.append(p)
         ev.dead_processes = dead_processes
         return ev
@@ -1946,6 +1946,8 @@ class child_process(process_base):
         self.pid = None       # process id
         self.term_status = None
         self.rusage = None
+        self.time_start = None
+        self.time_end = None
 
     def is_garbage(self):
         # a process is garbage when it terminated and
@@ -2068,6 +2070,8 @@ class child_process(process_base):
         else:
             # parent
             self.pid = pid
+            # 5/19
+            self.time_start = time.time()
             for pipe,parent_use,_ in pipes:
                 # Close the useless end of the pipe.
                 # mode is either "r" or "w". mode == "r" means
@@ -2226,7 +2230,7 @@ class ioman:
                 "added child process %d\n" % p.pid)
         self.processes[p.pid] = p
 
-    def del_process(self, pid, term_status, rusage):
+    def del_process(self, pid): # , term_status, rusage
         """
         delete a process of pid from interesting processes.
         set its status to term_status.
@@ -2240,8 +2244,8 @@ class ioman:
                     "non ioman child process %d terminated\n" % pid)
             return None
         p = self.processes[pid]
-        p.term_status = term_status
-        p.rusage = rusage
+        # p.term_status = term_status
+        # p.rusage = rusage
         del self.processes[pid]
         if dbg>=2:
             LOG("ioman.del_process : "
@@ -2527,6 +2531,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.13  2010/05/19 03:41:10  ttaauu
+# gxpd/gxpc capture time at which processes started/ended at remote daemons. xmake now receives and displays them. xmake now never misses IO from jobs. ChangeLog 2010-05-19
+#
 # Revision 1.12  2010/05/13 13:48:59  ttaauu
 # work_db_mem becomes smart and now default
 #

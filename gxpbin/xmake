@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.78 2010/05/18 12:39:11 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.79 2010/05/19 03:41:11 ttaauu Exp $
 # $Name:  $
 #
 
@@ -436,6 +436,7 @@ class id_generator:
         return -> 123
         """
         m = self.run_pat.match(s)
+        if m is None: return None
         return int(m.group("idx"))
 
 # terminology
@@ -473,7 +474,8 @@ class Run:
         self.time_start = None       # set by the first shot's shot
         self.time_end = None
         self.time_since_start = None
-        self.etime = None               # elapsed time
+        self.worker_time_start = None
+        self.worker_time_end = None
         self.utime = None               # user time
         self.stime = None               # sys time
         self.minflt = None              # minor faults
@@ -487,6 +489,8 @@ class Run:
         self.man = None
         self.io_wp = None
         self.hold_limit = float("inf")
+        self.stdout_closed = 0
+        self.stderr_closed = 0
         return self
 
     def save_to_tuple(self):
@@ -508,7 +512,8 @@ class Run:
                 self.time_start,
                 self.time_end,
                 self.time_since_start,
-                self.etime,
+                self.worker_time_start,
+                self.worker_time_end,
                 self.utime,
                 self.stime,
                 self.minflt,
@@ -534,7 +539,8 @@ class Run:
          self.time_start,
          self.time_end,
          self.time_since_start,
-         self.etime,
+         self.worker_time_start,
+         self.worker_time_end,
          self.utime,
          self.stime,
          self.minflt,
@@ -590,8 +596,19 @@ class Run:
         self.time_since_start = cur_time - self.time_start
         self.work.server.works.update_run(self)
 
-    def add_io(self, payload):
-        if self.io_file:
+    def add_io(self, fd, payload):
+        if payload == "":
+            # EOF. this may be the last msg from this run
+            if fd == 1:
+                assert (self.stdout_closed == 0), self.stdout_closed
+                self.stdout_closed = 1
+            elif fd == 2:
+                assert (self.stderr_closed == 0), self.stderr_closed
+                self.stderr_closed = 1
+            else:
+                assert 0
+            self.work.server.check_and_delete_running_run(self.run_idx)
+        elif self.io_file:
             assert self.io_wp
             self.io_wp.write(payload)
         else:
@@ -607,7 +624,8 @@ class Run:
                 self.io = io
 
     def finish(self, cur_time,
-               status, exit_status, termsig, etime, rusage):
+               status, exit_status, termsig, rusage, 
+               worker_time_start, worker_time_end):
         """
         server : xmake_server object
         cur_time : current time (float)
@@ -615,6 +633,8 @@ class Run:
         wait_status : status as returned by wait syscall (int)
         etime : elapsed time on the worker returned by gxpc e (float)
         rusage : rusage as returned by getrusage (touple)
+        time_start : time.time() at which the run truly started by worker
+        time_end : time.time() at which the run truly ended by worker
         """
         work = self.work
         server = work.server
@@ -625,7 +645,8 @@ class Run:
         self.status = status
         self.exit_status = exit_status
         self.termsig = termsig
-        self.etime = etime
+        self.worker_time_start = worker_time_start
+        self.worker_time_end = worker_time_end
         if rusage:
             self.utime = rusage[0]
             self.stime = rusage[1]
@@ -635,9 +656,10 @@ class Run:
         man = self.man
         if man:
             # delete records indicating run was running
-            del server.runs_running[self.run_idx]
             del man.runs_running[self.run_idx]
             self.man = None
+            self.work.server.check_and_delete_running_run(self.run_idx)
+            # del server.runs_running[self.run_idx]
             if self.io_wp:
                 self.io_wp.close()
                 self.io_wp = None
@@ -905,11 +927,6 @@ class work_db_base:
         """
         pass
     
-    def add_io(self, run_idx, payload):
-        """
-        add IO to run_idx
-        """
-        pass
     def commit(self):
         pass
     
@@ -1111,12 +1128,13 @@ class work_db_mem(work_db_base):
                 "%d\t" 
                 "%s\t" 
                 "%s\t" 
-                "%.3f\t" 
-                "%.3f\t" 
-                "%.3f\t" 
-                "%.3f\t" 
-                "%.3f\t" 
-                "%.3f\t" 
+                "%f\t" 
+                "%f\t" 
+                "%f\t" 
+                "%f\t" 
+                "%f\t" 
+                "%f\t" 
+                "%f\t" 
                 "%d\t" 
                 "%d\t" 
                 "%d\t" 
@@ -1130,7 +1148,8 @@ class work_db_mem(work_db_base):
                  run.time_start,
                  run.time_end,
                  run.time_since_start,
-                 run.etime,
+                 run.worker_time_end,
+                 run.worker_time_start,
                  run.utime,
                  run.stime,
                  run.minflt,
@@ -1161,7 +1180,8 @@ class work_db_mem(work_db_base):
         for w in self.works:
             run = self.work_runs[w.work_idx][-1]
             if run.status != run_status.queued and \
-               run.status != run_status.running:
+               run.status != run_status.running and \
+               run.stdout_closed and run.stderr_closed:
                 for r in self.work_runs[w.work_idx]:
                     self.wp.write("%s\n" % self.mk_work_run_tuple(w, r))
                 # w is now finished.
@@ -1293,7 +1313,8 @@ create table runs (work_idx integer, run_idx integer, status text,
                    pid integer, 
                    exit_status integer, termsig integer, man_name text,
                    time_start real, time_end real, time_since_start real,
-                   etime real, utime real, stime real,
+                   worker_time_start real, worker_time_end real, 
+                   utime real, stime real,
                    minflt integer, majflt integer,
                    io text, io_dir text, io_file text)
 """)
@@ -1318,7 +1339,7 @@ create index idx_runs on runs(run_idx)
         """
         conn = self.conn
         conn.execute("""
-insert into runs values (?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?)
+insert into runs values (?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?)
 """, run.save_to_tuple())
 
     def update_run(self, run):
@@ -1330,13 +1351,11 @@ insert into runs values (?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?
 update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?, 
                 termsig = ?, man_name = ?,
                 time_start = ?, time_end = ?, time_since_start = ?,
-                etime = ?, utime = ?, stime = ?, minflt = ?, majflt = ?,
+                worker_time_start = ?, worker_time_end = ?, 
+                utime = ?, stime = ?, minflt = ?, majflt = ?,
                 io = ?, io_dir = ?, io_file = ?
             where run_idx = ?
 """, (run.save_to_tuple() + (run.run_idx,)))
-
-    def add_io(self, run_idx, payload):
-        pass
 
     def __len__(self):
         return self.n_works
@@ -1430,10 +1449,12 @@ class work_table_generator:
                  "<td>queued</td>"
                  "<td>status</td>"
                  "<td>worker</td>"
-                 "<td>start time</td>"
-                 "<td>end time</td>"
-                 "<td>time since started</td>"
-                 "<td>elapsed time</td>"
+                 "<td>local start time</td>"
+                 "<td>local end time</td>"
+                 "<td>local elapsed time</td>"
+                 "<td>remote start time</td>"
+                 "<td>remote end time</td>"
+                 "<td>remote elapsed time</td>"
                  "<td>user time</td>"
                  "<td>system time</td>"
                  "<td>minor faults</td>"
@@ -1447,6 +1468,12 @@ class work_table_generator:
             return "<br>"
         else:
             return "%.3f" % f
+
+    def pr_float_diff(self, f, g):
+        if f is None or g is None:
+            return "<br>"
+        else:
+            return "%.3f" % (f - g)
 
     def pr_int(self, i):
         if i is None:
@@ -1543,6 +1570,8 @@ class work_table_generator:
                      '<td>%s</td>'
                      '<td>%s</td>'
                      '<td>%s</td>'
+                     '<td>%s</td>'
+                     '<td>%s</td>'
                      '<td>%s</td>' %
                      (self.pr_run_class(run.status, run.exit_status, run.termsig),
                       self.pr_status(run.status, run.exit_status, run.termsig),
@@ -1550,7 +1579,10 @@ class work_table_generator:
                       self.pr_float(run.time_start),
                       self.pr_float(run.time_end),
                       self.pr_float(run.time_since_start),
-                      self.pr_float(run.etime),
+                      self.pr_float(run.worker_time_start),
+                      self.pr_float(run.worker_time_end),
+                      self.pr_float_diff(run.worker_time_end, 
+                                         run.worker_time_start),
                       self.pr_float(run.utime),
                       self.pr_float(run.stime),
                       self.pr_int(run.minflt),
@@ -1559,6 +1591,34 @@ class work_table_generator:
                       self.pr_link(run.io_file)))
             wp.write("</tr>\n")
             i = i + 1
+
+    def gen_table_legend(self, wp):
+        wp.write(r'''<a name="Job Lists Legend">
+<h1>Job Lists Legend</h1>
+<ul>
+<li><b>queued:</b> master's time at which the work is received by the master</li>
+<li><b>worker:</b> the first word of GUPID of the worker. normally host name</li>
+<li><b>local start time:</b> master's time at which the master sent the job to a worker</li>
+<li><b>local end time:</b> master's time at which the master received the notification that the job has finished</li>
+<li><b>local elapsed time:</b> for finished jobs, local end time - local start time. for running jobs,current time - local start time</li>
+<li><b>remote start time:</b> worker's time at which the worker really spawned the job. see note on time skew below</li>
+<li><b>remote end time:</b> worker's time at which the worker really detected the end of the job. see note on time skew below</li>
+<li><b>remote elapsed time:</b> remote end time - remote start time</li>
+<li><b>user/system time:</b> user CPU time as obtained by getrusage</li>
+<li><b>minor/major faults:</b> minor/major faults as obtained by getrusage</li>
+<li><b>io:</b> standard output/error of the job, up to 1024 bytes (up to 128KB will be held in the database</li>
+<li><b>io file:</b> standard output/error of the job, if it overflows 128KB limit</li>
+</ul>
+<p>
+Remote start/end time includes time skew is between the master and workers.
+More precisely, these values are obtained by:
+<blockquote>
+ local time obtained
+by the worker who executed the job - local time obtained by the master
+at the start of the entire make.
+</blockquote>
+</p>
+''')
 
     def gen_table(self, wp, section_title):
         wp.write(r'''<a name="%s Jobs">
@@ -1573,6 +1633,7 @@ class work_table_generator:
 
     def gen_tables(self, wp):
         self.db.commit()
+        self.gen_table_legend(wp)
         self.gen_table(wp, "Failed")
         self.gen_table(wp, "Long")
         self.gen_table(wp, "Recent")
@@ -1855,6 +1916,7 @@ td.man_3_gone {
 <li>Jobs
 <ul>
   %s
+  <li><a href="#Job Lists Legend">Job Lists Legend</a>
   <li><a href="#Failed Jobs">Failed Jobs</a>
   <li><a href="#Long Jobs">Long Jobs</a>
   <li><a href="#Recent Jobs">Recent Jobs</a>
@@ -2135,11 +2197,12 @@ class xmake_server:
         """
         current time relative to start time
         """
+        return self.relative_time(time.time())
+
+    def relative_time(self, t):
         if self.time_start is None:
             self.time_start = time.time()
-            return 0.0
-        else:
-            return time.time() - self.time_start
+        return t - self.time_start
     
     def open_LOG(self):
         """
@@ -2444,7 +2507,8 @@ class xmake_server:
         if dbg>=2:
             if self.logfp:
                 self.LOG("notified of a remote process termination %s\n" % line)
-        (man_name, tid, src_, rid, pid_, wait_status, rusage) = eval(line)
+        (man_name, tid, src_, rid, pid_, 
+         wait_status, rusage, worker_time_start, worker_time_end) = eval(line)
         assert man_name != ""
         man = self.men.get(man_name)
         cur_time = self.cur_time()
@@ -2488,20 +2552,25 @@ class xmake_server:
                     man.state = man_state.leaving
         elif self.id_gen.run_pat.match(rid):
             run_idx = self.id_gen.get_run_idx(rid)
+            assert run_idx is not None
             run = self.runs_running.get(run_idx)
-            # assert run, (rid, run_idx)
-            if run:
-                self.handle_finish(run, wait_status, rusage)
-            else:
-                # the run finished twice
-                pass
+            assert run, run_idx
+            # convert time_start/time_end, which are raw values
+            # obtained by time.time() on _workers_.  convert them
+            # in _relative_ time on the server. this means values
+            # still contain skews between master and workers
+            worker_time_start = self.relative_time(worker_time_start)
+            worker_time_end = self.relative_time(worker_time_end)
+            self.handle_finish(run, wait_status, rusage, 
+                               worker_time_start, worker_time_end)
         else:
             msg = "unknown rid %s\n" % rid
             if self.logfp: self.LOG(msg)
             Es("xmake: %s" % msg)
         self.n_state_changes = self.n_state_changes + 1
             
-    def handle_finish(self, run, wait_status, rusage):
+    def handle_finish(self, run, wait_status, rusage, 
+                      worker_time_start, worker_time_end):
         # a working process has just finished.
         # already finished
         assert (run.time_end is None), run.time_end
@@ -2512,13 +2581,13 @@ class xmake_server:
         self.parallelism.add_dx(cur_time, 0, -1)
         self.run_counts.add_dx(cur_time, 2, 1) # finished_runs += 1
         exit_status = termsig = None
-        etime = 0.0
         if os.WIFEXITED(wait_status):
             exit_status = os.WEXITSTATUS(wait_status)
         elif os.WIFSIGNALED(wait_status):
             termsig = os.WTERMSIG(wait_status)
         run.finish(cur_time,
-                   run_status.finished, exit_status, termsig, etime, rusage)
+                   run_status.finished, exit_status, termsig, rusage, 
+                   worker_time_start, worker_time_end)
 
 
     def read_sz(self, fd, sz):
@@ -2583,17 +2652,24 @@ class xmake_server:
             # we can never know the we never receive io from
             # this job ...
             run_idx = self.id_gen.get_run_idx(ev.rid)
-            run = self.runs_running.get(run_idx)
-            if run is None:
-                msg = ("warning: io from %d not be recorded '%s'\n" 
-                       % (run_idx, ev.payload))
-                if self.logfp: self.LOG(msg)
-                Es("xmake: %s" % msg)
-            else:
-                run.add_io(ev.payload)
-                self.works.update_run(run)
+            if run_idx is not None:
+                run = self.runs_running.get(run_idx)
+                assert run is not None
+                run.add_io(ev.fd, ev.payload)
+                if ev.payload != "":
+                    self.works.update_run(run)
         if self.logfp:
             self.LOG("received %d IOs\n" % n)
+
+    def check_and_delete_running_run(self, run_idx):
+        # check if run represented by run_idx
+        run = self.runs_running.get(run_idx)
+        assert run, run_idx
+        if run.status == run_status.queued: return
+        if run.status == run_status.running: return
+        if run.stdout_closed == 0: return
+        if run.stderr_closed == 0: return
+        del self.runs_running[run_idx]
 
     def check_constraint(self, run, man):
         """
@@ -3421,6 +3497,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.79  2010/05/19 03:41:11  ttaauu
+# gxpd/gxpc capture time at which processes started/ended at remote daemons. xmake now receives and displays them. xmake now never misses IO from jobs. ChangeLog 2010-05-19
+#
 # Revision 1.78  2010/05/18 12:39:11  ttaauu
 # xmake --translate_dir option. 2010-05-18
 #
