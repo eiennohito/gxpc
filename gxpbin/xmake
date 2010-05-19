@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.79 2010/05/19 03:41:11 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.80 2010/05/19 08:43:20 ttaauu Exp $
 # $Name:  $
 #
 
@@ -3155,7 +3155,7 @@ class xmake_server:
         for run in runs:
             run.finish(cur_time, 
                        run_status.interrupted, 
-                       self.opts.exit_status_interrupted, None, None, None)
+                       self.opts.exit_status_interrupted, None, None, None, None)
         assert len(self.runs_running) == 0
         if self.logfp:
             self.LOG("exiting %d waiting processes\n" % len(self.runs_todo))
@@ -3497,6 +3497,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.80  2010/05/19 08:43:20  ttaauu
+# *** empty log message ***
+#
 # Revision 1.79  2010/05/19 03:41:11  ttaauu
 # gxpd/gxpc capture time at which processes started/ended at remote daemons. xmake now receives and displays them. xmake now never misses IO from jobs. ChangeLog 2010-05-19
 #
