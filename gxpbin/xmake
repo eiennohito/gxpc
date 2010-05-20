@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.80 2010/05/19 08:43:20 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.81 2010/05/20 05:53:29 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2544,7 +2544,7 @@ class xmake_server:
         elif rid == self.id_gen.leave:
             # notifications saying a worker has received leave msg
             if man:
-                msg = ("worker %s in state %d will leave after current work\n"
+                msg = ("worker %s in state %s will leave after current work\n"
                        % (man_name, man.state))
                 if self.logfp: self.LOG(msg)
                 Es("xmake: %s" % msg)
@@ -3316,9 +3316,20 @@ class xmake_server:
     def safe_remove_socket(self, so_name):
         os.remove(so_name)
 
+    def get_session_suffix(self, base):
+        # base:
+        # gxp-99822213-session-hongo100-tau-2010-05-20-14-16-27-8549-21708479
+        m = re.match("gxp-\d+-session-[^-]+-[^-]+-(.*)", base)
+        if m is None: return None
+        return m.group(1)
+    
     def find_xmake_sockets(self, pattern):
         dire,base = os.path.split(self.session)
-        xmake_socket_pat = re.compile("xmake-(?P<pid>\d+)-\d+-%s" % base)
+        # gxp-99822213-session-hongo100-tau-2010-05-20-14-16-27-8549-21708479
+        # xmake-12528-2010-05-20-14-16-27-8549-21708479
+        suffix = self.get_session_suffix(base)
+        if suffix is None: return []
+        xmake_socket_pat = re.compile("xmake-(?P<pid>\d+)-%s" % suffix)
         live_socks = []
         for f in os.listdir(dire):
             # check if f appears a xmake socket
@@ -3497,6 +3508,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.81  2010/05/20 05:53:29  ttaauu
+# *** empty log message ***
+#
 # Revision 1.80  2010/05/19 08:43:20  ttaauu
 # *** empty log message ***
 #

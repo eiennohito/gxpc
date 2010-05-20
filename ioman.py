@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.13 2010/05/19 03:41:10 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.14 2010/05/20 05:53:29 ttaauu Exp $
 # $Name:  $
 #
 
@@ -111,7 +111,7 @@ def delete_log_file():
 
 def apply_no_intr(f, args):
     keyboard = 0
-    for i in range(0, 10):
+    for i in range(0, 500):
         try:
             return apply(f, args)
         except EnvironmentError,e:
@@ -2531,6 +2531,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.14  2010/05/20 05:53:29  ttaauu
+# *** empty log message ***
+#
 # Revision 1.13  2010/05/19 03:41:10  ttaauu
 # gxpd/gxpc capture time at which processes started/ended at remote daemons. xmake now receives and displays them. xmake now never misses IO from jobs. ChangeLog 2010-05-19
 #
