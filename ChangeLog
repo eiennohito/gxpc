@@ -63,6 +63,18 @@
 	worker_time_end to receive when a process started/ended at workers.
 	many associated changes to display these information.
 	* gxpbin/xmake (Run.add_io): now it never misses IO from processes.
-
-	
-	
+2010-05-20 Taura
+	the following modifications together support --rlimit option
+	to e command
+	* gxpc.py (e_cmd_opts): added rlimit option
+	* gxpc.py (cmd_interpreter.do_e_like): pass rlimit option to 
+	spawn generic
+	* gxpm.py (action_createproc.__init__):
+	* gxpm.py (action_createpeer.__init__): take rlimits argument
+	* ioman.py (ioman.spawn_generic): take rlimits and pass it
+	to child_xxxx class constructor (below)
+	* ioman.py (child_process.run): call impose_rlimits
+	* ioman.py (child_process.impose_limits): impose rlimits passed
+	to spawn generic
+	* gxpd.py (child_task_process.__init__):
+	* gxpd.py (child_peer.__init__): take rlimits argument

@@ -11,11 +11,11 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.14 2010/05/20 05:53:29 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.15 2010/05/20 14:56:56 ttaauu Exp $
 # $Name:  $
 #
 
-import errno,fcntl,os,random,re,select,signal,socket,string,sys
+import errno,fcntl,os,random,re,resource,select,signal,socket,string,sys
 import time,types
 # import profile,pstats
 
@@ -1919,7 +1919,7 @@ class child_process(process_base):
     the new process should be connected via pipes or sockets.
     """
     exec_failed = 255
-    def __init__(self, cmd, pipe_desc, env, cwd):
+    def __init__(self, cmd, pipe_desc, env, cwd, rlimits):
         """
         cmd : list given to execvp (i.e., os.execvp(cmd[0], cmd))
 
@@ -1943,6 +1943,7 @@ class child_process(process_base):
         self.pipe_desc = pipe_desc
         self.env = env        # environment (may be None)
         self.cwd = cwd        # directory (may be None)
+        self.rlimits = rlimits
         self.pid = None       # process id
         self.term_status = None
         self.rusage = None
@@ -2001,6 +2002,80 @@ class child_process(process_base):
             pipe.child_close()
             safe[pipe] = 1
 
+    def parse_smart_size(self, x):
+        m = re.match("(-?[\.\d]*)([kKmMgGtTpPeE])?$", x)
+        if m is None: return None
+        a = m.group(1)
+        b = m.group(2)
+        if b is not None:
+            b = string.lower(b)
+        try:
+            a = float(a)
+        except:
+            return None
+        if b is None:
+            pass
+        elif b == "k":
+            a = a * (1 << 10)
+        elif b == "m":
+            a = a * (1 << 20)
+        elif b == "g":
+            a = a * (1 << 30)
+        elif b == "t":
+            a = a * (1 << 40)
+        elif b == "p":
+            a = a * (1 << 50)
+        elif b == "e":
+            a = a * (1 << 60)
+        else:
+            assert 0
+        return int(a)
+
+    def impose_rlimits(self, rlimits):
+        for rlimit in rlimits:
+            self.impose_rlimit(rlimit)
+
+    def impose_rlimit(self, rlimit):
+        # rlimit is a string of the form
+        # KIND:VALUE.  right now we only understand
+        # strings passable to setrlimit. more specifically,
+        # KIND is a string such that RLIMIT_KIND is a legitimate
+        # argument to setrlimit (e.g., AS, CORE, CPU, DATA, FSIZE, ...)
+        # VALUE is either NUM or NUM:NUM
+        kind_value = string.split(rlimit, ":", 2)
+        if len(kind_value) == 2:
+            [ kind,soft_ ] = kind_value
+            soft = self.parse_smart_size(soft_)
+            hard = -1
+        elif len(kind_value) == 3:
+            [ kind,soft_,hard_ ] = kind_value
+            soft = self.parse_smart_size(soft_)
+            hard = self.parse_smart_size(hard_)
+        else:
+            soft = hard = None
+        if soft is None or hard is None:
+            os.write(2, 
+                     "ignored invalid rlimit string (%s). "
+                     "must be kind:num[:num]\n"
+                     % rlimit)
+            return
+        k = resource.__dict__.get(string.upper(kind))
+        if k is None:
+            os.write(2, 
+                     "ignored invalid resource (%s). must be RLIMIT_XXX "
+                     "understood by setrlimit\n"
+                     % kind)
+            return
+        try:
+            resource.setrlimit(k, (soft,hard))
+        except ValueError,e:
+            os.write(2, 
+                     "could not set resource limit %s to %s %s\n"
+                     % (k, (soft, hard), e.args))
+        os.write(2, 
+                 "set resource limit %s to %s\n"
+                 % (k, (soft, hard)))
+
     def run(self):
         if dbg>=2:
             LOG("child_process.run : running %s\n" \
@@ -2055,6 +2130,9 @@ class child_process(process_base):
                         os._exit(1)
                     else:
                         raise
+            # impose rlimit
+            self.impose_rlimits(self.rlimits)
+            # 
             os.setpgrp()
             # From 2007. 10.25 and on, we create a process group
             # for each subprocess created by gxpd.py
@@ -2253,7 +2331,7 @@ class ioman:
                 % (pid, len(self.processes)))
         return p
 
-    def spawn_generic(self, mk_process, cmd, pipe_desc, env, cwd):
+    def spawn_generic(self, mk_process, cmd, pipe_desc, env, cwd, rlimits):
         """
         mk_process : constructor of a subclass of child_process
         cmd : a list like [ 'ssh', 'istbs001', 'hostname' ]
@@ -2264,7 +2342,7 @@ class ioman:
         specified via pipe_desc. give it environment env.
         
         """
-        p = mk_process(cmd, pipe_desc, env, cwd)
+        p = mk_process(cmd, pipe_desc, env, cwd, rlimits)
         err,msg = p.run()
         if err == 0:            # OK
             self.add_process(p)
@@ -2531,6 +2609,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.15  2010/05/20 14:56:56  ttaauu
+# e supports --rlimit option. e.g., --rlimit rlimit_as:2g ChangeLog 2010-05-20
+#
 # Revision 1.14  2010/05/20 05:53:29  ttaauu
 # *** empty log message ***
 #

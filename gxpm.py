@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpm.py,v 1.8 2010/05/19 03:41:10 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpm.py,v 1.9 2010/05/20 14:56:56 ttaauu Exp $
 # $Name:  $
 #
 
@@ -197,12 +197,13 @@ class action_createproc(action):
     it is a list of a record that loooks like...
 
     """
-    def __init__(self, rid, cwd, env, cmd, pipes):
+    def __init__(self, rid, cwd, env, cmd, pipes, rlimits):
         self.rid = rid          # relative process id
         self.cwd = cwd          # 
         self.env = env
         self.cmd = cmd
         self.pipes = pipes
+        self.rlimits = rlimits
 
 class action_createpeer(action):
     """
@@ -210,12 +211,13 @@ class action_createpeer(action):
     is it should create a child daemon, so it should
     notify the parent when the daemon brought up.
     """
-    def __init__(self, rid, cwd, env, cmd, pipes):
+    def __init__(self, rid, cwd, env, cmd, pipes, rlimits):
         self.rid = rid
         self.cwd = cwd
         self.env = env
         self.cmd = cmd
         self.pipes = pipes
+        self.rlimits = rlimits
 
 class action_feed(action):
     """
@@ -505,6 +507,9 @@ class syn:
         self.event = event
 
 # $Log: gxpm.py,v $
+# Revision 1.9  2010/05/20 14:56:56  ttaauu
+# e supports --rlimit option. e.g., --rlimit rlimit_as:2g ChangeLog 2010-05-20
+#
 # Revision 1.8  2010/05/19 03:41:10  ttaauu
 # gxpd/gxpc capture time at which processes started/ended at remote daemons. xmake now receives and displays them. xmake now never misses IO from jobs. ChangeLog 2010-05-19
 #

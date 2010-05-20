@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.17 2010/05/19 03:41:10 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.18 2010/05/20 14:56:56 ttaauu Exp $
 # $Name:  $
 #
 
@@ -152,10 +152,10 @@ class child_peer(ioman.child_process,gxp_peer_base):
     upgrading_status_in_progress = 1
     upgrading_status_succeeded = 2
     upgrading_status_failed = 3
-    def __init__(self, cmd, pipe_desc, env, cwd):
+    def __init__(self, cmd, pipe_desc, env, cwd, rlimits):
         gxp_peer_base.__init__(self, "", # peer_name = ""
                                gxp_peer_base.STATE_IN_PROGRESS, 0)
-        ioman.child_process.__init__(self, cmd, pipe_desc, env, cwd)
+        ioman.child_process.__init__(self, cmd, pipe_desc, env, cwd, rlimits)
         self.target_label = None
         self.hostname = None
         self.task = None
@@ -169,8 +169,8 @@ class child_task_process(ioman.child_process):
     This class represents a non-gxp child process. That is,
     processes invoked as a result of `e' commands etc.
     """
-    def __init__(self, cmd, pipe_desc, env, cwd):
-        ioman.child_process.__init__(self, cmd, pipe_desc, env, cwd)
+    def __init__(self, cmd, pipe_desc, env, cwd, rlimits):
+        ioman.child_process.__init__(self, cmd, pipe_desc, env, cwd, rlimits)
         self.task = None
         self.rid = None
 
@@ -1224,7 +1224,8 @@ class gxpd(ioman.ioman):
         # given by --export option of e
         if action.env is not None:
             env.update(action.env)
-        p,msg = self.spawn_generic(process_class, shcmd, pipe_desc, env, cwd)
+        p,msg = self.spawn_generic(process_class, shcmd, pipe_desc, 
+                                   env, cwd, action.rlimits)
         if p is None:
             m = gxpm.up(self.gupid, task.tid, gxpm.event_info(1, msg))
             task.forward_up(m, gxpm.unparse(m))
@@ -2270,6 +2271,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.18  2010/05/20 14:56:56  ttaauu
+# e supports --rlimit option. e.g., --rlimit rlimit_as:2g ChangeLog 2010-05-20
+#
 # Revision 1.17  2010/05/19 03:41:10  ttaauu
 # gxpd/gxpc capture time at which processes started/ended at remote daemons. xmake now receives and displays them. xmake now never misses IO from jobs. ChangeLog 2010-05-19
 #

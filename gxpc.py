@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.59 2010/05/19 03:41:10 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.60 2010/05/20 14:56:56 ttaauu Exp $
 # $Name:  $
 #
 
@@ -735,6 +735,7 @@ class e_cmd_opts(opt.cmd_opts):
         self.rid = ("s", None)
         self.dir = ("s", None)
         self.export = ("s*", [])
+        self.rlimit = ("s*", [])
         # ------
         # self.join = (None, 0)
         # short options
@@ -3721,6 +3722,8 @@ Options: (for e, mw, and ep):
     broadcast stdout of the MASTER to FD1 of CMD.
   --pty
     assign pseudo tty for stdin/stdout/stderr of CMD
+  --rlimit rlimit_xxx:soft[:hard]
+    apply setrlimit(rlimit_xxx, soft, hard)
 
 By default,
 
@@ -4020,7 +4023,8 @@ See Also:
             if transformer is not None:
                 shcmd = transformer(shcmd)
             act = gxpm.action_createproc(opts.rid, opts.dir,
-                                         opts.export, shcmd, pipes)
+                                         opts.export, shcmd, pipes, 
+                                         opts.rlimit)
             tid = self.send_action(tgt, self.opts.tid, act,
                                    self.opts.persist,
                                    self.opts.keep_connection)
@@ -4678,7 +4682,7 @@ See Also:
             actions = []
             for nid,tgt,cmd in cmds:
                 # cwd/env = None
-                a = gxpm.action_createpeer(nid, None, None, cmd, pipes)
+                a = gxpm.action_createpeer(nid, None, None, cmd, pipes, [])
                 actions.append(a)
             clauses.append(gxpm.clause(src.name, actions))
         # calc the target of this particular msg (include the src
@@ -5367,6 +5371,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.60  2010/05/20 14:56:56  ttaauu
+# e supports --rlimit option. e.g., --rlimit rlimit_as:2g ChangeLog 2010-05-20
+#
 # Revision 1.59  2010/05/19 03:41:10  ttaauu
 # gxpd/gxpc capture time at which processes started/ended at remote daemons. xmake now receives and displays them. xmake now never misses IO from jobs. ChangeLog 2010-05-19
 #
