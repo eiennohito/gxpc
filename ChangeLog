@@ -78,3 +78,8 @@
 	to spawn generic
 	* gxpd.py (child_task_process.__init__):
 	* gxpd.py (child_peer.__init__): take rlimits argument
+2010-05-21 Taura
+	xmake now tracke maxrss, ixrss, idrss, isrss, which are useless (all zeros).
+	they go into work.db just in case, but do not show up in html.
+	* xmake (Run): added maxrss, ixrss, idrss, and isrss fields and other
+	associated changes.

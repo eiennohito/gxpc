@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.81 2010/05/20 05:53:29 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.82 2010/05/21 04:48:24 ttaauu Exp $
 # $Name:  $
 #
 
@@ -478,6 +478,10 @@ class Run:
         self.worker_time_end = None
         self.utime = None               # user time
         self.stime = None               # sys time
+        self.maxrss = None
+        self.ixrss = None
+        self.idrss = None
+        self.isrss = None
         self.minflt = None              # minor faults
         self.majflt = None              # major faults
         self.io = ""
@@ -516,6 +520,10 @@ class Run:
                 self.worker_time_end,
                 self.utime,
                 self.stime,
+                self.maxrss,
+                self.ixrss,
+                self.idrss,
+                self.isrss,
                 self.minflt,
                 self.majflt,
                 self.io,
@@ -543,6 +551,10 @@ class Run:
          self.worker_time_end,
          self.utime,
          self.stime,
+         self.maxrss,
+         self.ixrss,
+         self.idrss,
+         self.isrss,
          self.minflt,
          self.majflt,
          self.io,
@@ -650,6 +662,10 @@ class Run:
         if rusage:
             self.utime = rusage[0]
             self.stime = rusage[1]
+            self.maxrss = rusage[2]
+            self.ixrss = rusage[3]
+            self.idrss = rusage[4]
+            self.isrss = rusage[5]
             self.minflt = rusage[6]
             self.majflt = rusage[7]
             self.rusage = string.join(map(str, rusage), ":")
@@ -1073,6 +1089,30 @@ class work_db_mem(work_db_base):
         self.finished_failed_works = [] # <= limit
         self.finished_recent_works = [] # <= limit
         self.wp = open(os.path.join(dire, work_db), "wb")
+        self.wp.write('work_idx\t'
+                      'cmd\t'
+                      'queued\t'
+                      'run_idx\t'
+                      'status\t'
+                      'worker\t'
+                      'local start time\t'
+                      'local end time\t'
+                      'local elapsed time\t'
+                      'remote start time\t'
+                      'remote end time\t'
+                      'remote elapsed time\t'
+                      'user time\t'
+                      'system time\t'
+                      'max rss\t'
+                      'shared\t'
+                      'unshared\t'
+                      'stack\t'
+                      'minor faults\t'
+                      'major faults\t'
+                      'pid\t'
+                      'io'
+                      '\n')
+
 
     def add_work(self, work):
         """
@@ -1138,6 +1178,10 @@ class work_db_mem(work_db_base):
                 "%d\t" 
                 "%d\t" 
                 "%d\t" 
+                "%d\t" 
+                "%d\t" 
+                "%d\t" 
+                "%d\t" 
                 "%s" %
                 (work.work_idx,
                  sr(sr(work.cmd, "\t", " "), "\n", " "),
@@ -1152,6 +1196,10 @@ class work_db_mem(work_db_base):
                  run.worker_time_start,
                  run.utime,
                  run.stime,
+                 run.maxrss,
+                 run.ixrss,
+                 run.idrss,
+                 run.isrss,
                  run.minflt,
                  run.majflt,
                  run.pid,
@@ -1314,7 +1362,8 @@ create table runs (work_idx integer, run_idx integer, status text,
                    exit_status integer, termsig integer, man_name text,
                    time_start real, time_end real, time_since_start real,
                    worker_time_start real, worker_time_end real, 
-                   utime real, stime real,
+                   utime real, stime real, 
+                   maxrss integer, ixrss integer, idrss integer, isrss integer,
                    minflt integer, majflt integer,
                    io text, io_dir text, io_file text)
 """)
@@ -1339,7 +1388,7 @@ create index idx_runs on runs(run_idx)
         """
         conn = self.conn
         conn.execute("""
-insert into runs values (?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?)
+insert into runs values (?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?)
 """, run.save_to_tuple())
 
     def update_run(self, run):
@@ -1352,7 +1401,9 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
                 termsig = ?, man_name = ?,
                 time_start = ?, time_end = ?, time_since_start = ?,
                 worker_time_start = ?, worker_time_end = ?, 
-                utime = ?, stime = ?, minflt = ?, majflt = ?,
+                utime = ?, stime = ?, 
+                maxrss = ?, ixrss = ?, idrss = ?, isrss = ?,
+                minflt = ?, majflt = ?,
                 io = ?, io_dir = ?, io_file = ?
             where run_idx = ?
 """, (run.save_to_tuple() + (run.run_idx,)))
@@ -1457,6 +1508,12 @@ class work_table_generator:
                  "<td>remote elapsed time</td>"
                  "<td>user time</td>"
                  "<td>system time</td>"
+                 "<!--"
+                 "<td>max rss</td>"
+                 "<td>shared</td>"
+                 "<td>unshared data</td>"
+                 "<td>stack</td>"
+                 "-->"
                  "<td>minor faults</td>"
                  "<td>major faults</td>"
                  "<td>io</td>"
@@ -1569,6 +1626,12 @@ class work_table_generator:
                      '<td>%s</td>'
                      '<td>%s</td>'
                      '<td>%s</td>'
+                     '<!--'
+                     '<td>%s</td>'
+                     '<td>%s</td>'
+                     '<td>%s</td>'
+                     '<td>%s</td>'
+                     '-->'
                      '<td>%s</td>'
                      '<td>%s</td>'
                      '<td>%s</td>'
@@ -1585,6 +1648,12 @@ class work_table_generator:
                                          run.worker_time_start),
                       self.pr_float(run.utime),
                       self.pr_float(run.stime),
+
+                      self.pr_int(run.maxrss),
+                      self.pr_int(run.ixrss),
+                      self.pr_int(run.idrss),
+                      self.pr_int(run.isrss),
+
                       self.pr_int(run.minflt),
                       self.pr_int(run.majflt),
                       self.pr_str_safe_len_limit(run.io, 1024),
@@ -3508,6 +3577,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.82  2010/05/21 04:48:24  ttaauu
+# xmake tracks and records maxrss, ixrss, idrss, and isrss. ChangeLog 2010-05-21
+#
 # Revision 1.81  2010/05/20 05:53:29  ttaauu
 # *** empty log message ***
 #
