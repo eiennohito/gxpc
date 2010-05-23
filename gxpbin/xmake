@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.82 2010/05/21 04:48:24 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.83 2010/05/23 09:02:37 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1159,6 +1159,11 @@ class work_db_mem(work_db_base):
             elif run.termsig is not None:
                 return "killed %d" % run.termsig
         return run.status
+    def pr_worker_elapsed(self, start, end):
+        if start is None:
+            return ""
+        else:
+            return return "%s" % (end - start)
 
     def mk_work_run_tuple(self, work, run):
         sr = string.replace
@@ -1192,8 +1197,9 @@ class work_db_mem(work_db_base):
                  run.time_start,
                  run.time_end,
                  run.time_since_start,
-                 run.worker_time_end,
                  run.worker_time_start,
+                 run.worker_time_end,
+                 self.pr_worker_elapsed(run.worker_time_start, run.worker_time_end),
                  run.utime,
                  run.stime,
                  run.maxrss,
@@ -1665,13 +1671,13 @@ class work_table_generator:
         wp.write(r'''<a name="Job Lists Legend">
 <h1>Job Lists Legend</h1>
 <ul>
-<li><b>queued:</b> master's time at which the work is received by the master</li>
+<li><b>queued:</b> master time at which the work is received by the master</li>
 <li><b>worker:</b> the first word of GUPID of the worker. normally host name</li>
-<li><b>local start time:</b> master's time at which the master sent the job to a worker</li>
-<li><b>local end time:</b> master's time at which the master received the notification that the job has finished</li>
+<li><b>local start time:</b> master time at which the master sent the job to a worker</li>
+<li><b>local end time:</b> master time at which the master received the notification that the job has finished</li>
 <li><b>local elapsed time:</b> for finished jobs, local end time - local start time. for running jobs,current time - local start time</li>
-<li><b>remote start time:</b> worker's time at which the worker really spawned the job. see note on time skew below</li>
-<li><b>remote end time:</b> worker's time at which the worker really detected the end of the job. see note on time skew below</li>
+<li><b>remote start time:</b> worker time at which the worker really spawned the job. see note on time skew below</li>
+<li><b>remote end time:</b> worker time at which the worker really detected the end of the job. see note on time skew below</li>
 <li><b>remote elapsed time:</b> remote end time - remote start time</li>
 <li><b>user/system time:</b> user CPU time as obtained by getrusage</li>
 <li><b>minor/major faults:</b> minor/major faults as obtained by getrusage</li>
@@ -2021,8 +2027,8 @@ td.man_3_gone {
 <tr><td>pid</td><td>%s</td></tr>
 <tr><td>start time</td><td>%s</td></tr>
 <tr><td>elapsed time (sec)</td><td>%.2f</td></tr>
-<tr><td>waiting / total jobs</td><td>%d / %d</td></tr>
-<tr><td>free / total workers</td><td>%d / %d</td></tr>
+<tr><td>waiting/running/total jobs</td><td>%d / %d / %d</td></tr>
+<tr><td>free/total workers</td><td>%d / %d</td></tr>
 <tr><td>xmake args</td><td>%s</td></tr>
 <tr><td>make args</td><td>%s</td></tr>
 <tr><td>make pid</td><td>%s</td></tr>
@@ -2041,7 +2047,7 @@ td.man_3_gone {
        server.self_pid, 
        time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(server.time_start)),
        server.cur_time(),
-       len(server.runs_todo), len(server.works),
+       len(server.runs_todo), len(server.runs_running), len(server.works),
        len(server.men_free), server.men_total_capacity(),
        server.xmake_args, server.make_args, 
        server.make_pid, self.status_to_str(server.make_status),
@@ -3577,6 +3583,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.83  2010/05/23 09:02:37  ttaauu
+# small bug fix in work.db generation
+#
 # Revision 1.82  2010/05/21 04:48:24  ttaauu
 # xmake tracks and records maxrss, ixrss, idrss, and isrss. ChangeLog 2010-05-21
 #

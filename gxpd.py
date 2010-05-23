@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.18 2010/05/20 14:56:56 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.19 2010/05/23 09:02:36 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1721,8 +1721,14 @@ class gxpd(ioman.ioman):
                       % (len(msg), msg[0:30]))
         m = gxpm.parse(msg)
         if isinstance(m, gxpm.up):
-            task = self.tasks[m.tid]
-            task.forward_up(m, msg)
+            task = self.tasks.get(m.tid)
+            if task:
+                task.forward_up(m, msg)
+            else:
+                # should not happen,
+                # but debug them later
+                ioman.LOG("handle_msg %d bytes [%s ...] to non-existing task %s\n" \
+                          % (len(msg), msg[0:30], m.tid))
         elif isinstance(m, gxpm.syn):
             self.handle_syn(ch, m)
         elif isinstance(m, gxpm.down):
@@ -2271,6 +2277,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.19  2010/05/23 09:02:36  ttaauu
+# small bug fix in work.db generation
+#
 # Revision 1.18  2010/05/20 14:56:56  ttaauu
 # e supports --rlimit option. e.g., --rlimit rlimit_as:2g ChangeLog 2010-05-20
 #
