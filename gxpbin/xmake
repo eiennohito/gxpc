@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.84 2010/05/23 09:25:10 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.85 2010/05/23 15:08:09 ttaauu Exp $
 # $Name:  $
 #
 
@@ -651,9 +651,11 @@ class Run:
         work = self.work
         server = work.server
         self.time_end = cur_time
-        if self.time_start is not None:
-            # may be none if the job has not started
-            self.time_since_start = cur_time - self.time_start
+        if self.time_start is None:
+            # none if the job has not started.
+            # we consider them just started now
+            self.time_start = cur_time
+        self.time_since_start = self.time_end - self.time_start
         self.status = status
         self.exit_status = exit_status
         self.termsig = termsig
@@ -2662,8 +2664,8 @@ class xmake_server:
             exit_status = os.WEXITSTATUS(wait_status)
         elif os.WIFSIGNALED(wait_status):
             termsig = os.WTERMSIG(wait_status)
-        run.finish(cur_time,
-                   run_status.finished, exit_status, termsig, rusage, 
+        run.finish(cur_time, run_status.finished,
+                   exit_status, termsig, rusage, 
                    worker_time_start, worker_time_end)
 
 
@@ -2897,8 +2899,8 @@ class xmake_server:
                 man.state = man_state.gone
                 n = len(man.runs_running)
                 for run in man.runs_running.values():
-                    run.finish(cur_time, 
-                               status, exit_status, None, None, None)
+                    run.finish(cur_time, status, exit_status,
+                               None, None, None, None)
                     assert run.run_idx not in man.runs_running
                     assert run.run_idx not in self.runs_running
                     assert run.man is None
@@ -3230,17 +3232,17 @@ class xmake_server:
         if self.logfp:
             self.LOG("exiting %d outstanding processes\n" % len(runs))
         for run in runs:
-            run.finish(cur_time, 
-                       run_status.interrupted, 
+            run.finish(cur_time, run_status.interrupted, 
                        self.opts.exit_status_interrupted, None, None, None, None)
-        assert len(self.runs_running) == 0
+        # not true because run is delete only after
+        # getting EOFs from stdout/err
+        # assert len(self.runs_running) == 0
         if self.logfp:
             self.LOG("exiting %d waiting processes\n" % len(self.runs_todo))
         while len(self.runs_todo) > 0:
             run = self.runs_todo.pop(0)
-            run.finish(cur_time,
-                       run_status.no_throw, 
-                       self.opts.exit_status_no_throw, None, None, None)
+            run.finish(cur_time, run_status.no_throw, 
+                       self.opts.exit_status_no_throw, None, None, None, None)
         
     def determine_exit_status(self):
         s = self.make_status
@@ -3585,6 +3587,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.85  2010/05/23 15:08:09  ttaauu
+# bug fix ChangeLog 2010-05-24
+#
 # Revision 1.84  2010/05/23 09:25:10  ttaauu
 # *** empty log message ***
 #
