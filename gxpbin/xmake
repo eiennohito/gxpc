@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.83 2010/05/23 09:02:37 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.84 2010/05/23 09:25:10 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1159,11 +1159,12 @@ class work_db_mem(work_db_base):
             elif run.termsig is not None:
                 return "killed %d" % run.termsig
         return run.status
+
     def pr_worker_elapsed(self, start, end):
         if start is None:
             return ""
         else:
-            return return "%s" % (end - start)
+            return "%s" % (end - start)
 
     def mk_work_run_tuple(self, work, run):
         sr = string.replace
@@ -1177,7 +1178,8 @@ class work_db_mem(work_db_base):
                 "%f\t" 
                 "%f\t" 
                 "%f\t" 
-                "%f\t" 
+                "%f\t"
+                "%s\t"
                 "%f\t" 
                 "%f\t" 
                 "%d\t" 
@@ -3583,6 +3585,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.84  2010/05/23 09:25:10  ttaauu
+# *** empty log message ***
+#
 # Revision 1.83  2010/05/23 09:02:37  ttaauu
 # small bug fix in work.db generation
 #
