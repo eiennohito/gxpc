@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.15 2010/05/20 14:56:56 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.16 2010/05/25 18:13:58 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1919,7 +1919,7 @@ class child_process(process_base):
     the new process should be connected via pipes or sockets.
     """
     exec_failed = 255
-    def __init__(self, cmd, pipe_desc, env, cwd, rlimits):
+    def __init__(self, cmd, pipe_desc, env, cwds, rlimits):
         """
         cmd : list given to execvp (i.e., os.execvp(cmd[0], cmd))
 
@@ -1941,8 +1941,8 @@ class child_process(process_base):
         process_base.__init__(self)
         self.cmd = cmd
         self.pipe_desc = pipe_desc
-        self.env = env        # environment (may be None)
-        self.cwd = cwd        # directory (may be None)
+        self.env = env          # environment (may be None)
+        self.cwds = cwds        # list of directories 
         self.rlimits = rlimits
         self.pid = None       # process id
         self.term_status = None
@@ -2078,8 +2078,8 @@ class child_process(process_base):
 
     def run(self):
         if dbg>=2:
-            LOG("child_process.run : running %s\n" \
-                % string.join(self.cmd))
+            LOG("child_process.run : running %s %s %s\n" \
+                % (string.join(self.cmd), self.cwds, self.env))
         pipes = []
         for pipe_con,parent_use,child_use in self.pipe_desc:
             # close-on-exec flags?
@@ -2116,20 +2116,25 @@ class child_process(process_base):
                 env = os.environ
                 for k,v in self.env.items():
                     env[k] = v
-            # change dir
-            if self.cwd is not None:
-                cwd = os.path.expandvars(os.path.expanduser(self.cwd))
+            # change dir to one of those given
+            # check an error
+            errors = []
+            for cwd in self.cwds:  # if cwd is not None:
+                # cwd = os.path.expandvars(os.path.expanduser(self.cwd))
+                # cwd = self.cwd
                 try:
                     os.chdir(cwd)
+                    errors = [] # forget past errors
+                    break
                 except OSError,e:
-                    if e.args[0] == errno.ENOENT:
-                        os.write(2,
-                                 ("Could not set current directory to %s, "
-                                  "perhaps you deleted it after cd there\n" %
-                                  self.cwd))
-                        os._exit(1)
-                    else:
-                        raise
+                    errors.append((cwd, e))
+                    continue
+            if len(errors) > 0:
+                os.write(2, ("Could not set current directory to any of %s\n" %
+                             self.cwds))
+                for cwd,e in errors:
+                    os.write(2, "%s %s\n" % (cwd, e.args))
+                os._exit(1)
             # impose rlimit
             self.impose_rlimits(self.rlimits)
             # 
@@ -2331,7 +2336,7 @@ class ioman:
                 % (pid, len(self.processes)))
         return p
 
-    def spawn_generic(self, mk_process, cmd, pipe_desc, env, cwd, rlimits):
+    def spawn_generic(self, mk_process, cmd, pipe_desc, env, cwds, rlimits):
         """
         mk_process : constructor of a subclass of child_process
         cmd : a list like [ 'ssh', 'istbs001', 'hostname' ]
@@ -2342,7 +2347,7 @@ class ioman:
         specified via pipe_desc. give it environment env.
         
         """
-        p = mk_process(cmd, pipe_desc, env, cwd, rlimits)
+        p = mk_process(cmd, pipe_desc, env, cwds, rlimits)
         err,msg = p.run()
         if err == 0:            # OK
             self.add_process(p)
@@ -2609,6 +2614,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.16  2010/05/25 18:13:58  ttaauu
+# support --translate_dir src,dst1,dst2,... and associated changes. ChangeLog 2010-05-25
+#
 # Revision 1.15  2010/05/20 14:56:56  ttaauu
 # e supports --rlimit option. e.g., --rlimit rlimit_as:2g ChangeLog 2010-05-20
 #

@@ -86,4 +86,20 @@
 2010-05-24 Taura
 	* xmake (xmake_server.abandon_runs_unfinished): fixed bugs calling finish
 	with the wrong number of arguments
-	
+2010-05-25 Taura
+	* gxpc.py (e_cmd_opts.__init__):
+	* gxpc.py (cmd_interpreter.do_e_like):
+	* gxpc.py (cmd_interpreter.send_explore_msg): 
+	gxpc now support multiple --dir options, which set current dir to
+	the first one found on each worker.
+	* expectd.py (expectd.spawn): give right arg to spawn_generic
+	* gxpd.py (gxpd.action_create_proc_or_peer): merge --dir options and
+	directory in the session 
+	* gxpm.py (action_createproc):
+	* gxpm.py (action_createpeer):
+	* ioman.py (child_process.__init__):
+	cwd is now cwds, reflecting the fact that it is now a list of directories
+	* xmake (xmake_server):
+	now support --translate_dir src,dst,dst,... instead of 
+	--translate_dir src,dst.  src,dst1,dst2,dst3 is translated into
+	--dir dst1' --dir dst2' --dir dst3' to gxpc e command.

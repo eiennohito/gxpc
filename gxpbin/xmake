@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.85 2010/05/23 15:08:09 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.86 2010/05/25 18:13:58 ttaauu Exp $
 # $Name:  $
 #
 
@@ -283,16 +283,15 @@ class xmake_cmd_opts(opt2.cmd_opts):
         # add default translation
         translate_dir = []
         for src_dst in self.translate_dir:
-            src_and_dst = string.split(src_dst, ",", 1)
-            if len(src_and_dst) == 1:
-                Es("xmake : ignore invalid translate_dir (%s). should be 'src=dst'\n")
+            src_and_dsts = string.split(src_dst, ",")
+            if len(src_and_dsts) == 1:
+                Es("xmake : ignore invalid translate_dir (%s). should be 'src,dst,dst,...'\n")
                 continue
-            [ src,dst ] = src_and_dst
-            translate_dir.append((src, dst))
+            translate_dir.append((src_and_dsts[0], src_and_dsts[1:]))
         # translate home dir to ~
         home = os.environ.get("HOME")
         if home:
-            translate_dir.append((home, "~"))
+            translate_dir.append((home, [ "~/" ]))
         self.translate_dir = translate_dir
         
     def usage(self):
@@ -576,8 +575,10 @@ class Run:
         # build gxpc command line
         cmdx = [ server.opts.gxpc, "--withall", "--save_session", "0",
                  "e", "-g", self.man_name, "--tid", server.tid,
-                 "--rid", rid, "--keep_connection", "0",
-                 "--dir", work.cwd ]
+                 "--rid", rid, "--keep_connection", "0" ]
+        for cwd in work.dirs:
+            cmdx.append("--dir")
+            cmdx.append(cwd)
         for var_val in work.envs:
             cmdx.append("--export")
             cmdx.append(var_val)
@@ -723,17 +724,17 @@ class work_attribute_parser:
 
 
 class Work:
-    def init(self, work_idx, cmd, cwd, envs, cur_time, server, conn):
+    def init(self, work_idx, cmd, dirs, envs, cur_time, server, conn):
         """
         cmd : command line (string)
-        cwd  : working directory of the command (string)
+        dirs  : working directories of the command (string)
         envs : environment that must be passed to the command
         time_req : time requested
         conn : connection to the client (socket object)
         """
         self.work_idx = work_idx
         self.cmd = cmd
-        self.cwd = cwd
+        self.dirs = dirs
         self.envs = envs + [ ("GXP_MAKE_WORK_IDX=%d" % work_idx) ]
         self.time_req = cur_time
         # volatile fields
@@ -747,15 +748,17 @@ class Work:
         # environment list from database, but we do not care because
         # such works must have been finished
         envs = string.join(self.envs, ",")
-        return (self.work_idx, self.cmd, self.cwd, envs, self.time_req)
+        dirs = string.join(self.dirs, ",")
+        return (self.work_idx, self.cmd, dirs, envs, self.time_req)
 
     def restore_from_tuple(self, tup):
         (self.work_idx, 
          self.cmd,
-         self.cwd,
+         dirs,
          envs,
          self.time_req) = tup
         self.envs = string.split(envs, ",")
+        self.dirs = string.split(dirs, ",")
         return self
         
     def parse_attributes(self, cmd):
@@ -2496,12 +2499,19 @@ class xmake_server:
         return elem
 
     def translate_dir(self, cwd):
-        dire = cwd
-        for src,dst in self.opts.translate_dir:
+        """
+        given --translate_dir A,B1,B2,... convert it to
+        --dir B1' --dir B2' ...
+        """
+        for src,dsts in self.opts.translate_dir:
+            # look for src that match dire
             n = len(src)
-            if dire == src or (dire[:n] == src and dire[n] == os.path.sep):
-                dire = dst + dire[n:]
-        return dire
+            if cwd == src or (cwd[:n] == src and cwd[n] == os.path.sep):
+                dirs = []
+                for dst in dsts:
+                    dirs.append(dst + cwd[n:])
+                return dirs
+        return []
 
     def recv_work_aux(self, conn):
         """
@@ -2511,27 +2521,27 @@ class xmake_server:
         if cmd is None or cmd == "": return None,None,None
         cwd = self.recv_element(conn)
         if cwd is None or cwd == "": return None,None,None
-        cwd = self.translate_dir(cwd)
+        dirs = self.translate_dir(cwd)
         envs = []
         while 1:
             varval = self.recv_element(conn)
             if varval == "": break
             if varval is None: return None,None,None
             envs.append(varval)
-        return cmd,cwd,envs
+        return cmd,dirs,envs
 
     def recv_work(self):
         """
         receive a work from a connection
         """
         conn,addr = self.so.accept()
-        cmd,cwd,envs = self.recv_work_aux(conn)
+        cmd,dirs,envs = self.recv_work_aux(conn)
         if dbg>=2:
             if self.logfp:
-                self.LOG("received cmd=%s cwd=%s env=%s\n" % (cmd, cwd, envs))
+                self.LOG("received cmd=%s dirs=%s env=%s\n" % (cmd, dirs, envs))
         cur_time = self.cur_time()
         work_idx = self.id_gen.work_counter.get()
-        work = Work().init(work_idx, cmd, cwd, envs, cur_time, self, conn)
+        work = Work().init(work_idx, cmd, dirs, envs, cur_time, self, conn)
         self.works.add_work(work)
         work.make_run()
 
@@ -3587,6 +3597,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.86  2010/05/25 18:13:58  ttaauu
+# support --translate_dir src,dst1,dst2,... and associated changes. ChangeLog 2010-05-25
+#
 # Revision 1.85  2010/05/23 15:08:09  ttaauu
 # bug fix ChangeLog 2010-05-24
 #

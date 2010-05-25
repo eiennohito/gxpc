@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/expectd.py,v 1.6 2010/05/20 14:56:56 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/expectd.py,v 1.7 2010/05/25 18:13:58 ttaauu Exp $
 # $Name:  $
 #
 
@@ -53,7 +53,7 @@ class expectd(ioman.ioman):
                        [("w", 0, ioman.wchannel_process)],
                        [("r", 0)]) ]
         proc,msg = self.spawn_generic(ioman.child_process,
-                                      cmd, pipe_desc, None, None, [])
+                                      cmd, pipe_desc, {}, [], [])
         if proc is None: 
             raise expect_error("Failed to create child process %s\n" % msg)
         self.proc = proc
@@ -213,6 +213,9 @@ if __name__ == "__main__":
     test1()
     
 # $Log: expectd.py,v $
+# Revision 1.7  2010/05/25 18:13:58  ttaauu
+# support --translate_dir src,dst1,dst2,... and associated changes. ChangeLog 2010-05-25
+#
 # Revision 1.6  2010/05/20 14:56:56  ttaauu
 # e supports --rlimit option. e.g., --rlimit rlimit_as:2g ChangeLog 2010-05-20
 #

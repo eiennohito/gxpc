@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.60 2010/05/20 14:56:56 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.61 2010/05/25 18:13:58 ttaauu Exp $
 # $Name:  $
 #
 
@@ -733,7 +733,10 @@ class e_cmd_opts(opt.cmd_opts):
         self.keep_connection = ("i", None)
         self.tid = ("s", None)
         self.rid = ("s", None)
-        self.dir = ("s", None)
+        # self.dir = ("s", None)
+        self.dir = ("s*", [])
+        # given as list of var=val, and converted
+        # to dictionary in postcheck
         self.export = ("s*", [])
         self.rlimit = ("s*", [])
         # ------
@@ -4682,7 +4685,7 @@ See Also:
             actions = []
             for nid,tgt,cmd in cmds:
                 # cwd/env = None
-                a = gxpm.action_createpeer(nid, None, None, cmd, pipes, [])
+                a = gxpm.action_createpeer(nid, [], {}, cmd, pipes, [])
                 actions.append(a)
             clauses.append(gxpm.clause(src.name, actions))
         # calc the target of this particular msg (include the src
@@ -5371,6 +5374,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.61  2010/05/25 18:13:58  ttaauu
+# support --translate_dir src,dst1,dst2,... and associated changes. ChangeLog 2010-05-25
+#
 # Revision 1.60  2010/05/20 14:56:56  ttaauu
 # e supports --rlimit option. e.g., --rlimit rlimit_as:2g ChangeLog 2010-05-20
 #

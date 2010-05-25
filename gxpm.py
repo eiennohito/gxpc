@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpm.py,v 1.9 2010/05/20 14:56:56 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpm.py,v 1.10 2010/05/25 18:13:58 ttaauu Exp $
 # $Name:  $
 #
 
@@ -197,9 +197,9 @@ class action_createproc(action):
     it is a list of a record that loooks like...
 
     """
-    def __init__(self, rid, cwd, env, cmd, pipes, rlimits):
+    def __init__(self, rid, cwds, env, cmd, pipes, rlimits):
         self.rid = rid          # relative process id
-        self.cwd = cwd          # 
+        self.cwds = cwds        # list of dirs or None
         self.env = env
         self.cmd = cmd
         self.pipes = pipes
@@ -211,9 +211,9 @@ class action_createpeer(action):
     is it should create a child daemon, so it should
     notify the parent when the daemon brought up.
     """
-    def __init__(self, rid, cwd, env, cmd, pipes, rlimits):
+    def __init__(self, rid, cwds, env, cmd, pipes, rlimits):
         self.rid = rid
-        self.cwd = cwd
+        self.cwds = cwds        # list of dirs or None
         self.env = env
         self.cmd = cmd
         self.pipes = pipes
@@ -507,6 +507,9 @@ class syn:
         self.event = event
 
 # $Log: gxpm.py,v $
+# Revision 1.10  2010/05/25 18:13:58  ttaauu
+# support --translate_dir src,dst1,dst2,... and associated changes. ChangeLog 2010-05-25
+#
 # Revision 1.9  2010/05/20 14:56:56  ttaauu
 # e supports --rlimit option. e.g., --rlimit rlimit_as:2g ChangeLog 2010-05-20
 #

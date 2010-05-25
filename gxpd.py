@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.19 2010/05/23 09:02:36 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.20 2010/05/25 18:13:58 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1218,14 +1218,29 @@ class gxpd(ioman.ioman):
         else:
             cwd = tgt.eenv.cwd
             env.update(tgt.eenv.env)
-        # given by --dir option of e
-        if action.cwd is not None:
-            cwd = action.cwd
+        # given by --dir options of e
+        cwds = []
+        if len(action.cwds) == 0:
+            # no --dir option given. use session dir if given
+            if cwd is not None:
+                cwds.append(cwd)
+        else:
+            # --dir options are given
+            for act_cwd in action.cwds:
+                # expand it first
+                act_cwd = os.path.expandvars(os.path.expanduser(act_cwd))
+            # then join with it with cwd in session 
+                if cwd is not None:
+                    act_cwd = os.path.realpath(os.path.join(cwd, act_cwd))
+                cwds.append(act_cwd)
         # given by --export option of e
         if action.env is not None:
-            env.update(action.env)
+            if env is None:
+                env = action.env
+            else:
+                env.update(action.env)
         p,msg = self.spawn_generic(process_class, shcmd, pipe_desc, 
-                                   env, cwd, action.rlimits)
+                                   env, cwds, action.rlimits)
         if p is None:
             m = gxpm.up(self.gupid, task.tid, gxpm.event_info(1, msg))
             task.forward_up(m, gxpm.unparse(m))
@@ -2277,6 +2292,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.20  2010/05/25 18:13:58  ttaauu
+# support --translate_dir src,dst1,dst2,... and associated changes. ChangeLog 2010-05-25
+#
 # Revision 1.19  2010/05/23 09:02:36  ttaauu
 # small bug fix in work.db generation
 #
