@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh,v 1.16 2010/05/18 12:39:11 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh,v 1.17 2010/05/26 17:18:48 kamoshida Exp $
 # $Name:  $
 #
 
@@ -24,7 +24,7 @@ import errno,os,re,sys,socket,string
 def Es(s):
     sys.stderr.write(s)
 
-envs_to_pass = [ "MAKEFLAGS", "MAKELEVEL", "MAKEFILES",
+envs_to_pass = [ "MAKEFLAGS", "MAKELEVEL", #"MAKEFILES",
                  "GXP_MAKELEVEL", 
                  "GXP_MAKE_SO_NAME",
                  "GXP_MAKE_MKSH_PID",
@@ -137,6 +137,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: mksh,v $
+# Revision 1.17  2010/05/26 17:18:48  kamoshida
+# *** empty log message ***
+#
 # Revision 1.16  2010/05/18 12:39:11  ttaauu
 # xmake --translate_dir option. 2010-05-18
 #
