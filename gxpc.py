@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.61 2010/05/25 18:13:58 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.62 2010/06/11 16:54:25 ttaauu Exp $
 # $Name:  $
 #
 
@@ -128,7 +128,7 @@ class login_method_configs:
         self.torque_n    = ("qsub_wrap --sys torque %cmd% "
                             "-- -l nodes=%nodes:-1%:ppn=%ppn:-1%")
         self.torque_host = ("qsub_wrap --sys torque %cmd% "
-                            "-- -l nodes=%target%")
+                            "-- -l nodes=1:%target%:ppn=%ppn:-1%")
         self.torque_psched = ("qsub_wrap --sys torque_psched %cmd% "
                               "-- --node %target% --lib %lib:-libtorque.so%")
         self.condor        = "qsub_wrap --sys condor %cmd%"
@@ -5374,6 +5374,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.62  2010/06/11 16:54:25  ttaauu
+# fixed torque_host
+#
 # Revision 1.61  2010/05/25 18:13:58  ttaauu
 # support --translate_dir src,dst1,dst2,... and associated changes. ChangeLog 2010-05-25
 #
