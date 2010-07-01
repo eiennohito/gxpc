@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ifconfig.py,v 1.3 2009/06/06 14:06:23 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ifconfig.py,v 1.4 2010/07/01 10:33:57 ttaauu Exp $
 # $Name:  $
 #
 
@@ -280,7 +280,15 @@ def get_my_addrs(addr_prio):
 def compile_prio(addr_prio_str):
     return ifobj.compile_prio(addr_prio_str)
 
+def get_my_addrs2(addr_prio_str):
+    prio,msg = ifobj.compile_prio(addr_prio_str)
+    assert (msg is None), msg
+    return ifobj.get_my_addrs(prio)
+
 # $Log: ifconfig.py,v $
+# Revision 1.4  2010/07/01 10:33:57  ttaauu
+# *** empty log message ***
+#
 # Revision 1.3  2009/06/06 14:06:23  ttaauu
 # added headers and logs
 #

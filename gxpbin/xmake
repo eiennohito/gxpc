@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.86 2010/05/25 18:13:58 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.87 2010/07/01 10:34:00 ttaauu Exp $
 # $Name:  $
 #
 
@@ -805,7 +805,7 @@ class Work:
         todo: consider killing the process by termsig
         """
         assert self.conn is not None
-        msg = "%d\n" % exit_status
+        msg = "%s\n" % exit_status
         try:
             self.conn.send(msg)
             self.conn.close()
@@ -3597,6 +3597,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.87  2010/07/01 10:34:00  ttaauu
+# *** empty log message ***
+#
 # Revision 1.86  2010/05/25 18:13:58  ttaauu
 # support --translate_dir src,dst1,dst2,... and associated changes. ChangeLog 2010-05-25
 #
