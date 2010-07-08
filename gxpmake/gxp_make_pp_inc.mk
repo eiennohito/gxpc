@@ -37,9 +37,9 @@ endef
 
 parameters:=a b c
 target:=$(or $(target),gxp_pp_default_target)
-ifeq ($(input),)
-input=gxp_pp_default_input$(call expand_parameters,$(parameters))
-endif
+#ifeq ($(input),)
+#input=gxp_pp_default_input$(call expand_parameters,$(parameters))
+#endif
 ifeq ($(output),)
 output=gxp_pp_default_output$(call expand_parameters,$(parameters))
 endif
