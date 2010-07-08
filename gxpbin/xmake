@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.87 2010/07/01 10:34:00 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.88 2010/07/08 08:29:45 ttaauu Exp $
 # $Name:  $
 #
 
@@ -3091,6 +3091,13 @@ class xmake_server:
             os.environ["GXP_MAKE_LOCAL_EXEC_CMD"] = self.opts.local_exec_cmd
         if self.opts.make_envs is not None:
             os.environ["GXP_MAKE_ENVS"] = self.opts.make_envs
+        # set include files
+        gxp_make_pp_inc = os.path.join(os.environ["GXP_DIR"],
+                                       os.path.join("gxpmake", "gxp_make_pp_inc.mk"))
+        gxp_make_mapred_inc = os.path.join(os.environ["GXP_DIR"],
+                                           os.path.join("gxpmake", "gxp_make_mapred_inc.mk"))
+        os.environ["GXP_MAKE_PP"] = gxp_make_pp_inc
+        os.environ["GXP_MAKE_MAPRED"] = gxp_make_mapred_inc
 
     def run_make(self):
         """
@@ -3597,6 +3604,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.88  2010/07/08 08:29:45  ttaauu
+# *** empty log message ***
+#
 # Revision 1.87  2010/07/01 10:34:00  ttaauu
 # *** empty log message ***
 #

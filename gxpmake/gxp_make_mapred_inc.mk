@@ -149,3 +149,22 @@ $(foreach m,$(map_idxs),\
 $(foreach r,$(reduce_idxs),\
   $(eval $(call reduce_rule,$(r))))
 
+#
+# [4] clear all variables (is there a way to 'undef' vars?)
+#
+
+input:=
+output:=
+reader:=
+mapper:=
+reducer:=
+n_mappers:=
+n_reducers:=
+partitioner:=
+exchanger:=
+sorter:=
+combiner:=
+merger:=
+int_dir:=
+keep_intermediates:=
+small_step:=
