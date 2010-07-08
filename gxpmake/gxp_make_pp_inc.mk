@@ -2,55 +2,53 @@
 # [1] define rule templates
 # 
 
+#
+# $(call expand_parameters,a b c)
+#  ==> .$(a).$(b).$(c)
+#
+
 define expand_parameters
 $(if $(1),.$$($(firstword $(1)))$(call expand_parameters,$(wordlist 2,$(words $(1)),$(1))))
 endef
 
-define expand_parameters_2
-$(if $(1), $$(firstword $(1))=$($(firstword $(1)))$(call expand_parameters_2,$(wordlist 2,$(words $(1)),$(1))))
-endef
-
-define make_rule
+define make_rule_single
+$(target) : $(output)
 $(output) : $(input)
 	$(cmd)
 endef
 
+# a:=1 2
+# b:=3 4 
+# $(call make_rule_recursive,a b)
+#  ==> $(foreach a,1 2,$(call make_rule_recursive,b))
+#   ==> $(foreach a,1 2,$(foreach b,3 4,$(call make_rule_recursive)))
+#    ==> $(foreach a,1 2,$(foreach b,3 4,$(eval $(call make_rule_single))))
+#  
 define make_rule_recursive
 $(if $(1),\
   $(foreach $(firstword $(1)),$(or $($(firstword $(1))),""),$(call make_rule_recursive,$(wordlist 2,$(words $(1)),$(1)))),\
-  $(eval $(call make_rule)))
-endef
-
-define make_dependence_recursive
-$(if $(1),\
-  $(foreach $(firstword $(1)),$(or $($(firstword $(1))),""),$(call make_dependence_recursive,$(wordlist 2,$(words $(1)),$(1)))),\
-  $(output))
-endef
-
-define make_dependence
-$(target) : $(call make_dependence_recursive,$(1))
+  $(eval $(call make_rule_single)))
 endef
 
 # 
 # [2] set default parameters
 # 
 
-parameters:=a b c
+parameters:=$(or $(parameters),a b c)
 target:=$(or $(target),gxp_pp_default_target)
-#ifeq ($(input),)
-#input=gxp_pp_default_input$(call expand_parameters,$(parameters))
-#endif
+
 ifeq ($(output),)
-output=gxp_pp_default_output$(call expand_parameters,$(parameters))
+expanded_parameters:=$(call expand_parameters,$(parameters))
+output=gxp_pp_default_output$(expanded_parameters)
 endif
+
 ifeq ($(cmd),)
-cmd=$(call expand_parameters_2,$(parameters)) echo
+cmd=echo $(call expand_parameters,$(parameters))
 endif
 
 #
 # [3] really define rules
 #
-$(eval $(call make_dependence,$(parameters)))
 
 $(eval $(call make_rule_recursive,$(parameters)))
 
@@ -58,7 +56,7 @@ $(eval $(call make_rule_recursive,$(parameters)))
 # [4] clear all variables
 #
 parameters:=
-target:=
+target=
 input=
 output=
 cmd=
