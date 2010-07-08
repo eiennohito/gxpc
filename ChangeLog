@@ -103,3 +103,14 @@
 	now support --translate_dir src,dst,dst,... instead of 
 	--translate_dir src,dst.  src,dst1,dst2,dst3 is translated into
 	--dir dst1' --dir dst2' --dir dst3' to gxpc e command.
+2010-07-08 Taura
+	* gxpmake/gxp_make_pp_inc.mk:
+	* gxpmake/gxp_make_pp.mk:
+	* gxpmake/gxp_make_mapred_inc.mk:
+	* gxpmake/gxp_make_mapred.mk:
+	implemented a nicer interface to pp and mapred. 
+	they are now supposed to be written in regular Makefile that contains either
+	include $(GXP_MAKE_PP_INC),
+	include $(GXP_MAKE_MAPRED_INC),
+	or both (in fact they can be included arbitrary number of times).
+	
