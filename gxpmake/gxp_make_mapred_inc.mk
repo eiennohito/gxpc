@@ -107,7 +107,7 @@ endef
 input:=$(or $(input),gxp_mapred_default_input)
 output:=$(or $(output),gxp_mapred_default_output)
 
-reader:=$(or $(reaader),ex_line_reader)
+reader:=$(or $(reader),ex_line_reader)
 mapper:=$(or $(mapper),ex_word_count_mapper)
 reducer:=$(or $(reducer),ex_count_reducer)
 n_mappers:=$(or $(n_mappers),3)
