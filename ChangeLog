@@ -114,3 +114,13 @@
 	include $(GXP_MAKE_MAPRED_INC),
 	or both (in fact they can be included arbitrary number of times).
 	
+2010-09-08 Taura
+	* gxp_js.py:
+	* gxpbin/worker_prof:
+	* gxpbin/gxp_js_template.html;
+	added to implement a new job scheduling framework (gxpc js)
+	* gxpc.py:
+	* gxpd.py:
+	* gxpm.py:
+	added to implement a new job scheduling framework (gxpc js)
+
