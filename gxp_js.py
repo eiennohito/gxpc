@@ -5,7 +5,7 @@ import gxpc,gxpm,ioman,opt
 
 import cPickle,cStringIO
 
-dbg=1
+dbg=0
 
 def Ws(s):
     sys.stdout.write(s)
@@ -975,7 +975,9 @@ class work_stream_fd(work_stream_base):
     def readpkt(self, sz):
         assert self.fd is not None
         return os.read(self.fd, sz)
-        
+    def finish_work(self, work_idx, work, exit_status, term_sig):
+        pass
+    
 class work_stream_fd_pair(work_stream_fd):
     def __init__(self, server, rfd, wfd):
         work_stream_fd.__init__(self, server, rfd)
@@ -1115,7 +1117,7 @@ class work_generator:
             addr = self.mk_tmp_socket_name()
         ss = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         ss.bind(addr)
-        ss.listen(1000)
+        ss.listen(50000)                # FIXIT: make it configurable
         self.server_socks[ss] = n_accepts
         return ss
 
@@ -1272,8 +1274,9 @@ def mk_work_generator(conf, server):
     for cmd in conf.work_proc_pipe2:
         wkg.add_proc_pipe2(cmd, 1, 0)
     for cmd in conf.work_proc_sock:
-        wkg.add_proc_sock(cmd, "", 10)
+        wkg.add_proc_sock(cmd, "", float("inf"))
     for addr in conf.work_server_sock:
+        # FIXIT : fix 10
         wkg.add_server_sock(addr, 10)
     return wkg
 
@@ -1850,7 +1853,7 @@ class job_scheduler(gxpc.cmd_interpreter):
     def record_loadavg(self, cur_time, force):
         loadavg = self.ts["loadavg"]
         last_t = loadavg.last_t
-        if force or cur_time > last_t + 10.0:
+        if force or last_t == 0.0 or cur_time > last_t + 10.0:
             loadavg.add_x(cur_time, 0, self.get_loadavg())
 
     def get_self_rss(self):
@@ -1866,7 +1869,7 @@ class job_scheduler(gxpc.cmd_interpreter):
     def record_rss(self, cur_time, force):
         rss = self.ts["rss"]
         last_t = rss.last_t
-        if force or cur_time > last_t + 10.0:
+        if force or last_t == 0.0 or cur_time > last_t + 10.0:
             rss.add_x(cur_time, 0, self.get_self_rss())
 
     def get_mem(self):
@@ -1887,7 +1890,7 @@ class job_scheduler(gxpc.cmd_interpreter):
     def record_mem(self, cur_time, force):
         mem = self.ts["mem"]
         last_t = mem.last_t
-        if force or cur_time > last_t + 10.0:
+        if force or last_t == 0.0 or cur_time > last_t + 10.0:
             total,used,free,shared,buffers,cached = self.get_mem()
             mem.add_x(cur_time, 0, total)
             mem.add_x(cur_time, 1, used)
@@ -1899,7 +1902,6 @@ class job_scheduler(gxpc.cmd_interpreter):
     def generate_html(self, finished):
         ct = self.cur_time() 
         if finished or ct > self.next_update_time:
-            Es("generate_html\n")
             for run in self.runs_running.values():
                 run.sync(ct)
             self.htmlg.generate(finished)
@@ -2021,6 +2023,69 @@ class job_scheduler(gxpc.cmd_interpreter):
             Es("rid = %s!!\n" % rid)
             bomb
             
+    def select_by_select(self, R, W, E, T):
+        if T is None:
+            return select.select(R, W, E)
+        else:
+            return select.select(R, W, E, T)
+
+    def select_by_poll(self, R, W, E, T):
+        d = {}
+        for f in R:
+            if type(f) is types.IntType:
+                fd = f
+            else:
+                fd = f.fileno()
+            d[fd] = select.POLLIN
+        for f in W:
+            if type(f) is types.IntType:
+                fd = f
+            else:
+                fd = f.fileno()
+            d[fd] = (d.get(fd, 0) | select.POLLOUT)
+        for f in E:
+            if type(f) is types.IntType:
+                fd = f
+            else:
+                fd = f.fileno()
+            d[fd] = (d.get(fd, 0) | select.POLLIN | select.POLLOUT)
+        p = select.poll()
+        for fd, mask in d.items():
+            p.register(fd, mask)
+        if T is None:
+            poll_result = p.poll()
+        else:
+            poll_result = p.poll(T*1000)
+        R0 = []
+        W0 = []
+        E0 = []
+        d = dict(poll_result)
+        for f in R:
+            if type(f) is types.IntType:
+                fd = f
+            else:
+                fd = f.fileno()
+            if (d.get(fd, 0) & (select.POLLIN|select.POLLHUP)) != 0:
+                R0.append(f)
+        for f in W:
+            if type(f) is types.IntType:
+                fd = f
+            else:
+                fd = f.fileno()
+            if (d.get(fd, 0) & (select.POLLOUT)) != 0:
+                W0.append(f)
+        for f in E:
+            if type(f) is types.IntType:
+                fd = f
+            else:
+                fd = f.fileno()
+            if (d.get(fd, 0) & select.POLLERR) != 0:
+                E0.append(f)
+        return R0,W0,E0
+
+    def select(self, R, W, E, T):
+        return self.select_by_poll(R, W, E, T)
+
     def process_incoming_events(self, timeout):
         """
         process incoming events.
@@ -2038,7 +2103,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         R_.extend(wkg.child_pipes.keys())
         if self.so: R_.append(self.so)
         self.LOG("checking streams and deamon socket %s\n" % R_)
-        R,_,_ = select.select(R_, [], [], timeout)
+        R,_,_ = self.select(R_, [], [], timeout)
         for r in R:
             if r is self.so:
                 # process_msg_from_deamon (in gxpc.py),
@@ -2215,9 +2280,9 @@ class job_scheduler(gxpc.cmd_interpreter):
             return 0
         self.check_time_limit()
         self.check_interrupted()
-        self.record_rss(self.cur_time(), 1)
-        self.record_mem(self.cur_time(), 1)
-        self.record_loadavg(self.cur_time(), 1)
+        self.record_rss(self.cur_time(), 0)
+        self.record_mem(self.cur_time(), 0)
+        self.record_loadavg(self.cur_time(), 0)
         self.generate_html(0)
         self.make_matches()
         # calc timeout:
@@ -2235,7 +2300,8 @@ class job_scheduler(gxpc.cmd_interpreter):
             self.dispatch_runs()
         return 1
         
-    def determine_exit_status(self):
+    def determine_self_status(self):
+        # FIXIT: determine exit status
         return 0
 
     def expandpath(self, p):
@@ -2294,6 +2360,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         self.sys_argv = sys.argv
         self.cwd = os.getcwd()
         self.self_pid = os.getpid()
+        self.self_status = None         # not known yet
         self.hostname = socket.gethostname()
 
         # task id shared by all runs
@@ -2337,8 +2404,9 @@ class job_scheduler(gxpc.cmd_interpreter):
                 raise           
                 self.interrupted = self.interrupted + 1
         # done. generate the last html
+        self.self_status = self.determine_self_status()
         self.generate_html(1)
-        return self.determine_exit_status()
+        return self.self_status
 
     def cur_time(self):
         return time.time() - self.time_start
@@ -2374,12 +2442,41 @@ class job_scheduler(gxpc.cmd_interpreter):
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
         return self.server_main(args)
         
-    def usage_js_cmd(self, full):
-        u = r"""Usage:
-  gxpc js  [OPTION ...]
-"""
-        return u
+    def set_make_environ(self):
+        makefiles = os.environ.get("MAKEFILES")
+        xmake_mk = os.path.join(os.environ["GXP_DIR"],
+                                os.path.join("gxpbin", "xmake2.mk"))
+        if makefiles is None:
+            os.environ["MAKEFILES"] = xmake_mk
+        else:
+            os.environ["MAKEFILES"] = "%s %s" % (xmake_mk, makefiles)
+        os.environ["GXP_MAKELEVEL"] = "1"
+        if 0:                           # FIXIT. can't get conf here
+            x = ("%d" % self.opts.exit_status_connect_failed)
+            os.environ["GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"] = x
+            x = ("%d" % self.opts.exit_status_server_died)
+            os.environ["GXP_MAKE_EXIT_STATUS_SERVER_DIED"] = x
+            if self.opts.local_exec_cmd is not None:
+                os.environ["GXP_MAKE_LOCAL_EXEC_CMD"] = self.opts.local_exec_cmd
+            if self.opts.make_envs is not None:
+                os.environ["GXP_MAKE_ENVS"] = self.opts.make_envs
+        # set include files
+        gxp_make_pp_inc = os.path.join(os.environ["GXP_DIR"],
+                                       os.path.join("gxpmake", "gxp_make_pp_inc.mk"))
+        gxp_make_mapred_inc = os.path.join(os.environ["GXP_DIR"],
+                                           os.path.join("gxpmake", "gxp_make_mapred_inc.mk"))
+        os.environ["GXP_MAKE_PP"] = gxp_make_pp_inc
+        os.environ["GXP_MAKE_MAPRED"] = gxp_make_mapred_inc
 
+    def do_make2_cmd(self, args):
+        """
+        args : whatever is given after 'make2'
+        """
+        # FIXIT: parse args and give them to make
+        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
+        self.set_make_environ()
+        return self.server_main([ "-a", 'work_proc_sock="make -j 1200"' ] + args)
+        
     # db related stuff
 
     db_fields = [ "sys_argv", "cwd", "hostname",
@@ -2388,7 +2485,8 @@ class job_scheduler(gxpc.cmd_interpreter):
                   "n_runs_todo",
                   "n_runs_running",
                   "n_works",
-                  "n_free_men" ]
+                  "n_free_men",
+                  "self_status", ]
 
     def get_td_start_time(self):
         return time.strftime("%Y-%m-%d %H:%M:%S", 

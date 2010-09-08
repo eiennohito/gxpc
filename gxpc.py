@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.63 2010/09/08 04:08:22 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.64 2010/09/08 12:30:49 ttaauu Exp $
 # $Name:  $
 #
 
@@ -5259,19 +5259,31 @@ this command line.
 """
         return u
 
-    def do_js_cmd(self, args):
+    def js_like_cmd(self, cname, args):
         if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
         gxp_dir = os.environ["GXP_DIR"]
         gxp_js = os.path.join(gxp_dir, "gxp_js.py")
         python = sys.executable
         os.execvp(python, [ python, gxp_js ] + self.argv[1:])
 
-    def usage_js_cmd(self, full):
+    def usage_js_like_cmd(self, cname, full):
         u = r"""Usage:
-  gxpc disp  [OPTION ...]
-"""
+  gxpc %s [OPTION ...]
+""" % cname
         return u
 
+    def do_js_cmd(self, args):
+        self.js_like_cmd("js", args)
+
+    def usage_js_cmd(self, full):
+        return self.usage_js_like_cmd("js", full)
+    
+    def do_make2_cmd(self, args):
+        self.js_like_cmd("make2", args)
+
+    def usage_make2_cmd(self, full):
+        return self.usage_js_like_cmd("make2", full)
+    
 
     # ---------- dispatcher ----------
 
@@ -5348,6 +5360,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.64  2010/09/08 12:30:49  ttaauu
+# ChangeLog 2010-09-09
+#
 # Revision 1.63  2010/09/08 04:08:22  ttaauu
 # a new job scheduling framework (gxpc js). see ChangeLog 2010-09-08
 #
