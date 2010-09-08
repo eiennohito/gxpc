@@ -71,6 +71,7 @@ Command Reference
 * explore::                     
 * export::                      
 * help::                        
+* i::                           
 * log_level::                   
 * make::                        
 * makectl::                     
@@ -93,6 +94,7 @@ Command Reference
 * trim::                        
 * use::                         
 * version::                     
+* vgxp::                        
 
 Key Stroke Reference
 
@@ -704,6 +706,7 @@ todo
 * explore::                     
 * export::                      
 * help::                        
+* i::                           
 * log_level::                   
 * make::                        
 * makectl::                     
@@ -726,6 +729,7 @@ todo
 * trim::                        
 * use::                         
 * version::                     
+* vgxp::                        
 @end menu
 
 @node cd, e, Command Reference, Command Reference
@@ -813,6 +817,8 @@ Options are the same as those of `@t{e}' command.
     broadcast stdout of the @var{MASTER} to @var{FD1} of @var{CMD}.
 @item   @t{--pty}
     assign pseudo tty for stdin/stdout/stderr of @var{CMD}
+@item   @t{--rlimit} rlimit_xxx:soft[:hard]
+    apply setrlimit(rlimit_xxx, soft, hard)
 
 @end table
 @vskip 5mm
@@ -912,6 +918,8 @@ as soon as they are newlined.
     broadcast stdout of the @var{MASTER} to @var{FD1} of @var{CMD}.
 @item   @t{--pty}
     assign pseudo tty for stdin/stdout/stderr of @var{CMD}
+@item   @t{--rlimit} rlimit_xxx:soft[:hard]
+    apply setrlimit(rlimit_xxx, soft, hard)
 
 @end table
 @vskip 5mm
@@ -1048,7 +1056,7 @@ as giving a file having the list by @t{--hostfile}. For example,
 @vskip 5mm
 @example
 
-  @t{--hostcmd} 'for i in `seq 1 8` ; do printf "%03d\n" $i ; done'
+  @t{--hostcmd} 'for @t{i} in `seq 1 8` ; do printf "%03d\n" $i ; done'
 
 @end example
 @vskip 5mm
@@ -1330,7 +1338,7 @@ because @t{/etc/hosts} typically includes hosts you don't want to
   Set environment variable @var{VAR} to @var{VAL} on the selected nodes.
 Options are the same as those of `@t{e}' command.
 
-@node help, log_level, export, Command Reference
+@node help, i, export, Command Reference
 @section help
 @vskip 5mm
 @b{Usage:}
@@ -1348,7 +1356,24 @@ Options are the same as those of `@t{e}' command.
 
   Show summary of @t{gxpc} commands or a @t{help} on a specific @var{COMMAND}.
 
-@node log_level, make, help, Command Reference
+@node i, log_level, help, Command Reference
+@section i
+@vskip 5mm
+@b{Usage:}
+@example
+
+  @t{gxpc} @t{i}
+
+@end example
+@vskip 5mm
+
+@vskip 5mm
+@b{Description:}
+
+
+  Enter a new shell with a @t{gxpc} session.
+
+@node log_level, make, i, Command Reference
 @section log_level, log_base_time
 @vskip 5mm
 @b{Usage:}
@@ -1498,10 +1523,10 @@ writes key-value pairs.
 in sorted order and writes arbitrary final outputs.
 
 You will frequently want to specify the following.
-  n_maps=<number of map tasks>       (default: 4)
-  n_reduces=<number of reduce tasks> (default: 2)
-  reader=<reader command>            (default: "ex_line_reader")
-  int_dir=<intermediate directory>   (default: "int_dir")
+  n_mappers=<number of map tasks>       (default: 4)
+  n_reducers=<number of reduce tasks>   (default: 2)
+  reader=<reader command>               (default: "ex_line_reader")
+  int_dir=<intermediate directory>      (default: "int_dir")
   keep_intermediates=y  will keep all intermediate files in int_dir
   small_step=y  will execute the entire computation in small steps
   dbg=y   equivalent to keep_intermediates=y small_step=y (useful for debugging)
@@ -2263,7 +2288,7 @@ configuration file. @t{e}.g., ssh will read ~/.ssh/config to complement
 user name used to login a particular host.
 
 qrsh_host uses command qrsh, with an explicit hostname argument
-to login a particular host (i.@t{e}., qrsh -l hostname=...).  This is
+to login a particular host (@t{i}.@t{e}., qrsh -l hostname=...).  This is
 useful in environments where direct ssh is discouraged or
 disallowed and qrsh is preferred.
 
@@ -2293,13 +2318,24 @@ is allocated by the scheduler.
 @end example
 @vskip 5mm
 
-@node version,  , use, Command Reference
+@node version, vgxp, use, Command Reference
 @section version
 @vskip 5mm
 @b{Usage:}
 @example
 
   @t{gxpc} @t{version}
+
+@end example
+@vskip 5mm
+
+@node vgxp,  , version, Command Reference
+@section vgxp
+@vskip 5mm
+@b{Usage:}
+@example
+
+  @t{gxpc} @t{vgxp}
 
 @end example
 @vskip 5mm

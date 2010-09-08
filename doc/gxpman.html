@@ -75,6 +75,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#dir">(dir)</a>
 <li><a href="#explore">explore</a>
 <li><a href="#export">export</a>
 <li><a href="#help">help</a>
+<li><a href="#i">i</a>
 <li><a href="#log_005flevel">log_level</a>
 <li><a href="#make">make</a>
 <li><a href="#makectl">makectl</a>
@@ -97,6 +98,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#dir">(dir)</a>
 <li><a href="#trim">trim</a>
 <li><a href="#use">use</a>
 <li><a href="#version">version</a>
+<li><a href="#vgxp">vgxp</a>
 
 </li></ul>
 <p>Key Stroke Reference
@@ -728,9 +730,10 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 <li><a accesskey="4" href="#explore">explore</a>
 <li><a accesskey="5" href="#export">export</a>
 <li><a accesskey="6" href="#help">help</a>
-<li><a accesskey="7" href="#log_005flevel">log_level</a>
-<li><a accesskey="8" href="#make">make</a>
-<li><a accesskey="9" href="#makectl">makectl</a>
+<li><a accesskey="7" href="#i">i</a>
+<li><a accesskey="8" href="#log_005flevel">log_level</a>
+<li><a accesskey="9" href="#make">make</a>
+<li><a href="#makectl">makectl</a>
 <li><a href="#makeman">makeman</a>
 <li><a href="#mapred">mapred</a>
 <li><a href="#ping">ping</a>
@@ -750,6 +753,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 <li><a href="#trim">trim</a>
 <li><a href="#use">use</a>
 <li><a href="#version">version</a>
+<li><a href="#vgxp">vgxp</a>
 </ul>
 
 <div class="node">
@@ -828,6 +832,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
     output from <var>FD1</var> of <var>CMD</var>, feed them to stdin of the <var>MASTER</var>. 
     broadcast stdout of the <var>MASTER</var> to <var>FD1</var> of <var>CMD</var>. 
 <br><dt><tt>--pty</tt><dd>    assign pseudo tty for stdin/stdout/stderr of <var>CMD</var>
+<br><dt><tt>--rlimit</tt><code> rlimit_xxx:soft[:hard]</code><dd>    apply setrlimit(rlimit_xxx, soft, hard)
 
    </dl>
 
@@ -907,6 +912,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
     output from <var>FD1</var> of <var>CMD</var>, feed them to stdin of the <var>MASTER</var>. 
     broadcast stdout of the <var>MASTER</var> to <var>FD1</var> of <var>CMD</var>. 
 <br><dt><tt>--pty</tt><dd>    assign pseudo tty for stdin/stdout/stderr of <var>CMD</var>
+<br><dt><tt>--rlimit</tt><code> rlimit_xxx:soft[:hard]</code><dd>    apply setrlimit(rlimit_xxx, soft, hard)
 
    </dl>
 
@@ -1016,7 +1022,7 @@ a list of files in the above format, the effect is the same
 as giving a file having the list by <tt>&ndash;hostfile</tt>. For example,
 
 <pre class="example">     
-       <tt>--hostcmd</tt> 'for i in `seq 1 8` ; do printf "%03d\n" $i ; done'
+       <tt>--hostcmd</tt> 'for <tt>i</tt> in `seq 1 8` ; do printf "%03d\n" $i ; done'
      
 </pre>
    <p>has the same effect as giving the above file to <tt>&ndash;hostfile</tt>.
@@ -1242,7 +1248,7 @@ Options are the same as those of `<tt>e</tt>' command.
 <div class="node">
 <p><hr>
 <a name="help"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#log_005flevel">log_level</a>,
+Next:&nbsp;<a rel="next" accesskey="n" href="#i">i</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#export">export</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
@@ -1262,15 +1268,35 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 <div class="node">
 <p><hr>
-<a name="log_level"></a>
-<a name="log_005flevel"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#make">make</a>,
+<a name="i"></a>
+Next:&nbsp;<a rel="next" accesskey="n" href="#log_005flevel">log_level</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#help">help</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.7 log_level, log_base_time</h3>
+<h3 class="section">4.7 i</h3>
+
+<p><b>Usage:</b>
+<pre class="example">     
+       <tt>gxpc</tt> <tt>i</tt>
+     
+</pre>
+   <p><b>Description:</b>
+
+   <p>Enter a new shell with a <tt>gxpc</tt> session.
+
+<div class="node">
+<p><hr>
+<a name="log_level"></a>
+<a name="log_005flevel"></a>
+Next:&nbsp;<a rel="next" accesskey="n" href="#make">make</a>,
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#i">i</a>,
+Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
+
+</div>
+
+<h3 class="section">4.8 log_level, log_base_time</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1295,7 +1321,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.8 make</h3>
+<h3 class="section">4.9 make</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1319,7 +1345,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.9 makectl</h3>
+<h3 class="section">4.10 makectl</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1343,7 +1369,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.10 makeman</h3>
+<h3 class="section">4.11 makeman</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1363,7 +1389,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.11 mapred</h3>
+<h3 class="section">4.12 mapred</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1407,10 +1433,10 @@ writes key-value pairs.
 in sorted order and writes arbitrary final outputs.
 
    <p>You will frequently want to specify the following. 
-  n_maps=&lt;number of map tasks&gt;       (default: 4)
-  n_reduces=&lt;number of reduce tasks&gt; (default: 2)
-  reader=&lt;reader command&gt;            (default: "ex_line_reader")
-  int_dir=&lt;intermediate directory&gt;   (default: "int_dir")
+  n_mappers=&lt;number of map tasks&gt;       (default: 4)
+  n_reducers=&lt;number of reduce tasks&gt;   (default: 2)
+  reader=&lt;reader command&gt;               (default: "ex_line_reader")
+  int_dir=&lt;intermediate directory&gt;      (default: "int_dir")
   keep_intermediates=y  will keep all intermediate files in int_dir
   small_step=y  will execute the entire computation in small steps
   dbg=y   equivalent to keep_intermediates=y small_step=y (useful for debugging)
@@ -1435,7 +1461,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.12 ping</h3>
+<h3 class="section">4.13 ping</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1464,7 +1490,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.13 popmask</h3>
+<h3 class="section">4.14 popmask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1492,7 +1518,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.14 pp</h3>
+<h3 class="section">4.15 pp</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1530,7 +1556,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.15 prof_start, prof_stop</h3>
+<h3 class="section">4.16 prof_start, prof_stop</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1552,7 +1578,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.16 smask, savemask, pushmask</h3>
+<h3 class="section">4.17 smask, savemask, pushmask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1659,7 +1685,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.17 quit</h3>
+<h3 class="section">4.18 quit</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1681,7 +1707,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.18 reclaim</h3>
+<h3 class="section">4.19 reclaim</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1701,7 +1727,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.19 restoremask</h3>
+<h3 class="section">4.20 restoremask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1717,7 +1743,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.20 rmask</h3>
+<h3 class="section">4.21 rmask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1742,7 +1768,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.21 rsh</h3>
+<h3 class="section">4.22 rsh</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1838,7 +1864,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.22 set_max_buf_len</h3>
+<h3 class="section">4.23 set_max_buf_len</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1861,7 +1887,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.23 show_explore</h3>
+<h3 class="section">4.24 show_explore</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1881,7 +1907,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.24 showmasks</h3>
+<h3 class="section">4.25 showmasks</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1965,7 +1991,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.25 stat</h3>
+<h3 class="section">4.26 stat</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1986,7 +2012,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.26 trim</h3>
+<h3 class="section">4.27 trim</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -2020,7 +2046,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 
 </div>
 
-<h3 class="section">4.27 use, edges</h3>
+<h3 class="section">4.28 use, edges</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -2105,7 +2131,7 @@ configuration file. <tt>e</tt>.g., ssh will read ~/.ssh/config to complement
 user name used to login a particular host.
 
    <p>qrsh_host uses command qrsh, with an explicit hostname argument
-to login a particular host (i.<tt>e</tt>., qrsh -l hostname=...).  This is
+to login a particular host (<tt>i</tt>.<tt>e</tt>., qrsh -l hostname=...).  This is
 useful in environments where direct ssh is discouraged or
 disallowed and qrsh is preferred.
 
@@ -2130,16 +2156,32 @@ is allocated by the scheduler.
    <div class="node">
 <p><hr>
 <a name="version"></a>
+Next:&nbsp;<a rel="next" accesskey="n" href="#vgxp">vgxp</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#use">use</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.28 version</h3>
+<h3 class="section">4.29 version</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
        <tt>gxpc</tt> <tt>version</tt>
+     
+</pre>
+   <div class="node">
+<p><hr>
+<a name="vgxp"></a>
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#version">version</a>,
+Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
+
+</div>
+
+<h3 class="section">4.30 vgxp</h3>
+
+<p><b>Usage:</b>
+<pre class="example">     
+       <tt>gxpc</tt> <tt>vgxp</tt>
      
 </pre>
    <div class="node">
@@ -2314,28 +2356,30 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Refer
 <li><a href="#explore">4.4 explore</a>
 <li><a href="#export">4.5 export</a>
 <li><a href="#help">4.6 help</a>
-<li><a href="#log_005flevel">4.7 log_level, log_base_time</a>
-<li><a href="#make">4.8 make</a>
-<li><a href="#makectl">4.9 makectl</a>
-<li><a href="#makeman">4.10 makeman</a>
-<li><a href="#mapred">4.11 mapred</a>
-<li><a href="#ping">4.12 ping</a>
-<li><a href="#popmask">4.13 popmask</a>
-<li><a href="#pp">4.14 pp</a>
-<li><a href="#prof_005fstart">4.15 prof_start, prof_stop</a>
-<li><a href="#smask">4.16 smask, savemask, pushmask</a>
-<li><a href="#quit">4.17 quit</a>
-<li><a href="#reclaim">4.18 reclaim</a>
-<li><a href="#restoremask">4.19 restoremask</a>
-<li><a href="#rmask">4.20 rmask</a>
-<li><a href="#rsh">4.21 rsh</a>
-<li><a href="#set_005fmax_005fbuf_005flen">4.22 set_max_buf_len</a>
-<li><a href="#show_005fexplore">4.23 show_explore</a>
-<li><a href="#showmasks">4.24 showmasks</a>
-<li><a href="#stat">4.25 stat</a>
-<li><a href="#trim">4.26 trim</a>
-<li><a href="#use">4.27 use, edges</a>
-<li><a href="#version">4.28 version</a>
+<li><a href="#i">4.7 i</a>
+<li><a href="#log_005flevel">4.8 log_level, log_base_time</a>
+<li><a href="#make">4.9 make</a>
+<li><a href="#makectl">4.10 makectl</a>
+<li><a href="#makeman">4.11 makeman</a>
+<li><a href="#mapred">4.12 mapred</a>
+<li><a href="#ping">4.13 ping</a>
+<li><a href="#popmask">4.14 popmask</a>
+<li><a href="#pp">4.15 pp</a>
+<li><a href="#prof_005fstart">4.16 prof_start, prof_stop</a>
+<li><a href="#smask">4.17 smask, savemask, pushmask</a>
+<li><a href="#quit">4.18 quit</a>
+<li><a href="#reclaim">4.19 reclaim</a>
+<li><a href="#restoremask">4.20 restoremask</a>
+<li><a href="#rmask">4.21 rmask</a>
+<li><a href="#rsh">4.22 rsh</a>
+<li><a href="#set_005fmax_005fbuf_005flen">4.23 set_max_buf_len</a>
+<li><a href="#show_005fexplore">4.24 show_explore</a>
+<li><a href="#showmasks">4.25 showmasks</a>
+<li><a href="#stat">4.26 stat</a>
+<li><a href="#trim">4.27 trim</a>
+<li><a href="#use">4.28 use, edges</a>
+<li><a href="#version">4.29 version</a>
+<li><a href="#vgxp">4.30 vgxp</a>
 </li></ul>
 <li><a name="toc_Tools-Reference" href="#Tools-Reference">5 Tools Reference</a>
 <li><a name="toc_Troubleshooting" href="#Troubleshooting">6 Troubleshooting</a>

@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.88 2010/07/08 08:29:45 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.89 2010/09/08 04:08:22 ttaauu Exp $
 # $Name:  $
 #
 
@@ -291,7 +291,7 @@ class xmake_cmd_opts(opt2.cmd_opts):
         # translate home dir to ~
         home = os.environ.get("HOME")
         if home:
-            translate_dir.append((home, [ "~/" ]))
+            translate_dir.append((home, [ "~" ]))
         self.translate_dir = translate_dir
         
     def usage(self):
@@ -689,8 +689,8 @@ class Run:
                 server.men_free.append((man.prio(), man))
             if dbg>=2:
                 if server.logfp:
-                    server.LOG("man %s in state %s finished a run\n"
-                               % (man.name, man.state))
+                    server.LOG("man %s in state %s finished a run with status=%s exit_status=%s\n"
+                               % (man.name, man.state, status, exit_status))
         else:
             # this happens when we reach the time limit and this work
             # must be aborted before dispatched to any man
@@ -724,7 +724,7 @@ class work_attribute_parser:
 
 
 class Work:
-    def init(self, work_idx, cmd, dirs, envs, cur_time, server, conn):
+    def init(self, work_idx, cmd, dirs, mksh_pid, envs, cur_time, server, conn):
         """
         cmd : command line (string)
         dirs  : working directories of the command (string)
@@ -735,6 +735,7 @@ class Work:
         self.work_idx = work_idx
         self.cmd = cmd
         self.dirs = dirs
+        self.mksh_pid = mksh_pid
         self.envs = envs + [ ("GXP_MAKE_WORK_IDX=%d" % work_idx) ]
         self.time_req = cur_time
         # volatile fields
@@ -749,12 +750,14 @@ class Work:
         # such works must have been finished
         envs = string.join(self.envs, ",")
         dirs = string.join(self.dirs, ",")
-        return (self.work_idx, self.cmd, dirs, envs, self.time_req)
+        return (self.work_idx, self.cmd, dirs, 
+                self.mksh_pid, envs, self.time_req)
 
     def restore_from_tuple(self, tup):
         (self.work_idx, 
          self.cmd,
          dirs,
+         self.mksh_pid,
          envs,
          self.time_req) = tup
         self.envs = string.split(envs, ",")
@@ -781,8 +784,8 @@ class Work:
         return A
 
     def finish_or_retry(self, status, exit_status, termsig):
-        if status == run_status.worker_died \
-               or status == run_status.worker_left:
+        if 0 and (status == run_status.worker_died \
+                      or status == run_status.worker_left):
             self.retry()
         else:
             self.send_exit_status(exit_status, termsig)
@@ -805,16 +808,27 @@ class Work:
         todo: consider killing the process by termsig
         """
         assert self.conn is not None
-        msg = "%s\n" % exit_status
-        try:
-            self.conn.send(msg)
-            self.conn.close()
-        except socket.error,e:
-            if e.args[0] == errno.EPIPE:
-                Es("xmake: could not send result to client: %s\n"
-                   % (e.args,))
-            else:
-                raise
+        if exit_status is not None:
+            msg = "%d\n" % exit_status
+            try:
+                self.conn.send(msg)
+                self.conn.close()
+            except socket.error,e:
+                if e.args[0] == errno.EPIPE or e.args[0] == errno.EBADF:
+                    Es("xmake: could not send result to client: %s\n"
+                       % (e.args,))
+                else:
+                    raise
+        else:
+            assert termsig is not None
+            try:
+                os.kill(self.mksh_pid, termsig)
+            except OSError,e:
+                if e.args[0] == errno.ESRCH:
+                    Es("xmake: could not send result to client: %s\n"
+                       % (e.args,))
+                else:
+                    raise
         
 class xmake_server_conf:
     def __init__(self):
@@ -1096,6 +1110,7 @@ class work_db_mem(work_db_base):
         self.wp = open(os.path.join(dire, work_db), "wb")
         self.wp.write('work_idx\t'
                       'cmd\t'
+                      'local pid\t'
                       'queued\t'
                       'run_idx\t'
                       'status\t'
@@ -1175,6 +1190,7 @@ class work_db_mem(work_db_base):
         sr = string.replace
         return ("%d\t"
                 "%s\t"
+                "%d\t"
                 "%.3f\t" 
                 "%d\t" 
                 "%s\t" 
@@ -1197,6 +1213,7 @@ class work_db_mem(work_db_base):
                 "%s" %
                 (work.work_idx,
                  sr(sr(work.cmd, "\t", " "), "\n", " "),
+                 work.mksh_pid,
                  work.time_req,
                  run.run_idx,
                  self.pr_status(run),
@@ -1367,7 +1384,7 @@ class work_db_sqlite3_base(work_db_base):
             db = ":memory:"
         conn = sqlite3.connect(db)
         conn.execute("""
-create table works (work_idx integer, cmd text, cwd text, env text, time_req real)
+create table works (work_idx integer, cmd text, cwd text, mksh_pid integer, env text, time_req real)
 """)
         conn.execute("""
 create table runs (work_idx integer, run_idx integer, status text, 
@@ -1390,7 +1407,7 @@ create index idx_runs on runs(run_idx)
         work : Work object
         """
         conn = self.conn
-        conn.execute("insert into works values (?, ?, ?, ?, ?)", 
+        conn.execute("insert into works values (?, ?, ?, ?, ?, ?)", 
                      work.save_to_tuple())
         self.n_works = self.n_works + 1
 
@@ -1401,7 +1418,7 @@ create index idx_runs on runs(run_idx)
         """
         conn = self.conn
         conn.execute("""
-insert into runs values (?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?)
+insert into runs values (?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?,  ?, ?, ?)
 """, run.save_to_tuple())
 
     def update_run(self, run):
@@ -1433,8 +1450,8 @@ update runs set work_idx = ?, run_idx = ?, status = ?, pid = ?, exit_status = ?,
         n_works = 0
         for row in c:
             idx = row[0]
-            r_tuple = row[0:18]        # UGLY
-            w_tuple = (idx,) + row[18:]   # UGLY
+            r_tuple = row[0:23]        # UGLY
+            w_tuple = (idx,) + row[23:]   # UGLY
             if work is None or work.work_idx != idx:
                 if work:
                     yield (work,runs)
@@ -1510,6 +1527,7 @@ class work_table_generator:
         wp.write("<tr>"
                  "<td>idx</td>"
                  "<td>cmd</td>"
+                 "<td>local pid</td>"
                  "<td>queued</td>"
                  "<td>status</td>"
                  "<td>worker</td>"
@@ -1624,9 +1642,11 @@ class work_table_generator:
                 # generate 'work' columns
                 wp.write("<td rowspan=%d>%d</td>"
                          "<td rowspan=%d>%s</td>"
+                         "<td rowspan=%d>%d</td>"
                          "<td rowspan=%d>%.3f</td>" %
                          (n_runs, work.work_idx, 
                           n_runs, self.pr_str_safe(work.cmd), 
+                          n_runs, work.mksh_pid,
                           n_runs, work.time_req))
             # generate 'run' columns
             wp.write('<td class="%s">%s</td>'
@@ -1983,7 +2003,7 @@ td.man_3_gone {
 
     def gen_section_toc(self, wp):
         if self.server.works.work_db:
-            work_db = ('<li><a href="%s">all jobs in sqlite3 database</a>'
+            work_db = ('<li><a href="%s">all jobs in database (sqlite3 or csv)</a>'
                        % self.server.works.work_db)
         else:
             work_db = ""
@@ -2156,6 +2176,48 @@ td.man_3_gone {
         os.rename(filename_t, filename)
 
 
+class xmake_dispatcher(gxpc.cmd_interpreter):
+    def __init__(self, svr):
+        gxpc.cmd_interpreter.__init__()
+        self.svr = svr
+        
+    def handle_event_die(self, gupid, tid, ev):
+        self.svr.recv_die(gupid, tid, ev)
+
+    def process_an_event(self, tgt, tid, time_limit):
+        """
+        receive an event. event is either receiving a message
+        from the daemon it connects to or receiving data from
+        one of its incoming file descriptors.  it is a result
+        of merging recv_once and forwarder.
+        """
+        # assert tgt or (len(self.inmap) == 0)
+        if self.so is None: 
+            if self.opts.verbosity>=2:
+                Es("gxpc: process_an_event: socket to deamon closed\n")
+            return 0
+        R_ = self.inmap.keys()
+        R_.append(self.so)
+        R_.append(self.ss)
+        to = self.time_limit_to_out(time_limit)
+        # Es("process_an_event %d input fds, socket is %s, timeout = %s\n"
+        # % (len(self.inmap), self.so, to))
+        if self.opts.verbosity>=2:
+            Es("gxpc: process_an_event: wait for an event (timeout = %s)\n" % to)
+        if to is None:
+            R,_,_ = select.select(R_, [], [])
+        else:
+            R,_,_ = select.select(R_, [], [], to)
+        for r in R:
+            if r is self.so:
+                self.process_msg_from_daemon(r)
+            elif r is self.ss:
+                self.svr.recv_work(r)
+            else:
+                self.process_data_from_fd(r, tgt, tid)
+        return 1
+
+
 class xmake_server:
     """
 
@@ -2172,8 +2234,6 @@ class xmake_server:
         self.make_args = None
         # args this process takes (after '--')
         self.xmake_args = None
-        # args persistent e takes (after '---')
-        self.e_args = None
         # start time
         self.time_start = None
         # file object for the log
@@ -2184,12 +2244,13 @@ class xmake_server:
         self.id_gen = id_generator()
         # for e --persistent 1 ...,
         # its command line, pid, exit status, pipe
-        self.gxpc_cmd = None
-        self.gxpc_pid = None
-        self.gxpc_status = None
-        self.gxpc_fd = None          # termination notification
-        self.gxpc_partial_msg = None    # incomplete line
-        self.gxpc_io_fd = None
+        if 0:
+            self.gxpc_cmd = None
+            self.gxpc_pid = None
+            self.gxpc_status = None
+            self.gxpc_fd = None          # termination notification
+            self.gxpc_partial_msg = None    # incomplete line
+            self.gxpc_io_fd = None
         # UNIX domain socket to accept connect from mksh
         self.so = None
         self.so_name = None             # so's path name
@@ -2198,11 +2259,12 @@ class xmake_server:
         # sigchild handling
         # a sig handler writes to child_wfd,
         # and the main thread receives it from rfd
-        self.child_rfd = None
-        self.child_wfd = None
-        self.n_sigchld_called = 0
-        self.n_sigchild_written = None
-        self.n_sigchild_read = None
+        if 0:
+            self.child_rfd = None
+            self.child_wfd = None
+            self.n_sigchld_called = 0
+            self.n_sigchild_written = None
+            self.n_sigchild_read = None
         # self pid
         self.self_pid = None
         # pid of GNU make process
@@ -2213,7 +2275,8 @@ class xmake_server:
         self.runs_todo = None           # runs to do
         self.runs_running = None        # runs running
         self.matches = None             # found mathces yet to dispatch
-        self.run_pids = None
+        if 0:
+            self.run_pids = None
         # dict of all men (man name -> man)
         self.men = None
         # list of free men
@@ -2408,52 +2471,6 @@ class xmake_server:
             if fd is not None: os.close(fd)
         if self.so is not None: self.so.close()
 
-    def readlines_aux(self, fd):
-        """
-        read upto 100K bytes without blocking.
-        """
-        F = [ fd ]
-        W = E = []
-        while 1:
-            try:
-                R,_,_ = select.select(F, W, E, 0.0)
-            except select.error,e:
-                if e.args[0] == errno.EINTR:
-                    continue    # retry
-                else:
-                    raise
-            if len(R) == 0: return ""
-            try:
-                return os.read(fd, 100000)
-            except IOError,e:
-                if e.args[0] == errno.EINTR:
-                    continue    # retry
-                else:
-                    raise
-
-    def readlines(self, fd):
-        """
-        read many bytes from fd and return a list
-        of lines. partial lines are kept in
-        self.gxpc_partial_msg
-        """
-        A = []
-        while 1:
-            a = self.readlines_aux(fd)
-            if a == "": break
-            A.append(a)
-        A = string.split(string.join(A, ""), "\n")
-        if len(A) == 0:
-            assert self.gxpc_partial_msg == ""
-            return []
-        else:
-            X = self.gxpc_partial_msg
-            A[0] = X + A[0]
-            self.gxpc_partial_msg = A[-1]
-            S = A[:-1]
-            for s in S: assert s, (a, A, X, S)
-            return S
-            
     def recv_bytes(self, conn, n):
         """
         receive n bytes from a connection
@@ -2503,6 +2520,7 @@ class xmake_server:
         given --translate_dir A,B1,B2,... convert it to
         --dir B1' --dir B2' ...
         """
+        # Es("translate %s with %s\n" % (cwd, self.opts.translate_dir))
         for src,dsts in self.opts.translate_dir:
             # look for src that match dire
             n = len(src)
@@ -2518,30 +2536,35 @@ class xmake_server:
         receive a work from mksh.
         """
         cmd = self.recv_element(conn)
-        if cmd is None or cmd == "": return None,None,None
+        if cmd is None or cmd == "": return None,None,None,None
         cwd = self.recv_element(conn)
-        if cwd is None or cwd == "": return None,None,None
+        if cwd is None or cwd == "": return None,None,None,None
+        mksh_pid = self.recv_element(conn)
+        mksh_pid = self.safe_int(mksh_pid)
+        if mksh_pid is None or mksh_pid == "": 
+            return None,None,None,None
         dirs = self.translate_dir(cwd)
         envs = []
         while 1:
             varval = self.recv_element(conn)
             if varval == "": break
-            if varval is None: return None,None,None
+            if varval is None: return None,None,None,None
             envs.append(varval)
-        return cmd,dirs,envs
+        return cmd,dirs,mksh_pid,envs
 
     def recv_work(self):
         """
         receive a work from a connection
         """
         conn,addr = self.so.accept()
-        cmd,dirs,envs = self.recv_work_aux(conn)
+        cmd,dirs,mksh_pid,envs = self.recv_work_aux(conn)
+        ## ??? what if cmd is None?
         if dbg>=2:
             if self.logfp:
                 self.LOG("received cmd=%s dirs=%s env=%s\n" % (cmd, dirs, envs))
         cur_time = self.cur_time()
         work_idx = self.id_gen.work_counter.get()
-        work = Work().init(work_idx, cmd, dirs, envs, cur_time, self, conn)
+        work = Work().init(work_idx, cmd, dirs, mksh_pid, envs, cur_time, self, conn)
         self.works.add_work(work)
         work.make_run()
 
@@ -2560,6 +2583,7 @@ class xmake_server:
                 else:
                     raise
             if len(R) == 0: break
+            # ??? double check if recv_work is interrupted 
             self.recv_work()
             n = n + 1
         if n > 0:
@@ -2589,6 +2613,78 @@ class xmake_server:
         if self.logfp:
             self.LOG("received %d notifications\n" % len(lines))
 
+    def recv_die(self, so, man_name, tid, ev):
+        """
+        handle a message from gxpc saying a process has finished
+        """
+        rid = ev.rid
+        wait_status = ev.status
+        rusage = ev.rusage
+        worker_time_start = ev.time_start
+        worker_time_end = ev.time_end
+
+        assert man_name != ""
+        man = self.men.get(man_name)
+        cur_time = self.cur_time()
+        if rid == self.id_gen.join:
+            # got notifications saying a worker has joined
+            if man is None:
+                # the first msg from this man
+                capacity = self.conf.get_cpu_count(man_name)
+                if self.logfp:
+                    self.LOG("new worker %s joined with %d cpus\n" 
+                             % (man_name, capacity))
+                man = Man(len(self.men), man_name, capacity, cur_time)
+                self.men[man_name] = man
+                for i in range(capacity):
+                    self.men_free.append((man.prio(), man))
+        elif rid == self.id_gen.ping:
+            # notifications saying ping to a worker has finished
+            if man:
+                man.set_heartbeat(cur_time)
+                msg = ("worker %s in state %s replied to ping\n"
+                       % (man_name, man.state))
+                if self.logfp: self.LOG(msg)
+                if man.state != man_state.active: Es("xmake: %s" % msg)
+        elif rid == self.id_gen.leave_now:
+            # notifications saying a worker has received leave now
+            if man:
+                msg = ("worker %s in state %s will leave now\n"
+                       % (man_name, man.state))
+                if self.logfp: self.LOG(msg)
+                Es("xmake: %s" % msg)
+                if man.state < man_state.leave_now:
+                    man.state = man_state.leave_now
+        elif rid == self.id_gen.leave:
+            # notifications saying a worker has received leave msg
+            if man:
+                msg = ("worker %s in state %s will leave after current work\n"
+                       % (man_name, man.state))
+                if self.logfp: self.LOG(msg)
+                Es("xmake: %s" % msg)
+                if man.state < man_state.leaving:
+                    man.state = man_state.leaving
+        elif self.id_gen.run_pat.match(rid):
+            run_idx = self.id_gen.get_run_idx(rid)
+            assert run_idx is not None
+            run = self.runs_running.get(run_idx)
+            if run:
+                # convert time_start/time_end, which are raw values
+                # obtained by time.time() on _workers_.  convert them
+                # in _relative_ time on the server. this means values
+                # still contain skews between master and workers
+                worker_time_start = self.relative_time(worker_time_start)
+                worker_time_end = self.relative_time(worker_time_end)
+                self.handle_finish(run, wait_status, rusage, 
+                                   worker_time_start, worker_time_end)
+            else:
+                Es("xmake: run %s has already finished\n" % run_idx)
+        else:
+            msg = "unknown rid %s\n" % rid
+            if self.logfp: self.LOG(msg)
+            Es("xmake: %s" % msg)
+        self.n_state_changes = self.n_state_changes + 1
+            
     def recv_notification(self, line):
         """
         handle a message from gxpc saying a process has finished
@@ -2643,15 +2739,17 @@ class xmake_server:
             run_idx = self.id_gen.get_run_idx(rid)
             assert run_idx is not None
             run = self.runs_running.get(run_idx)
-            assert run, run_idx
-            # convert time_start/time_end, which are raw values
-            # obtained by time.time() on _workers_.  convert them
-            # in _relative_ time on the server. this means values
-            # still contain skews between master and workers
-            worker_time_start = self.relative_time(worker_time_start)
-            worker_time_end = self.relative_time(worker_time_end)
-            self.handle_finish(run, wait_status, rusage, 
-                               worker_time_start, worker_time_end)
+            if run:
+                # convert time_start/time_end, which are raw values
+                # obtained by time.time() on _workers_.  convert them
+                # in _relative_ time on the server. this means values
+                # still contain skews between master and workers
+                worker_time_start = self.relative_time(worker_time_start)
+                worker_time_end = self.relative_time(worker_time_end)
+                self.handle_finish(run, wait_status, rusage, 
+                                   worker_time_start, worker_time_end)
+            else:
+                Es("xmake: run %s has already finished\n" % run_idx)
         else:
             msg = "unknown rid %s\n" % rid
             if self.logfp: self.LOG(msg)
@@ -2826,17 +2924,6 @@ class xmake_server:
             self.LOG("%d job matches found\n" % len(matches))
         return matches
 
-    def check_readable(self, fd):
-        """
-        check if fd is readable
-        """
-        try:
-            R,_,_ = select.select([ fd ], [], [], 0.0)
-            if len(R) > 0: return 1
-        except select.error,e:
-            if e.args[0] != errno.EINTR: raise
-        return 0
-                    
     def dispatch(self):
         """
         dispatch some works, assuming there is a free worker
@@ -2851,33 +2938,20 @@ class xmake_server:
                 self.LOG(("do not dispatch work after %.3f\n"
                           % self.opts.no_dispatch_after))
             return 0
-        for m in self.find_matches():
-            self.matches.append(m)
+        self.matches.extend(self.find_matches())
         n = 0
         cur_time = self.cur_time()
         while len(self.matches) > 0:
             run,man = self.matches.pop(0)
             run.start(cur_time, man, self.opts.emulate)
-            self.run_pids[run.pid] = None
+            if 0: self.run_pids[run.pid] = None
             n = n + 1
             self.n_state_changes = self.n_state_changes + 1
-            # check if a job is returning
-            # may be too much overhead
-            if len(self.run_pids) >= 2000:
-                self.LOG("job dispatches break after %d jobs dispatched\n" % n)
-                break
-            if n >= 1000: #  and self.check_readable(self.gxpc_fd)
-                self.LOG("job dispatches break after %d jobs dispatched\n" % n)
-                break
-            # check if there are many zombie children
-            if self.n_sigchild_written - self.n_sigchild_read > 50:
-                self.LOG("job dispatches break after %d jobs to handle zombies\n" % n)
-                break
         if n > 0:
             self.run_counts.add_dx(cur_time, 1, n) # sent runs += 1
             self.parallelism.add_dx(cur_time, 0, n)
         if self.logfp:
-            self.LOG("%d jobs dispatched, %d unreaped children\n" % (n, len(self.run_pids)))
+            self.LOG("%d jobs dispatched\n" % n)
         return n
 
     def check_worker_status(self, cur_time):
@@ -2911,53 +2985,13 @@ class xmake_server:
                 for run in man.runs_running.values():
                     run.finish(cur_time, status, exit_status,
                                None, None, None, None)
-                    assert run.run_idx not in man.runs_running
-                    assert run.run_idx not in self.runs_running
+                    # assert run.run_idx not in man.runs_running
+                    # assert run.run_idx not in self.runs_running
                     assert run.man is None
                 if n > 0:
                     self.parallelism.add_dx(cur_time, 0, -n)
                 assert len(man.runs_running) == 0
 
-    def run_persistent_e(self, tid):
-        """
-        create the task to which processes will be added later.
-        invoked once in the beginning.
-
-        return command_line,pid,file_object_to_hear_from_it
-        """
-        # child gxpc write process terminatation events to w.
-        # parent gets them from r
-        r,w = os.pipe()
-        rj,wj = os.pipe()
-        # rc becomes stdin of the child
-        # the parent immediately closes w0
-        # net effect is gxpc immediately receives EOF from its stdin
-        rc,wc = os.pipe()
-
-        rid = self.id_gen.join
-        cmd = ([ self.opts.gxpc ] + self.e_args
-               + [ "e", "--tid", tid, "--persist", "1",
-                   "--rid", rid, 
-                   "--notify_proc_exit", ("%d" % w),
-                   "--log_io", ("%d" % wj) ])
-        pid = os.fork()
-        if pid == 0:
-            self.close_fds()
-            # os.setpgrp()
-            os.close(r)
-            os.close(rj)
-            os.close(wc)
-            os.dup2(rc, 0)              # make rc stdin of the child
-            if self.logfp:
-                self.LOG("run persistent task %s\n" % cmd)
-            os.execvp(cmd[0], cmd)
-        else:
-            os.close(w)
-            os.close(wj)
-            os.close(rc)
-            os.close(wc)
-            return cmd,pid,r,rj
-        
     def men_total_capacity(self):
         n = 0
         for man in self.men.values():
@@ -3116,114 +3150,6 @@ class xmake_server:
         else:
             return pid
 
-    def sigchld(self, num, frame):
-        """
-        Handler of SIGCHLD. see below.
-        """
-        if 0 and self.logfp:    # too slow 
-            self.LOG("sigchld handler %d\n" % self.child_wfd)
-        self.n_sigchld_called = self.n_sigchld_called + 1
-        try:
-            x = os.write(self.child_wfd, "x")
-            assert x == 1
-            self.n_sigchild_written = self.n_sigchild_written + 1
-        except OSError,e:
-            if e.args[0] == errno.EBADF:
-                if self.logfp:
-                    self.LOG("sigchld failed to write\n")
-            else:
-                raise
-        if 0 and self.logfp:
-            self.LOG("sigchld handler returns\n")
-
-    def register_sigchld_handler(self):
-        """
-        register signal handler and notification pipe.
-        """
-        r,w = os.pipe()
-        self.child_rfd = r
-        self.child_wfd = w
-        self.n_sigchild_written = 0
-        self.n_sigchild_read = 0
-        signal.signal(signal.SIGCHLD, self.sigchld)
-
-    def handle_child_death(self):
-        """
-        called after a child terminates.
-        when a child terminates, OS first calls the sigchld.
-        it simply writes one byte to child_wfd.
-        meanwhile, the main thread selects child_rfd, so
-        it will know a child terminates, and handles it.
-        
-        """
-        w = self.n_sigchild_written
-        r = self.n_sigchild_read
-        if self.logfp:
-            self.LOG("reaping children (w=%d,r=%d)\n" % (w, r))
-        x = w - r
-        # I don't know why, but it really happens that
-        # written < read.
-        if x <= 0: x = 1
-
-        x = 10000                 # why 100? not 1000 or 10000?
-        a = ""
-        try:
-            a = os.read(self.child_rfd, x)
-        except IOError,e:
-            if e.args[0] == errno.EINTR:
-                if self.logfp:
-                    self.LOG("read interrupted\n")
-                return
-            else:
-                raise
-        if self.logfp:
-            self.LOG("got %d x's from child_rfd (%d sigchld calls)\n"
-                     % (len(a), self.n_sigchld_called))
-        self.n_sigchild_read = self.n_sigchild_read + len(a)
-        pids = []
-        while 1:
-            try:
-                pid,status = os.waitpid(-1, os.WNOHANG)
-            except OSError,e:
-                if e.args[0] == errno.ECHILD: break
-                raise
-            if pid == 0: break
-            rusage = self.ru.get_child_rusage()
-            pids.append((pid, status, rusage))
-        for pid,status,rusage in pids:
-            if dbg>=2:
-                if self.logfp:
-                    self.LOG("child (%d) terminated with %d\n" % (pid, status))
-            if self.run_pids.has_key(pid):
-                if dbg>=2:
-                    if self.logfp:
-                        self.LOG("it is a run process\n")
-                del self.run_pids[pid]
-            elif pid == self.make_pid:
-                if dbg>=2:
-                    if self.logfp:
-                        self.LOG("it is the child make\n")
-                self.make_pid = None
-                self.make_status = status
-            elif pid == self.gxpc_pid:
-                if dbg>=2:
-                    if self.logfp:
-                        self.LOG("it is the initial process\n")
-                self.gxpc_pid = None
-                self.gxpc_status = status
-            elif pid == self.pinger.pid:
-                if dbg>=2:
-                    if self.logfp:
-                        self.LOG("it is a ping job\n")
-                self.pinger.pid = None
-            else:
-                if dbg>=2:
-                    if self.logfp:
-                        self.LOG("it is other processes\n")
-            self.n_state_changes = self.n_state_changes + 1
-        if self.logfp:
-            self.LOG("%d children reaped\n" % len(pids))
-                
     def close_socket(self):
         if self.so:
             if self.logfp:
@@ -3233,12 +3159,18 @@ class xmake_server:
             os.remove(self.so_name)
             self.so_name = None
         
-    def kill_gxpc(self):
-        if self.gxpc_pid is not None:
+    def kill_make(self):
+        if self.make_pid is not None:
             if self.logfp:
-                self.LOG("killing initial process and its children %s\n"
-                         % self.gxpc_pid)
-            os.kill(self.gxpc_pid, signal.SIGTERM)
+                self.LOG("killing make process %s\n"
+                         % self.make_pid)
+            try:
+                os.kill(self.make_pid, signal.SIGTERM)
+            except OSError,e:
+                if e.args[0] == errno.ESRCH: 
+                    self.LOG("no such process %s\n"
+                             % self.make_pid)
+                raise
 
     def abandon_runs_unfinished(self):
         """
@@ -3250,7 +3182,8 @@ class xmake_server:
             self.LOG("exiting %d outstanding processes\n" % len(runs))
         for run in runs:
             run.finish(cur_time, run_status.interrupted, 
-                       self.opts.exit_status_interrupted, None, None, None, None)
+                       self.opts.exit_status_interrupted, 
+                       None, None, None, None)
         # not true because run is delete only after
         # getting EOFs from stdout/err
         # assert len(self.runs_running) == 0
@@ -3259,7 +3192,8 @@ class xmake_server:
         while len(self.runs_todo) > 0:
             run = self.runs_todo.pop(0)
             run.finish(cur_time, run_status.no_throw, 
-                       self.opts.exit_status_no_throw, None, None, None, None)
+                       self.opts.exit_status_no_throw, 
+                       None, None, None, None)
         
     def determine_exit_status(self):
         s = self.make_status
@@ -3296,7 +3230,7 @@ class xmake_server:
         nd_after = self.opts.no_dispatch_after
         cur_time = self.cur_time()
         if int_at is not None and cur_time > int_at:
-            self.interrupted = 1
+            self.interrupted = self.interrupted + 1 # really?
             msg = ("hard limit %.3f reached. outstanding jobs will"
                    " be killed with SIGINT. waiting jobs will exit"
                    " with %d\n" 
@@ -3305,7 +3239,7 @@ class xmake_server:
             Es("xmake: %s" % msg)
         elif nd_after is not None and cur_time > nd_after \
                 and len(self.runs_running) == 0:
-            self.interrupted = 1
+            self.interrupted = self.interrupted + 1 # really?
             msg = ("soft limit %.3f reached. wait for outstanding"
                    " jobs to finish. waiting jobs will exit with %d\n"
                    % (nd_after, self.opts.exit_status_no_throw))
@@ -3318,7 +3252,8 @@ class xmake_server:
         if self.cleaning: return
         self.cleaning = 1
         self.close_socket()
-        self.kill_gxpc()
+        if 0: self.kill_gxpc()
+        self.kill_make()
         self.abandon_runs_unfinished()
 
     def check_interrupt_or_make_death(self):
@@ -3604,6 +3539,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.89  2010/09/08 04:08:22  ttaauu
+# a new job scheduling framework (gxpc js). see ChangeLog 2010-09-08
+#
 # Revision 1.88  2010/07/08 08:29:45  ttaauu
 # *** empty log message ***
 #

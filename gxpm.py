@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpm.py,v 1.10 2010/05/25 18:13:58 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpm.py,v 1.11 2010/09/08 04:08:22 ttaauu Exp $
 # $Name:  $
 #
 
@@ -327,7 +327,7 @@ class xxx_action_synchronize(action, xxx_synchronize_message):
 # those actions should be executed.
 #
 
-class clause:
+class clausexxx:
     """
     an instruction that says "do those actions
     when your name (gupid) matches a regular expression ON"
@@ -507,6 +507,9 @@ class syn:
         self.event = event
 
 # $Log: gxpm.py,v $
+# Revision 1.11  2010/09/08 04:08:22  ttaauu
+# a new job scheduling framework (gxpc js). see ChangeLog 2010-09-08
+#
 # Revision 1.10  2010/05/25 18:13:58  ttaauu
 # support --translate_dir src,dst1,dst2,... and associated changes. ChangeLog 2010-05-25
 #

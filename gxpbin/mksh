@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh,v 1.17 2010/05/26 17:18:48 kamoshida Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh,v 1.18 2010/09/08 04:08:22 ttaauu Exp $
 # $Name:  $
 #
 
@@ -24,13 +24,14 @@ import errno,os,re,sys,socket,string
 def Es(s):
     sys.stderr.write(s)
 
-envs_to_pass = [ "MAKEFLAGS", "MAKELEVEL", #"MAKEFILES",
-                 "GXP_MAKELEVEL", 
-                 "GXP_MAKE_SO_NAME",
-                 "GXP_MAKE_MKSH_PID",
-                 "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED",
-                 "GXP_MAKE_EXIT_STATUS_SERVER_DIED",
-                 ]
+# 2010.5.27 
+# no longer pass these three variables, because it does not make sense
+# to use mksh on worker hosts
+# "MAKEFLAGS", "MAKELEVEL", "MAKEFILES"
+# "GXP_MAKELEVEL", "GXP_MAKE_SO_NAME",
+# "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED",
+# "GXP_MAKE_EXIT_STATUS_SERVER_DIED",
+# envs_to_pass = [ "GXP_MAKE_MKSH_PID" ]
 
 def submit(so_name, cmd):
     key_cf = "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"
@@ -38,14 +39,17 @@ def submit(so_name, cmd):
     exit_status_connect_failed = int(os.environ.get(key_cf, "125"))
     exit_status_server_dead = int(os.environ.get(key_sd, "126"))
     
-    cwd = translate_cwd()
+    # cwd = translate_cwd()
+    cwd = os.path.normpath(os.getcwd())
+    mksh_pid = ("%d" % os.getpid())
     msgs = []
     msgs.append("%9d %s" % (len(cmd), cmd))
     msgs.append("%9d %s" % (len(cwd), cwd))
-    os.environ["GXP_MAKE_MKSH_PID"] = ("%d" % os.getpid())
+    msgs.append("%9d %s" % (len(mksh_pid), mksh_pid))
+    # os.environ["GXP_MAKE_MKSH_PID"] = mksh_pid
     # extend envs_to_pass
     envs = string.split(os.environ.get("GXP_MAKE_ENVS", ""))
-    for var in envs_to_pass + envs:
+    for var in envs:            # envs_to_pass + 
         if os.environ.has_key(var):
             varval = "%s=%s" % (var, os.environ[var])
             msgs.append("%9d %s" % (len(varval), varval))
@@ -98,14 +102,22 @@ def submit_or_exec(so_name, cmd):
         os.environ["GXP_MAKELEVEL"] = ("%d" % (lev + 1))
         os.execvp("sh", [ "sh", "-c", cmd ])
     elif string.atoi(os.environ.get("MAKELEVEL", "0")) < string.atoi(os.environ["GXP_MAKELEVEL"]):
-        # $(shell ...)
+        # GXP_MAKELEVEL is initially set to 1 by xmake, and incremented 
+        # when mksh execs recursive make.
+        # make seems to manage MAKELEVEL as follows.
+        # it internally keeps a variable x, initially unset (effectively 0).
+        # when it spawns a child task, it sets the child's MAKELEVEL to x+1,
+        # whereas when it spawns a process for $(shell ...), it leaves
+        # MAKELEVEL as it is. so this condition says the process
+        # is spawned by $(shell ...)
         os.execvp("sh", [ "sh", "-c", cmd ])
     else:
         # submit all others
         # Es("submit\n")
         submit(so_name, cmd)
 
-def translate_cwd():
+# 2010.5.27 no longer used
+def translate_cwd_xxx():
     cwd = os.path.normpath(os.getcwd())
     return cwd
     for var,trans in [ ("HOME", "~") ]:
@@ -137,6 +149,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: mksh,v $
+# Revision 1.18  2010/09/08 04:08:22  ttaauu
+# a new job scheduling framework (gxpc js). see ChangeLog 2010-09-08
+#
 # Revision 1.17  2010/05/26 17:18:48  kamoshida
 # *** empty log message ***
 #

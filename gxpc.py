@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.62 2010/06/11 16:54:25 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.63 2010/09/08 04:08:22 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1511,6 +1511,8 @@ class cmd_interpreter:
         ensure connection to gxpd.
         """
         if self.so is None:
+            if self.opts.verbosity>=2:
+                Es("gxpc: connecting to daemon\n")
             daemon_addr_path = os.path.join(self.gxp_tmp, self.daemon_addr)
             # so = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             for i in range(2):
@@ -2374,7 +2376,7 @@ class cmd_interpreter:
 
     def handle_event_peerstatus(self, gupid, tid, ev):
         if self.opts.verbosity>=2:
-            Ws(("handle_event_peerstatus(%s,%s,%s,%s,"
+            Es(("handle_event_peerstatus(%s,%s,%s,%s,"
                 "ev.parent_name=%s,ev.rid=%s)\n" % 
                 (ev.peername, ev.target_label, ev.hostname, 
                  ev.status, ev.parent_name, ev.rid)))
@@ -2435,9 +2437,11 @@ class cmd_interpreter:
         assume connectin is established.
         send str to gxpd.
         """
-        # Ws("send : %s\n" % str)
         so = self.so
-        if so is None: return -1
+        if so is None: 
+            if self.opts.verbosity>=2:
+                Es("gxpc: couldn't send %d bytes to daemon because socket is already closed\n" % len(str))
+            return -1
         if 1:
             msg = (self.h_temp % (len(str), 0)) + str + (self.t_temp % (len(str), 0, 0))
             so.send(msg)
@@ -2445,6 +2449,8 @@ class cmd_interpreter:
             so.send(self.h_temp % (len(str), 0))
             so.send(str)
             so.send(self.t_temp % (len(str), 0, 0))
+        if self.opts.verbosity>=2:
+            Es("gxpc: sent %d bytes to daemon\n" % len(str))
         return 0
 
     def asend(self, str):
@@ -2456,7 +2462,8 @@ class cmd_interpreter:
             if e.args[0] == errno.EPIPE \
                or e.args[0] == errno.ECONNRESET \
                or e.args[0] == errno.EBADF: # closed just before
-                # Es("gxpc: warning: processes quit before receiving some msgs %s\n" % (e.args,))
+                if self.opts.verbosity>=2:
+                    Es("gxpc: warning: send to daemon got error %s\n" % (e.args,))
                 return -1
             else:
                 raise
@@ -2476,35 +2483,14 @@ class cmd_interpreter:
         if timeout is None: return None
         return timeout + time.time()
         
-    def recv_once(self, time_limit):
+    def recv_msg_from_daemon(self, so):
         """
-        receive a single msg. return None on EOF
+        receive a msg from daemon (assuming there is one ready).
+        return None if it gets EOF.
+        return string otherwise.
         """
-        so = self.so
-        to = self.time_limit_to_out(time_limit)
-        try:
-            if to is not None:
-                R,_,_ = select.select([so], [], [], to)
-                if len(R) == 0.0:
-                    Es("gxpc: timeout\n")
-                    return None
-            if 0: Es("so.recv\n")
-            hd = so.recv(self.h_len)
-            if 0: Es("so.recv done\n")
-        except socket.error,e:
-            # 2007 1 14
-            # recv seems to get ECONNRESET in come cases.
-            # my hypethesis is that it happens if:
-            # 1. remote processes terminated, so gxpd closes connection
-            # 2. almost at the same time, the forwarder thread sends
-            #    something, and send successfully returned
-            # 3. and then we reach here
-            if e.args[0] == errno.ECONNRESET:
-                return None
-            else:
-                raise
-        if hd == "":
-            return None
+        hd = so.recv(self.h_len)
+        if hd == "": return None
         m = self.h_pat.match(hd)
         assert m is not None, hd
         sz = int(m.group(1))
@@ -2524,53 +2510,104 @@ class cmd_interpreter:
                (self.t_len, len(tr)))
             return None
         return string.join(bodies, "")
-
-    def recv_loop(self, n_break_exploring, time_limit):
-        """
-        repeat receiving a msg and pass it to one of handle_xxx
-        methods, depending on the type of events
-        (info/io/die/peerstatus/fin).
-
-        return either if the connection is closed by the gxpd,
-        or we are exploring and the number of targets being
-        explored drops to the specified n_break_exploring.
         
+    def process_msg_from_daemon(self, so):
         """
-        while 1:
-            if 0: Es("recv_once\n")
-            body = self.recv_once(time_limit)
-            if 0: Es("recv_once done\n")
-            if body is None:
-                # gxpd closed the connection to me. quit
-                self.disconnect()
-                # return and say we should quit
-                return cmd_interpreter.RECV_QUIT
-            # parse msg to build a structure
-            m = gxpm.parse(body)
-            assert (isinstance(m, gxpm.up) or isinstance(m, gxpm.syn)), m
-            # record it if interesting
-            if self.events is not None:
-                self.events.append((m.gupid, m.tid, m.event))
-            # event type
-            h = "handle_%s" % m.event.__class__.__name__
-            method = getattr(self, h)
-            # call one of handle_xxx methods
-            method(m.gupid, m.tid, m.event)
-            if len(self.exploring) <= n_break_exploring:
-                # return, but say "we should continue"
-                return cmd_interpreter.RECV_CONTINUE
+        recv msg from the daemon and and process it
+        return 0 if it gets EOF.
+        return 1 otherwise.
+        """
+        msg = self.recv_msg_from_daemon(so)
+        if msg is None:
+            if self.opts.verbosity>=2:
+                Es("gxpc: got EOF from daemon\n")
+            # gxpd closed the connection to me. quit
+            self.disconnect()
+            return 0
+        # Es("process_msg_from_daemon -> %d bytes\n" % len(msg))
+        # parse msg to build a structure
+        m = gxpm.parse(msg)
+        assert (isinstance(m, gxpm.up) or isinstance(m, gxpm.syn)), m
+        if self.opts.verbosity>=2:
+            Es("gxpc: got %s\n" % m.event)
+        # record it if interesting
+        if self.events is not None:
+            if self.opts.verbosity>=2:
+                Es("gxpc: got event %s %s %s\n" 
+                   % (m.gupid, m.tid, m.event))
+            self.events.append((m.gupid, m.tid, m.event))
+        # event type
+        # Es("process_msg_from_daemon -> class = %s\n" %  m.event.__class__.__name__)
+        h = "handle_%s" % m.event.__class__.__name__
+        method = getattr(self, h)
+        # call one of handle_xxx methods
+        method(m.gupid, m.tid, m.event)
+        return 1
+        
+    def process_data_from_fd(self, fd, tgt, tid):
+        """
+        get some data from an input file descriptor and
+        process it.
+        """
+        max_read_gran = 8 * 1024
+        target_fd = self.inmap[fd]
+        payload = os.read(fd, max_read_gran)
+        if self.opts.verbosity>=2:
+            Es("gxpc: got %d bytes from fd=%d (target_fd=%d)\n" 
+               % (len(payload), fd, target_fd))
+        if payload == "": del self.inmap[fd]
+        rid = None                  # all
+        act = gxpm.action_feed(rid, target_fd, payload)
+        x = self.send_action(tgt, tid, act, 0, 0)
+        if x is None: return 0
+        return 1
 
-    def recv_loop_noex(self, n_break_exploring, time_limit):
+    def process_an_event(self, tgt, tid, time_limit):
         """
-        Repeat receiving (see above). If interrupted (by
-        ctrl-C), return -1. Otherwise return whatever
-        recv_loop returns. 
+        receive an event. event is either receiving a message
+        from the daemon it connects to or receiving data from
+        one of its incoming file descriptors.  it is a result
+        of merging recv_once and forwarder.
         """
+        # assert tgt or (len(self.inmap) == 0)
+        if self.so is None: 
+            if self.opts.verbosity>=2:
+                Es("gxpc: process_an_event: socket to deamon closed\n")
+            return 0
+        R_ = self.inmap.keys()
+        R_.append(self.so)
+        to = self.time_limit_to_out(time_limit)
+        # Es("process_an_event %d input fds, socket is %s, timeout = %s\n"
+        # % (len(self.inmap), self.so, to))
+        if self.opts.verbosity>=2:
+            Es("gxpc: process_an_event: wait for an event (timeout = %s)\n" % to)
+        if to is None:
+            R,_,_ = select.select(R_, [], [])
+        else:
+            R,_,_ = select.select(R_, [], [], to)
+        for r in R:
+            if r is self.so:
+                self.process_msg_from_daemon(r)
+            else:
+                self.process_data_from_fd(r, tgt, tid)
+        return 1
+
+    def process_events_loop(self, tgt, tid, n_break_exploring, time_limit):
+        # assert tgt or (len(self.inmap) == 0)
         try:
-            return self.recv_loop(n_break_exploring, time_limit)
+            while 1:
+                if self.opts.verbosity>=2:
+                    Es("gxpc: process_events_loop exploring=%d, n_break_exploring=%s, time_limit=%s\n"
+                       % (len(self.exploring), n_break_exploring, time_limit))
+                if len(self.exploring) <= n_break_exploring: 
+                    return cmd_interpreter.RECV_CONTINUE
+                if self.process_an_event(tgt, tid, time_limit) == 0: 
+                    return cmd_interpreter.RECV_QUIT
+                if (time_limit is not None) and (time.time() > time_limit):
+                    return cmd_interpreter.RECV_TIMEOUT
         except KeyboardInterrupt,e:
             return cmd_interpreter.RECV_INTERRUPTED
-        
+
     def send_action(self, tgt, tid, act, persist, keep_connection):
         """
         do action (act) on some nodes.
@@ -2581,7 +2618,11 @@ class cmd_interpreter:
          out_list    : output list
         
         """
-        clauses = [ gxpm.clause(".*", [ act ]) ]
+        if self.opts.verbosity>=2:
+            Es("gxpc: send action %s to daemon persist=%d keep_connection=%d\n"
+               % (act, persist, keep_connection))
+        # clauses = [ gxpm.clause(".*", [ act ]) ]
+        clauses = { None : [ act ] }
         gcmds = [ clauses ]
         peer_tree = self.session.peer_tree
 
@@ -3377,7 +3418,8 @@ session will cease.
                                    self.opts.keep_connection)
             assert tid is not None
             time_limit = self.timeout_to_limit(self.opts.timeout)
-            res = self.recv_loop_noex(None, time_limit)
+            # res = self.recv_loop_noex(None, time_limit)
+            res = self.process_events_loop(tgt, tid, None, time_limit)
             assert res != cmd_interpreter.RECV_CONTINUE
             if res == cmd_interpreter.RECV_INTERRUPTED:
                 got_sigint = 1
@@ -3604,78 +3646,6 @@ Description:
     # the 'e' command and helper
     #
 
-    def forwarder(self, tgt, tid):
-        max_read_gran = 1024 * 8       # 8KB
-        buffers = {}                    #  fd -> buffer
-        while len(self.inmap) > 0:
-            fds = self.inmap.keys()
-            # Es("<select %s>\n" % fds)
-            if len(buffers) > 0:
-                timeout = 0.02
-            else:
-                timeout = None
-            try:
-                rfd,_,_ = select.select(fds, [], [], timeout)
-            except select.error,e:
-                if e.args[0] == errno.EINTR:
-                    # Es("oh my\n")
-                    break
-                raise
-            assert (timeout is not None) or (len(rfd) > 0)
-            if len(rfd) == 0:
-                assert timeout is not None
-                assert len(buffers) > 0
-                if self.flush_buffers(tgt, tid, buffers) == -1:
-                    # Es("gaaan\n")
-                    return
-                buffers = {}
-            else:
-                for fd in rfd:
-                    # Es("<read %s>\n" % fd)
-                    target_fd = self.inmap[fd]
-                    # message from main thread
-                    if target_fd == "sync":
-                        hd = os.read(fd, self.h_len)
-                        if hd == "":
-                            raise RuntimeError, 'Pipe with main thread may be broken.'
-                        m = self.h_pat.match(hd)
-                        assert m is not None, hd
-                        sz = int(m.group(1))
-                        assert sz > 0, sz
-                        new_exec_tree_count,new_exec_tree = gxpm.parse(os.read(fd, sz))
-                        assert isinstance(new_exec_tree, gxpm.target_tree), \
-                            type(new_exec_tree)
-                        tgt = gxpm.merge_target_tree(new_exec_tree, tgt)
-                        continue
-                    payload = os.read(fd, max_read_gran)
-                    if payload == "":
-                        # Es("del self.inmap[%s]\n" % fd)
-                        del self.inmap[fd]
-                    # Es("<read got [%s]>\n" % payload)
-                    # put payload in buffers
-                    if target_fd is not None:
-                        if not buffers.has_key(target_fd): buffers[target_fd] = []
-                        buffers[target_fd].append(payload)
-                        # self.event_log.append((time.time(), "<read %d>\n" % len(payload)))
-        self.flush_buffers(tgt, tid, buffers)
-        buffers = {}
-
-    def flush_buffers(self, tgt, tid, buffers):
-        for target_fd,buf in buffers.items():
-            rid = None                  # all
-            msg = string.join(buf, "")
-            acts = [ gxpm.action_feed(rid, target_fd, msg) ]
-            if msg != "" and buf[-1] == "":
-                # send EOF separately
-                acts.append(gxpm.action_feed(rid, target_fd, ""))
-
-            # self.event_log.append((time.time(), "<send_action>\n"))
-            for act in acts:
-                x = self.send_action(tgt, tid, act, 0, 0)
-                if x is None: return -1
-                # self.event_log.append((time.time(), "<send_action OK>\n"))
-        return 0
-    
     def usage_e_and_mw(self, full):
         u = r"""Usage:
   gxpc e  [OPTION ...] CMD
@@ -3932,21 +3902,7 @@ See Also:
         else:
             fcntl.fcntl(fd, self.F_SETFD, 0)
 
-    def do_e_like(self, cname, args, transformer,
-                  default_stdout, accum_events):
-        """
-        e hostname ...
-        """
-        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
-        # say we are not interested in accumulating events
-        # since they may be potentially big
-        if accum_events == 0: self.events = None
-        # build shell command from args
-        opts = e_cmd_opts()
-        if opts.parse(args) == -1:
-            return cmd_interpreter.RET_NOT_RUN
-        # overwrite default
-        # ugly stuff begins
+    def overwrite_defaults(self, opts):
         self.opts.withall = opts.withall
         if opts.withmask is not None:
             self.opts.withmask = opts.withmask
@@ -3981,26 +3937,33 @@ See Also:
         if opts.tid is not None:
             self.opts.tid = opts.tid
 
+    def e_like_cmd(self, cname, args, transform, default_stdout, accum_events):
+        """
+        e hostname ...
+        """
+        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
+        # say we are not interested in accumulating events
+        # since they may be potentially big
+        if accum_events == 0: self.events = None
+        # build shell command from args
+        opts = e_cmd_opts()
+        if opts.parse(args) == -1:
+            return cmd_interpreter.RET_NOT_RUN
+        # overwrite defaults
+        self.overwrite_defaults(opts)
+
         if opts.notify_proc_exit > 0:
             self.notify_proc_exit_fp = os.fdopen(opts.notify_proc_exit, "wb")
         if opts.log_io > 0:
             self.log_io_fp = os.fdopen(opts.log_io, "wb")
 
-
-        if cname == "ep":
-            if opts.master is None:
-                if len(opts.args) == 0:
-                    tasks = "tasks"
-                else:
-                    tasks = opts.args[0]
-                opts.master = "gxp_sched %s" % tasks
-                opts.args = [ "gxp_mom" ]
-        if cname == "mw" or cname == "ep":
+        if cname == "mw":
             if opts.master is None:
                 updown = opts.updown + [ (3, 4, None) ]
             else:
                 updown = opts.updown + [ (3, 4, opts.master) ]
         else:
+            # assert (cname == "e"), cname
             if opts.master is None:
                 updown = opts.updown
             else:
@@ -4021,10 +3984,10 @@ See Also:
                 stdout,co = self.outmap[1]
                 self.outmap[1] = (None, co)
             # -------------- ugly
-            
+
             shcmd = string.join(opts.args, " ")
-            if transformer is not None:
-                shcmd = transformer(shcmd)
+            if transform is not None:
+                shcmd = transform(shcmd)
             act = gxpm.action_createproc(opts.rid, opts.dir,
                                          opts.export, shcmd, pipes, 
                                          opts.rlimit)
@@ -4032,30 +3995,25 @@ See Also:
                                    self.opts.persist,
                                    self.opts.keep_connection)
             assert tid is not None, (self.opts.withmask, tgt)
-            # pipes for talking with forwarder
-            r, w = os.pipe()
-            self.inmap[r] = "sync"
-            self.outmap["sync"] = w
-            th = threading.Thread(target=self.forwarder,
-                                  args=(tgt, tid, ))
-            th.setDaemon(1)
-            th.start()
+
             time_limit = self.timeout_to_limit(self.opts.timeout)
-            res = self.recv_loop_noex(None, time_limit)
+            res = self.process_events_loop(tgt, tid, None, time_limit)
             assert res != cmd_interpreter.RECV_CONTINUE
-            if res == cmd_interpreter.RECV_INTERRUPTED:
+            for sig in [ "INT", "TERM", "KILL" ]:
+                if res == cmd_interpreter.RECV_QUIT: break
+                if self.opts.verbosity>=2:
+                    Es("gxpc: got interrupt\n")
                 got_sigint = 1
-                tgt = gxpm.target_tree(".*", ".*", ".*", 1, 0, gxpm.exec_env(), None)
                 rid = None          # all
+                Es("gxpc: sending %s signal\n" % sig)
                 self.send_action(tgt, tid,
-                                 gxpm.action_sig(rid, "INT"),
+                                 gxpm.action_sig(rid, sig),
                                  self.opts.persist,
                                  self.opts.keep_connection)
-                # Es("sent sig\n")
-                # self.recv_loop_noex(None)
-            # Es("th.join\n")
-            # th.join()
-            # Es("th.joined\n")
+                time_limit2 = self.timeout_to_limit(3.0)
+                res = self.process_events_loop(tgt, tid, None, time_limit2)
+            if res == cmd_interpreter.RECV_TIMEOUT:
+                Es("gxpc: warning: timeout after interrupt (some processes may be left)\n")
             for i in range(len(self.master_pids)):
                 if self.safe_wait() == -1: break
         status = self.session.update_last_ok_count()
@@ -4068,19 +4026,19 @@ See Also:
         return self.usage_e_and_mw(full)
 
     def do_e_cmd(self, args):
-        return self.do_e_like("e", args, None, 1, 0)
+        return self.e_like_cmd("e", args, None, 1, 0)
 
     def usage_mw_cmd(self, full):
         return self.usage_e_and_mw(full)
 
     def do_mw_cmd(self, args):
-        return self.do_e_like("mw", args, None, 1, 0)
+        return self.e_like_cmd("mw", args, None, 1, 0)
 
     def usage_ep_cmd(self, full):
         return self.usage_e_and_mw(full)
 
     def do_ep_cmd(self, args):
-        return self.do_e_like("ep", args, None, 1, 0)
+        return self.e_like_cmd("ep", args, None, 1, 0)
 
     #
     # cd
@@ -4114,7 +4072,7 @@ Options are the same as those of `e' command.
         return "cd %s > /dev/null && echo $PWD" % shcmd
 
     def do_cd_cmd(self, args):
-        r = self.do_e_like("cd", args, self.transform_to_cd, 0, 1)
+        r = self.e_like_cmd("cd", args, self.transform_to_cd, 0, 1)
         outputs = {}
         for gupid,tid,ev in self.events:
             if isinstance(ev, gxpm.event_io) and ev.fd == 1:
@@ -4159,7 +4117,7 @@ Options are the same as those of `e' command.
         return "echo %s" % shcmd
 
     def do_export_cmd(self, args):
-        r = self.do_e_like("export", args, self.transform_to_export, 0, 1)
+        r = self.e_like_cmd("export", args, self.transform_to_export, 0, 1)
         outputs = {}
         for gupid,tid,ev in self.events:
             if isinstance(ev, gxpm.event_io) and ev.fd == 1:
@@ -4679,7 +4637,8 @@ See Also:
         target = self.minimum_subtree(self.session.peer_tree, C)
         assert target is not None, (self.session.peer_tree, C)
         # okay we build the msg
-        clauses = []
+        # clauses = []
+        clauses = {}
         for src,cmds in C.items():
             # build actions performed by this particular src host
             actions = []
@@ -4687,7 +4646,8 @@ See Also:
                 # cwd/env = None
                 a = gxpm.action_createpeer(nid, [], {}, cmd, pipes, [])
                 actions.append(a)
-            clauses.append(gxpm.clause(src.name, actions))
+            # clauses.append(gxpm.clause(src.name, actions))
+            clauses[src.name] = actions
         # calc the target of this particular msg (include the src
         # hosts)
         gcmds = [ clauses ]
@@ -5021,8 +4981,7 @@ use.
             tid = "explore%s" % self.session.gen_random_id()
             # , 0
             pipes = self.setup_pipes(self.opts.atomicity, 0, # pty
-                                     [ (1,1),(2,2) ], [ (0,0) ],
-                                     [], "")
+                                     [ (1,1),(2,2) ], [ (0,0) ], [], "")
             got_sigint = 0
             ch_soft_lim = opts.children_soft_limit
             ch_hard_lim = opts.children_hard_limit
@@ -5046,18 +5005,18 @@ use.
                     ch_soft_lim = int(ch_soft_lim * 2.0) + 1
                     ch_soft_lim = min(ch_soft_lim, ch_hard_lim)
                 # we tried twice and still no one exploring -> quit
-                if len(self.exploring) == 0: break
-                n = len(self.exploring)
-                b = max(0, min(n - opts.min_wait, 
-                               n - int(opts.wait_factor * n)))
+                n_exploring = len(self.exploring)
+                if n_exploring == 0: break
+                break_value = max(0, min(n_exploring - opts.min_wait, 
+                                         n_exploring - int(opts.wait_factor * n_exploring)))
                 time_limit = self.timeout_to_limit(self.opts.timeout)
                 if opts.verbosity >= 1:
                     wait_start = time.time()
                     Ws(("gxpc : waiting for %d outstanding logins (out of %d) "
                         "to be resolved (time_limit = %s)\n"
-                        % (len(self.exploring) - b, len(self.exploring),
-                           time_limit)))
-                res = self.recv_loop_noex(b, time_limit)
+                        % (n_exploring - break_value, n_exploring, time_limit)))
+                # res = self.recv_loop_noex(break_value, time_limit)
+                res = self.process_events_loop(None, tid, break_value, time_limit)
                 if opts.verbosity >= 1:
                     wait_stop = time.time()
                     Ws(("gxpc : waited for %.3f sec\n"
@@ -5300,6 +5259,20 @@ this command line.
 """
         return u
 
+    def do_js_cmd(self, args):
+        if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
+        gxp_dir = os.environ["GXP_DIR"]
+        gxp_js = os.path.join(gxp_dir, "gxp_js.py")
+        python = sys.executable
+        os.execvp(python, [ python, gxp_js ] + self.argv[1:])
+
+    def usage_js_cmd(self, full):
+        u = r"""Usage:
+  gxpc disp  [OPTION ...]
+"""
+        return u
+
+
     # ---------- dispatcher ----------
 
     def dispatch(self):
@@ -5358,6 +5331,7 @@ this command line.
 
     def main(self, argv):
         # parse command line args
+        self.argv = argv
         opts = interpreter_opts()
         self.opts = opts
         if opts.parse(argv[1:]) == -1: return -1
@@ -5374,6 +5348,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.63  2010/09/08 04:08:22  ttaauu
+# a new job scheduling framework (gxpc js). see ChangeLog 2010-09-08
+#
 # Revision 1.62  2010/06/11 16:54:25  ttaauu
 # fixed torque_host
 #

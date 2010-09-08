@@ -1,8 +1,4 @@
-# Copyright (c) 2009 by Kenjiro Taura. All rights reserved.
-# Copyright (c) 2008 by Kenjiro Taura. All rights reserved.
-# Copyright (c) 2007 by Kenjiro Taura. All rights reserved.
-# Copyright (c) 2006 by Kenjiro Taura. All rights reserved.
-# Copyright (c) 2005 by Kenjiro Taura. All rights reserved.
+# Copyright (c) 2005-2009 by Kenjiro Taura. All rights reserved.
 #
 # THIS MATERIAL IS PROVIDED AS IS, WITH ABSOLUTELY NO WARRANTY 
 # EXPRESSED OR IMPLIED.  ANY USE IS AT YOUR OWN RISK.
@@ -14,9 +10,18 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.20 2010/05/25 18:13:58 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.21 2010/09/08 04:08:22 ttaauu Exp $
 # $Name:  $
 #
+
+
+#
+# TODO:
+#   mw ... requires clients to write newlines. otherwise the msg 
+#   does not get through. this stems from the follwing.
+#    action_create_proc_or_peer -> 
+#    set_pipe_atomicity -> set_expected, where pipe is set
+#    to have line atomicity.
 
 enable_connection_upgrade = 0
 
@@ -1588,7 +1593,7 @@ class gxpd(ioman.ioman):
                         gxpm.event_info(None, msg))
             task.forward_up(m, gxpm.unparse(m))
 
-    def do_guarded_commands(self, task, parent, down_m):
+    def do_guarded_commands_xxx(self, task, parent, down_m):
         """
         execute guarded commands in m
         """
@@ -1600,6 +1605,21 @@ class gxpd(ioman.ioman):
                         for action in clause.actions:
                             self.do_action(task, parent, down_m, tgt, action)
                         break
+        self.check_task_status(task)
+
+    def do_guarded_commands(self, task, parent, down_m):
+        """
+        execute guarded commands in m
+        """
+        tgt = down_m.target
+        if tgt.eflag:
+            for clauses in down_m.gcmds:
+                actions = clauses.get(self.gupid)
+                if actions is None:
+                    actions = clauses.get(None)
+                if actions:
+                    for action in actions:
+                        self.do_action(task, parent, down_m, tgt, action)
         self.check_task_status(task)
 
     # ------------- handle low level events -------------
@@ -2292,6 +2312,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.21  2010/09/08 04:08:22  ttaauu
+# a new job scheduling framework (gxpc js). see ChangeLog 2010-09-08
+#
 # Revision 1.20  2010/05/25 18:13:58  ttaauu
 # support --translate_dir src,dst1,dst2,... and associated changes. ChangeLog 2010-05-25
 #

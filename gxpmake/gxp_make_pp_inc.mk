@@ -24,9 +24,17 @@ endef
 #   ==> $(foreach a,1 2,$(foreach b,3 4,$(call make_rule_recursive)))
 #    ==> $(foreach a,1 2,$(foreach b,3 4,$(eval $(call make_rule_single))))
 #  
-define make_rule_recursive
+define make_rule_recursivex
 $(if $(1),\
   $(foreach $(firstword $(1)),$(or $($(firstword $(1))),""),$(call make_rule_recursive,$(wordlist 2,$(words $(1)),$(1)))),\
+  $(eval $(call make_rule_single)))
+endef
+
+define make_rule_recursive
+$(if $(1),\
+  $(foreach $(firstword $(1)),\
+            $(or $($(firstword $(1))),""),\
+     $(call make_rule_recursive,$(wordlist 2,$(words $(1)),$(1)))),\
   $(eval $(call make_rule_single)))
 endef
 
