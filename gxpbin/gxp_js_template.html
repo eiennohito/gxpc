@@ -72,11 +72,13 @@ td.man_3_gone {
 <a name="Table of Contents">
 <h1>Contents</h1>
 <ul>
+<li><a href="#Basic info">Basic Info</a>
+<li><a href="#Config">Config</a>
+<li><a href="#Job Counts">Job Counts</a>
 <li><a href="#Parallelism">Parallelism</a>
 <li><a href="#RSS">RSS</a>
 <li><a href="#Memory ">Memory</a>
 <li><a href="#Load Average">Load Average</a>
-<li><a href="#Job Counts">Job Counts</a>
 <li>Jobs
 <ul>
   <li><a href="#Job Lists Legend">Job Lists Legend</a>
@@ -87,14 +89,32 @@ td.man_3_gone {
 <li><a href="#Workers">Workers</a>
 </ul>
 
-<a name="Basic info">
-<h1>Basic info</h1>
+<a name="Basic Info">
+<h1>Basic Info</h1>
 <a href="#">page top</a><br><br>
 <table class="basic_info">
-
 %(basic_info_table)s
-
 </table>
+
+<a name="Config">
+<h1>Config</h1>
+<a href="#">page top</a><br><br>
+<table class="config">
+%(conf_table)s
+</table>
+
+<a name="Job Counts">
+<h1>Job Counts</h1>
+<a href="#">page top</a><br><br>
+<!-- <p>took 1.941 sec to generate the graph.</a>-->
+<p>if the following image is broken, gnuplot may have gotten an error.</p>
+<ul>
+<li><a href="run_counts.gpl">gnuplot source</a>
+<li><a href="run_counts.dat">gnuplot data</a>
+<li><a href="run_counts.err">gnuplot error</a>
+</ul>
+<a href="run_counts.png"><img src="run_counts.png" width=640></a><br>
+
 
 <a name="Parallelism">
 <h1>Parallelism</h1>
@@ -144,17 +164,8 @@ td.man_3_gone {
 </ul>
 <a href="loadavg.png"><img src="loadavg.png" width=640></a><br>
 
-<a name="Job Counts">
-<h1>Job Counts</h1>
-<a href="#">page top</a><br><br>
-<!-- <p>took 1.941 sec to generate the graph.</a>-->
-<p>if the following image is broken, gnuplot may have gotten an error.</p>
-<ul>
-<li><a href="run_counts.gpl">gnuplot source</a>
-<li><a href="run_counts.dat">gnuplot data</a>
-<li><a href="run_counts.err">gnuplot error</a>
-</ul>
-<a href="run_counts.png"><img src="run_counts.png" width=640></a><br>
+
+
 <a name="Job Lists Legend">
 <h1>Job Lists Legend</h1>
 <ul>
@@ -210,6 +221,5 @@ last_ping_time = 0.000<br>
 %(workers_table)s
 </table>
 
-<!-- <p>(took 16.041 sec to generate)</p>-->
 </body>
 </html>

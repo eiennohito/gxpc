@@ -129,5 +129,6 @@
 	select'able file descriptors in python
 	* gxp_js.py: tracks rss and memory usage 
 	* gxp_js.py: support gxpc make2
-
 	
+2010-09-13 Taura
+	* gxp_js.py: bug fix

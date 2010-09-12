@@ -155,6 +155,16 @@ class jobsched_tokenizer:
         return s
 
 class jobsched_config:
+    db_fields = [ "opts",
+                  "work_file", "work_fd", "work_py", "work_server_sock",
+                  "work_proc_pipe", "work_proc_pipe2", "work_proc_sock",
+                  "worker_prof_cmd",
+                  "work_list_limit", "state_dir", "template_html",
+                  "gen_html_overhead", "refresh_interval",
+                  "cpu_factor", "mem_factor", "job_output",
+                  "conf_file", "log_file", "host_job_attrs" ]
+
+    
     def __init__(self, opts):
         self.opts = opts
         self.work_file = []     # list of strings
@@ -169,6 +179,7 @@ class jobsched_config:
         self.work_list_limit = 10
         self.state_dir = "state"
         self.template_html = "${GXP_DIR}/gxpbin/gxp_js_template.html"
+        self.gen_html_overhead = 0.05
         self.refresh_interval = 60
         self.cpu_factor = 1.0
         self.mem_factor = 0.9
@@ -256,6 +267,7 @@ class jobsched_config:
             rest = tok.rest
             eq = tok.next().s
             if type(orig) is types.ListType:
+                # this attribute is a list attribute
                 if eq == "=" or eq == "+=": 
                     tok.next()
                 else:
@@ -266,11 +278,13 @@ class jobsched_config:
                     tok.next()
                 if eq == "=":
                     if dbg>=2:
-                        Es(" setting global attributes %s = %s\n" % (x, rhs_items))
+                        Es(" setting global attributes %s = %s\n"
+                           % (x, rhs_items))
                     setattr(self, x, rhs_items)
                 else:
                     if dbg>=2:
-                        Es(" setting global attributes %s += %s\n" % (x, rhs_items))
+                        Es(" setting global attributes %s += %s\n"
+                           % (x, rhs_items))
                     setattr(self, x, orig + rhs_items)
             else:
                 if eq == "=" or eq == "+=": 
@@ -278,12 +292,13 @@ class jobsched_config:
                     tok.next()
                 else:
                     eq = "="
-                v = tok.token_val(rest)
+                v = tok.token_val(rest.strip())
                 if dbg>=2:
-                    Es(" setting global attributes %s = %s\n" % (x, v))
+                    Es(" setting global attributes %s = '%s'\n" % (x, v))
                 setattr(self, x, v)
         else:
-            self.set_host_job_attrs(self.cur_scope, self.cur_reg_str, self.cur_reg, tok)
+            self.set_host_job_attrs(self.cur_scope, self.cur_reg_str,
+                                    self.cur_reg, tok)
             
     def parse_list(self, filename, lines, tok):
         i = 1
@@ -377,7 +392,7 @@ class Man:
         self.man_idx = man_idx  # serial number
         self.name = name        # name (gupid)
         self.capacity = capacity
-        self.capacity_left = None # set in finalize_capacity
+        self.capacity_left = {} # set in finalize_capacity
         self.state = man_state.active
         # created time
         self.create_time = cur_time
@@ -396,7 +411,7 @@ class Man:
         S = []
         S.append("%s" % self.name)
         for k,v in self.capacity.items():
-            vl = self.capacity_left[k]
+            vl = self.capacity_left.get(k)
             S.append(" %s: %s/%s" % (k, vl, v))
         return "\n".join(S)
 
@@ -508,7 +523,7 @@ class Man:
         keys.sort()
         for k in keys:
             c = self.capacity[k]
-            cl = self.capacity_left[k]
+            cl = self.capacity_left.get(k)
             C.append("%s: %s / %s" % (k, cl, c))
         return "<br>".join(C)
 
@@ -581,7 +596,8 @@ class Run:
     def __str__(self):
         return "%s" % self.work.cmd
 
-    def record_die(self, wait_status, rusage, worker_time_start, worker_time_end):
+    def record_die(self, wait_status, rusage,
+                   worker_time_start, worker_time_end):
         """
         called when we receive die notification of the process.
         outputs may still follow so at this point we cannot abandon
@@ -1089,7 +1105,10 @@ class work_generator:
         self.streams = {}       # work_stream -> None
         self.server_socks = {}  # server_socket -> no. of accepts
         self.child_pipes = {}   # file descriptor -> (child_pid, associated server_socket/None)
+        self.child_status = {}  # finished child_pid -> wait_status
         self.idx = 0            # serial no given to works
+        self.max_exit_status = None
+        self.max_term_sig = None
 
     def closed(self):
         if len(self.streams) > 0: return 0
@@ -1239,10 +1258,11 @@ class work_generator:
         as a zombie.
         """
         pid,ss = self.child_pipes[r]
-        qid,_ = os.waitpid(pid, 0)
+        qid,status = os.waitpid(pid, 0)
         assert (pid == qid), (pid, qid)
         os.close(r)
         del self.child_pipes[r]
+        self.child_status[pid] = status
         # ss is a server socket I opened for him,
         # so it is no longer necessary.
         if ss and self.server_socks.has_key(ss):
@@ -1255,6 +1275,29 @@ class work_generator:
         """
         ws,w = self.work_stream[work_idx]
         ws.finish_work(work_idx, w, exit_status, term_sig)
+        self.max_exit_status = max(self.max_exit_status, exit_status)
+        self.max_term_sig = max(self.max_term_sig, term_sig)
+
+    def determine_final_status(self):
+        """
+        determine the exit status
+        """
+        exit_status = None
+        term_sig = None
+        for wait_status in self.child_status.values():
+            if os.WIFEXITED(wait_status):
+                exit_status = max(exit_status, os.WEXITSTATUS(wait_status))
+            elif os.WIFSIGNALED(wait_status):
+                term_sig = max(term_sig, os.WTERMSIG(wait_status))
+        if term_sig is not None:
+            return (None, term_sig)
+        if exit_status is not None:
+            return (exit_status, None)
+        if self.max_term_sig is not None:
+            return (None, self.max_term_sig)
+        if self.max_exit_status is not None:
+            return (self.max_exit_status, None)
+        return (None, None)
 
 def mk_work_generator(conf, server):
     wkg = work_generator(conf, server)
@@ -1729,6 +1772,10 @@ class html_generator:
     def mk_basic_table(self):
         return self.mk_object_row(job_scheduler.db_fields, self.server, None)
 
+    def mk_conf_table(self):
+        return self.mk_object_row(jobsched_config.db_fields,
+                                  self.server.conf, None)
+
     def mk_men_table(self):
         """
         generate worker state
@@ -1768,6 +1815,7 @@ class html_generator:
         self.server.works.commit()
         D = {}
         D["basic_info_table"] = self.mk_basic_table()
+        D["conf_table"] = self.mk_conf_table()
         for such,_ in self.server.works.table_spec:
             D["%s_jobs_table" % such] = self.mk_work_run_table(such)
         D["workers_table"] = self.mk_men_table()
@@ -1786,6 +1834,7 @@ class html_generator:
 
 class job_scheduler(gxpc.cmd_interpreter):
     def ensure_directory(self, dire):
+        if dire == "": return 0
         try:
             os.mkdir(dire)
         except OSError,e:
@@ -1802,6 +1851,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         open log file for writing
         return -1 on failure, 0 on success
         """
+        if self.conf.state_dir == "": return 0
         if self.conf.log_file == "": return 0
         log = os.path.join(self.conf.state_dir, self.conf.log_file)
         try:
@@ -1899,16 +1949,30 @@ class job_scheduler(gxpc.cmd_interpreter):
             mem.add_x(cur_time, 4, buffers)
             mem.add_x(cur_time, 5, cached)
 
-    def generate_html(self, finished):
-        ct = self.cur_time() 
-        if finished or ct > self.next_update_time:
+    def generate_html(self, cur_time, finished):
+        if finished or cur_time > self.next_update_time:
             for run in self.runs_running.values():
-                run.sync(ct)
+                run.sync(cur_time)
             self.htmlg.generate(finished)
-            new_ct = self.cur_time()
-            # keep the overhead below 5%
-            time_until_next = (new_ct - ct) / 0.05
+            return 1
+        else:
+            return 0
+
+    def record_everything(self, force):
+        t0 = self.cur_time()
+        self.record_rss(t0, force)
+        self.record_mem(t0, force)
+        self.record_loadavg(t0, force)
+        if self.generate_html(t0, force):
+            dt = self.cur_time() - t0
+            overhead = self.conf.gen_html_overhead
+            if overhead <= 0.0:
+                time_until_next = float("inf")
+            else:
+                time_until_next = dt / overhead
             self.next_update_time = self.next_update_time + time_until_next
+            self.gen_html_time = dt
+
 
     def receive_works(self, wkg, ws):
         self.LOG("receive_works from %s\n" % ws)
@@ -2052,10 +2116,10 @@ class job_scheduler(gxpc.cmd_interpreter):
         p = select.poll()
         for fd, mask in d.items():
             p.register(fd, mask)
-        if T is None:
+        if T is None or T == float("inf"):
             poll_result = p.poll()
         else:
-            poll_result = p.poll(T*1000)
+            poll_result = p.poll(int(T*1000))
         R0 = []
         W0 = []
         E0 = []
@@ -2280,10 +2344,7 @@ class job_scheduler(gxpc.cmd_interpreter):
             return 0
         self.check_time_limit()
         self.check_interrupted()
-        self.record_rss(self.cur_time(), 0)
-        self.record_mem(self.cur_time(), 0)
-        self.record_loadavg(self.cur_time(), 0)
-        self.generate_html(0)
+        self.record_everything(0)
         self.make_matches()
         # calc timeout:
         # jobs to dispatch -> timeout needs to be short
@@ -2300,10 +2361,6 @@ class job_scheduler(gxpc.cmd_interpreter):
             self.dispatch_runs()
         return 1
         
-    def determine_self_status(self):
-        # FIXIT: determine exit status
-        return 0
-
     def expandpath(self, p):
         return os.path.expanduser(os.path.expandvars(p))
 
@@ -2360,7 +2417,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         self.sys_argv = sys.argv
         self.cwd = os.getcwd()
         self.self_pid = os.getpid()
-        self.self_status = None         # not known yet
+        self.final_status = None        # not known yet
         self.hostname = socket.gethostname()
 
         # task id shared by all runs
@@ -2379,6 +2436,7 @@ class job_scheduler(gxpc.cmd_interpreter):
 
         self.ts = self.mk_time_serieses(self.conf)
         self.htmlg = html_generator(self.conf, self)
+        self.gen_html_time = 0.0
         self.next_update_time = 0.0
         self.n_events = 0
         self.interrupted = 0
@@ -2404,9 +2462,11 @@ class job_scheduler(gxpc.cmd_interpreter):
                 raise           
                 self.interrupted = self.interrupted + 1
         # done. generate the last html
-        self.self_status = self.determine_self_status()
-        self.generate_html(1)
-        return self.self_status
+        self.final_status = self.wkg.determine_final_status()
+        self.record_everything(1)
+        exit_status,term_sig = self.final_status
+        if exit_status is None: return 1
+        return exit_status
 
     def cur_time(self):
         return time.time() - self.time_start
@@ -2475,7 +2535,13 @@ class job_scheduler(gxpc.cmd_interpreter):
         # FIXIT: parse args and give them to make
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
         self.set_make_environ()
-        return self.server_main([ "-a", 'work_proc_sock="make -j 1200"' ] + args)
+        make_args = []
+        while args:
+            a = args.pop(0)
+            if a == "--": break
+            make_args.append(a)
+        make_cmd = 'work_proc_sock="make %s"' % (" ".join(make_args))
+        return self.server_main([ "-a", make_cmd ] + args)
         
     # db related stuff
 
@@ -2486,7 +2552,21 @@ class job_scheduler(gxpc.cmd_interpreter):
                   "n_runs_running",
                   "n_works",
                   "n_free_men",
-                  "self_status", ]
+                  "final_status",
+                  "gen_html_time", ]
+
+    def get_td_final_status(self):
+        if self.final_status is None:
+            return "job_running","running"
+        else:
+            exit_status,term_sig = self.final_status
+            if exit_status == 0:
+                return "job_success",("exited 0")
+            elif exit_status is not None:
+                return "job_failed",("exited %d" % exit_status)
+            else:
+                return "job_killed",("killed %d" % term_sig)
+        
 
     def get_td_start_time(self):
         return time.strftime("%Y-%m-%d %H:%M:%S", 
