@@ -169,7 +169,7 @@ class jobsched_config:
         self.opts = opts
         self.work_file = []     # list of strings
         self.work_fd = []       # list of ints
-        self.work_py = []       # list of strings
+        self.work_py_module = []       # list of strings
         self.work_server_sock = []
         self.work_proc_pipe = []
         self.work_proc_pipe2 = []
@@ -769,6 +769,8 @@ class Run:
         io = []
         for fd,(inline,_,_) in self.io.items():
             io.append(inline.getvalue())
+        for fd,(inline_s,_) in self.done_io.items():
+            io.append(inline_s)
         x = "".join(io)
         if len(x) == 0: return "<br>"
         return x
@@ -968,19 +970,13 @@ class work_stream_base:
             self.leftover = "".join(leftover_elements) + self.leftover
         self.server.LOG("read_works: %d works retruned\n" % len(works))
         return works
-
     def finish_work(self, work_idx, work, exit_status, term_sig):
-        payload = "%d: %s %s\n" % (work_idx, exit_status, term_sig)
-        msg = "%9d %s" % (len(payload), payload)
-        return self.write_notification(msg)
-        
-    def write_notification(self, msg):
         pass
 
 class work_stream_fd(work_stream_base):
-    def __init__(self, server, fd):
-        work_stream_base.__init__(self, server)
+    def init(self, fd):
         self.fd = fd
+        return 0
     def close(self):
         assert self.fd is not None
         os.close(self.fd)
@@ -991,22 +987,31 @@ class work_stream_fd(work_stream_base):
     def readpkt(self, sz):
         assert self.fd is not None
         return os.read(self.fd, sz)
-    def finish_work(self, work_idx, work, exit_status, term_sig):
-        pass
     
 class work_stream_fd_pair(work_stream_fd):
-    def __init__(self, server, rfd, wfd):
-        work_stream_fd.__init__(self, server, rfd)
+    def init(self, rfd, wfd):
+        work_stream_fd.init(self, rfd)
         self.wfd = wfd
-    def write_notification(self, msg):
-        Es("got write notification [%s]\n" % msg)
+        return 0                # OK
+    def finish_work(self, work_idx, work, exit_status, term_sig):
+        if exit_status is None: exit_status = "-"
+        if term_sig is None: term_sig = "-"
+        payload = "%d: %s %s\n" % (work_idx, exit_status, term_sig)
+        msg = "%9d %s" % (len(payload), payload)
+        if dbg>=2:
+            Es("write notification to %d [%s]\n" % (self.wfd, msg))
         os.write(self.wfd, msg)
         
 class work_stream_file(work_stream_base):
-    def __init__(self, server, filename):
-        work_stream_base.__init__(self, server)
+    def init(self, filename):
         self.filename = filename
-        self.fp = open(filename)
+        try:
+            self.fp = open(filename)
+            return 0
+        except OSError,e:
+            Es("error: could not open work_file %s %s\n"
+               % (filename, e.args))
+            return -1
     def close(self):
         assert self.fp is not None
         self.fp.close()
@@ -1019,9 +1024,9 @@ class work_stream_file(work_stream_base):
         return self.fp.read(sz)
 
 class work_stream_socket(work_stream_base):
-    def __init__(self, server, so):
-        work_stream_base.__init__(self, server)
+    def init(self, so):
         self.so = so
+        return 0
     def close(self):
         assert self.so is not None
         self.so.close()
@@ -1034,23 +1039,39 @@ class work_stream_socket(work_stream_base):
     def readpkt(self, sz):
         assert self.so is not None
         return self.so.recv(sz)
-    def write_notification(self, msg):
-        # FIXIT: when we close the socket?
-        if self.so:
-            self.so.send(msg)
+    def finish_work(self, work_idx, work, exit_status, term_sig):
+        if exit_status is None: exit_status = "-"
+        if term_sig is None: term_sig = "-"
+        payload = "%d: %s %s\n" % (work_idx, exit_status, term_sig)
+        msg = "%9d %s" % (len(payload), payload)
+        if dbg>=2:
+            Es("write notification [%s]\n" % msg)
+        self.so.send(msg)
 
 class work_stream_generator(work_stream_base):
-    def __init__(self, server, generator_module):
-        work_stream_base.__init__(self, server)
-        module_and_fun = generator_module.split(".", 1)
-        if len(module_and_fun) == 1:
-            [ module ] = module_and_fun
-            fun = "gen_works"
-        else:
-            [ module,fun ] = module_and_fun
-        mod = __import__(module, globals(), locals(), [], -1)
-        f = getattr(mod, fun)
-        self.generator_fun = f()
+    def init(self, generator_module):
+        try:
+            mod = __import__(generator_module, globals(), locals(), [], -1)
+        except ImportError,e:
+            Es("error: could not import module %s %s. did you set PYTHONPATH?\n"
+               % (generator_module, e.args))
+            return -1
+        # FIXIT: exception
+        try:
+            gen = getattr(mod, "gen")
+        except AttributeError,e:
+            Es("failed to obtain generator function from module %s %s\n"
+               % (generator_module, e.args))
+            return -1
+        try:
+            f = gen()
+        except Exception,e:
+            Es("error while calling %s.gen() %s\n"
+               % (generator_module, e.args))
+            return -1
+        self.fun_generator = f
+        if hasattr(mod, "fin"):
+            self.fun_finish = getattr(mod, "fin")
         # dummy, always readalble fileno
         r,w = os.pipe()
         os.close(w)
@@ -1059,6 +1080,8 @@ class work_stream_generator(work_stream_base):
         self.unreadable = r
         self.unwritable = w
         self.cur_fileno = self.readable
+        self.executing = {}     # work_idx -> whatever we got from generator
+        return 0
 
     def close(self):
         for fd in [ self.readable, self.unreadable, self.unwritable ]:
@@ -1067,6 +1090,7 @@ class work_stream_generator(work_stream_base):
         self.readable = None
         self.unreadable = None
         self.cur_fileno = None
+
     def fileno(self):
         assert self.cur_fileno is not None
         return self.cur_fileno
@@ -1077,22 +1101,41 @@ class work_stream_generator(work_stream_base):
         works = []
         for i in range(100):
             try:
-                cmd = self.generator_fun.next()
+                x = self.fun_generator.next()
             except StopIteration,e:
                 self.close()
                 self.closed = 1
                 break
-            if cmd is None:
+            if x is None:
                 # mark this unreadable
                 self.cur_fileno = self.unreadable
                 break
-            w = Work().init(cmd, None, [], {}, { "cpu" : 1 })
+            pid = None
+            dirs = []
+            envs = {}
+            req = { "cpu" : 1 }
+            if type(x) is types.StringType:
+                cmd = x
+            else:
+                if type(x) is types.DictType:
+                    d = x
+                else:
+                    d = x.__dict__
+                cmd = d["cmd"]
+                pid = d.get("pid", pid)
+                dirs = d.get("dirs", dirs)
+                envs = d.get("envs", envs)
+                req = d.get("req", req)
+            w = Work().init(cmd, pid, dirs, envs, req)
+            self.executing[w] = x
             works.append(w)
         return works
     def finish_work(self, work_idx, work, exit_status, term_sig):
+        x = self.executing[work]
+        del self.executing[work]
         # mark this readable
         self.cur_fileno = self.readable
-        self.generator_fun.fin(work_idx, work, exit_status, term_sig)
+        self.fun_finish(x, exit_status, term_sig)
         
 class work_generator:
     """
@@ -1157,7 +1200,11 @@ class work_generator:
         else:
             os.close(y)
             os.close(w)
-            self.add_work_stream(work_stream_fd(self.server, r))
+            s = work_stream_fd(self.server)
+            if s.init(r) == 0:
+                self.add_work_stream(s)
+            else:
+                bomb
             self.child_pipes[x] = (pid, None)
 
     def add_proc_pipe2(self, cmd, outfd, infd):
@@ -1181,7 +1228,9 @@ class work_generator:
             os.close(y)
             os.close(w1)
             os.close(r2)
-            self.add_work_stream(work_stream_fd_pair(self.server, r1, w2))
+            s = work_stream_fd_pair(self.server)
+            if s.init(r1, w2) == 0:
+                self.add_work_stream(s)
             self.child_pipes[x] = (pid, None)
 
     def add_proc_sock(self, cmd, addr, n_accepts):
@@ -1219,7 +1268,7 @@ class work_generator:
             # so we can call appropriate finish function
             idx = self.idx
             w.init2(idx, t, self.server)
-            self.work_stream[idx] = (ws,w)
+            self.work_stream[idx] = ws,w
             self.idx = idx + 1
         return works
 
@@ -1306,11 +1355,14 @@ def mk_work_generator(conf, server):
     # handling here.
     # FIXIT. have a way to specify child procs (make in particular)
     for wf in conf.work_file:
-        wkg.add_work_stream(work_stream_file(server, wf))
-    for mo in conf.work_py:
-        wkg.add_work_stream(work_stream_generator(server, mo))
+        s = work_stream_file(server)
+        if s.init(wf) == 0: wkg.add_work_stream(s)
+    for mo in conf.work_py_module:
+        s = work_stream_generator(server)
+        if s.init(mo) == 0: wkg.add_work_stream(s)
     for fd in conf.work_fd:
-        wkg.add_work_stream(work_stream_fd(server, fd))
+        s = work_stream_fd(server)
+        if s.init(fd) == 0: wkg.add_work_stream(s)
     # FIXIT eliminate those hardwired numbers
     for cmd in conf.work_proc_pipe:
         wkg.add_proc_pipe(cmd, 1)
@@ -1843,7 +1895,7 @@ class job_scheduler(gxpc.cmd_interpreter):
             else:
                 raise
         if os.path.isdir(dire): return 0
-        Es("xmake: could not make a state directory %s\n" % dire)
+        Es("error: could not make a state directory %s\n" % dire)
         return -1
 
     def open_LOG(self):
@@ -2194,13 +2246,20 @@ class job_scheduler(gxpc.cmd_interpreter):
                      % (len(self.runs_todo), len(self.men_free)))
         matches_found = 0
         new_men_free = []
+        # continue working as long as there is a free man 
+        # and a ready task
         while len(self.runs_todo) > 0 and len(self.men_free) > 0:
+            # get a man and a run from the head of the queues
             run = self.runs_todo[0]
             man = self.men_free[0]
+            # see if this man can exec this run by checking 
+            # the resource
             if self.logfp:
                 self.LOG("make_matches: check if %s can exec %s\n" 
                          % (man, run))
             if not man.has_resource(run.work.requirement):
+                # no, this man cannot exec this run
+                # man is popped off the list
                 if self.logfp:
                     self.LOG("make_matches: no, %s does not have resource for %s\n" 
                              % (man, run))
