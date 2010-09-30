@@ -156,7 +156,7 @@ class jobsched_tokenizer:
 
 class jobsched_config:
     db_fields = [ "opts",
-                  "work_file", "work_fd", "work_py", "work_server_sock",
+                  "work_file", "work_fd", "work_py_module", "work_server_sock",
                   "work_proc_pipe", "work_proc_pipe2", "work_proc_sock",
                   "worker_prof_cmd",
                   "work_list_limit", "state_dir", "template_html",
@@ -170,13 +170,15 @@ class jobsched_config:
         self.work_file = []     # list of strings
         self.work_fd = []       # list of ints
         self.work_py_module = []       # list of strings
-        self.work_server_sock = []
         self.work_proc_pipe = []
         self.work_proc_pipe2 = []
         self.work_proc_sock = []
-        self.worker_prof_cmd = "${GXP_DIR}/gxpbin/worker_prof"
+        self.work_proc_sock2 = []
+        self.work_server_sock = []
+        self.work_server_sock2= []
 
-        self.work_list_limit = 10
+        self.worker_prof_cmd = "${GXP_DIR}/gxpbin/worker_prof"
+        self.work_list_limit = 100
         self.state_dir = "state"
         self.template_html = "${GXP_DIR}/gxpbin/gxp_js_template.html"
         self.gen_html_overhead = 0.05
@@ -330,9 +332,9 @@ class jobsched_config:
         tok = jobsched_tokenizer()
         # process attributes given in the command line
         # via --attrs x=y  (or simply -a x=y) first
-        if self.parse_cmdline(self.opts.attrs, tok) == -1:
-            return -1
         if self.parse_file(self.opts.conf, tok) == -1:
+            return -1
+        if self.parse_cmdline(self.opts.attrs, tok) == -1:
             return -1
         return 0
 
@@ -498,6 +500,13 @@ class Man:
     def modify_resource(self, requirement, sign):
         for k,v in requirement.items():
             self.capacity_left[k] = self.capacity_left[k] + sign * v
+
+    def has_affinity(self, affinity):
+        for a,p in affinity.items():
+            if hasattr(self, a):
+                av = getattr(self, a)
+                if p.match(av) is None: return 0
+        return 1
 
     def has_resource(self, requirement):
         for k,v in requirement.items():
@@ -724,7 +733,7 @@ class Run:
             # we consider them just started now
             self.time_start = cur_time
         self.time_since_start = self.time_end - self.time_start
-        self.work.finish_or_retry(self.status, self.exit_status, self.term_sig)
+        self.work.finish_or_retry(self.status, self.exit_status, self.term_sig, self.man_name)
 
     def sync(self, cur_time):
         self.time_since_start = cur_time - self.time_start
@@ -791,7 +800,7 @@ class Work:
     """
     db_fields = [ "work_idx", "cmd", "time_req" ]
 
-    def init(self, cmd, pid, dirs, envs, req):
+    def init(self, cmd, pid, dirs, envs, req, affinity):
         # command line (string)
         self.cmd = cmd
         # pid (or None if not applicable/relevant)
@@ -802,6 +811,7 @@ class Work:
         self.envs = envs.copy()
         # resource requirement of the work
         self.requirement = req
+        self.affinity = affinity
         self.next_run_idx = 0
         return self
 
@@ -832,12 +842,12 @@ class Work:
         if self.server.logfp: self.server.LOG(msg)
         self.make_run()
 
-    def finish_or_retry(self, status, exit_status, term_sig):
+    def finish_or_retry(self, status, exit_status, term_sig, man_name):
         if status == run_status.worker_died \
                 or status == run_status.worker_left:
             self.retry()
         else:
-            self.server.wkg.finish_work(self.work_idx, exit_status, term_sig)
+            self.server.wkg.finish_work(self.work_idx, exit_status, term_sig, man_name)
 
 # 
 # work generation framework
@@ -868,6 +878,8 @@ class work_stream_base:
         self.server = server
         self.leftover = ""
         self.closed = 0
+        # FIXIT: ugly reuse of tokenizer token_val
+        self.tk = jobsched_tokenizer()
 
     def close(self):
         should_be_implemented_in_subclass
@@ -929,6 +941,8 @@ class work_stream_base:
         pid = None
         dirs = []
         envs = {}
+        requirement = { "cpu" : 1 }     # bare minimum default
+        affinity = {}
         leftover_elements = []
         for element in elements:
             leftover_elements.append(element)
@@ -944,13 +958,25 @@ class work_stream_base:
                 assert (len(var_val) == 2), element
                 [ var,val ] = var_val
                 envs[var] = val
+            elif kw == "req:":
+                var_val = string.split(rest, "=", 1)
+                assert (len(var_val) == 2), element
+                [ var,val ] = var_val
+                # FIXIT: ugly reuse of tokenizer
+                requirement[var] = self.tk.token_val(val)
+            elif kw == "aff:":
+                var_val = string.split(rest, "=", 1)
+                assert (len(var_val) == 2), element
+                [ var,val ] = var_val
+                # FIXIT: handle errors
+                affinity[var] = re.compile(val)
             else:
                 assert (cmd is None), cmd
                 if kw == "cmd:":
                     cmd = rest
                 else:
                     cmd = element.strip()
-                w = Work().init(cmd, pid, dirs, envs, { "cpu" : 1 })
+                w = Work().init(cmd, pid, dirs, envs, requirement, affinity)
                 works.append(w)
                 cmd = None
                 pid = None
@@ -970,7 +996,7 @@ class work_stream_base:
             self.leftover = "".join(leftover_elements) + self.leftover
         self.server.LOG("read_works: %d works retruned\n" % len(works))
         return works
-    def finish_work(self, work_idx, work, exit_status, term_sig):
+    def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
         pass
 
 class work_stream_fd(work_stream_base):
@@ -993,10 +1019,10 @@ class work_stream_fd_pair(work_stream_fd):
         work_stream_fd.init(self, rfd)
         self.wfd = wfd
         return 0                # OK
-    def finish_work(self, work_idx, work, exit_status, term_sig):
+    def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
         if exit_status is None: exit_status = "-"
         if term_sig is None: term_sig = "-"
-        payload = "%d: %s %s\n" % (work_idx, exit_status, term_sig)
+        payload = "%d: %s %s %s\n" % (work_idx, exit_status, term_sig, man_name)
         msg = "%9d %s" % (len(payload), payload)
         if dbg>=2:
             Es("write notification to %d [%s]\n" % (self.wfd, msg))
@@ -1039,10 +1065,12 @@ class work_stream_socket(work_stream_base):
     def readpkt(self, sz):
         assert self.so is not None
         return self.so.recv(sz)
-    def finish_work(self, work_idx, work, exit_status, term_sig):
+
+class work_stream_socket_bidirectional(work_stream_socket):
+    def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
         if exit_status is None: exit_status = "-"
         if term_sig is None: term_sig = "-"
-        payload = "%d: %s %s\n" % (work_idx, exit_status, term_sig)
+        payload = "%d: %s %s %s\n" % (work_idx, exit_status, term_sig, man_name)
         msg = "%9d %s" % (len(payload), payload)
         if dbg>=2:
             Es("write notification [%s]\n" % msg)
@@ -1050,6 +1078,7 @@ class work_stream_socket(work_stream_base):
 
 class work_stream_generator(work_stream_base):
     def init(self, generator_module):
+        self.generator_module = generator_module
         try:
             mod = __import__(generator_module, globals(), locals(), [], -1)
         except ImportError,e:
@@ -1066,12 +1095,14 @@ class work_stream_generator(work_stream_base):
         try:
             f = gen()
         except Exception,e:
-            Es("error while calling %s.gen() %s\n"
-               % (generator_module, e.args))
+            Es("error while calling %s.gen():\n\n%s\n"
+               % (generator_module, self.get_exception_trace()))
             return -1
         self.fun_generator = f
         if hasattr(mod, "fin"):
             self.fun_finish = getattr(mod, "fin")
+        else:
+            self.fun_finish = None
         # dummy, always readalble fileno
         r,w = os.pipe()
         os.close(w)
@@ -1094,6 +1125,14 @@ class work_stream_generator(work_stream_base):
     def fileno(self):
         assert self.cur_fileno is not None
         return self.cur_fileno
+
+    def get_exception_trace(self):
+        import cStringIO,traceback
+        type,value,trace = sys.exc_info()
+        cio = cStringIO.StringIO()
+        traceback.print_exc(trace, cio)
+        return cio.getvalue()
+
     def read_works(self):
         assert self.cur_fileno == self.readable, \
             (self.cur_fileno, self.readable, self.unreadable)
@@ -1106,6 +1145,12 @@ class work_stream_generator(work_stream_base):
                 self.close()
                 self.closed = 1
                 break
+            except Exception,e:
+                Es("Error while calling next() on %s.gen():\n\n%s\n"
+                   % (self.generator_module, self.get_exception_trace()))
+                self.close()
+                self.closed = 1
+                break
             if x is None:
                 # mark this unreadable
                 self.cur_fileno = self.unreadable
@@ -1114,6 +1159,7 @@ class work_stream_generator(work_stream_base):
             dirs = []
             envs = {}
             req = { "cpu" : 1 }
+            aff = {}
             if type(x) is types.StringType:
                 cmd = x
             else:
@@ -1126,16 +1172,24 @@ class work_stream_generator(work_stream_base):
                 dirs = d.get("dirs", dirs)
                 envs = d.get("envs", envs)
                 req = d.get("req", req)
-            w = Work().init(cmd, pid, dirs, envs, req)
+                aff = d.get("aff", aff)
+            w = Work().init(cmd, pid, dirs, envs, req, aff)
             self.executing[w] = x
             works.append(w)
         return works
-    def finish_work(self, work_idx, work, exit_status, term_sig):
+    def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
         x = self.executing[work]
         del self.executing[work]
         # mark this readable
         self.cur_fileno = self.readable
-        self.fun_finish(x, exit_status, term_sig)
+        if self.fun_finish:
+            try:
+                self.fun_finish(x, exit_status, term_sig, man_name)
+            except Exception,e:
+                Es("Error while calling fin() on %s.fin():\n\n%s\n"
+                   % (self.generator_module, self.get_exception_trace()))
+                self.close()
+                self.closed = 1
         
 class work_generator:
     """
@@ -1174,13 +1228,13 @@ class work_generator:
             base = m.group(2)
         return os.path.join(dire, ("jobsched-%s-%s" % (cookie, base)))
 
-    def add_server_sock(self, addr, n_accepts):
+    def add_server_sock(self, addr, n_accepts, bidirectional):
         if addr == "":
             addr = self.mk_tmp_socket_name()
         ss = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         ss.bind(addr)
         ss.listen(50000)                # FIXIT: make it configurable
-        self.server_socks[ss] = n_accepts
+        self.server_socks[ss] = (n_accepts, bidirectional)
         return ss
 
     def add_proc_pipe(self, cmd, outfd):
@@ -1233,7 +1287,7 @@ class work_generator:
                 self.add_work_stream(s)
             self.child_pipes[x] = (pid, None)
 
-    def add_proc_sock(self, cmd, addr, n_accepts):
+    def add_proc_sock(self, cmd, addr, n_accepts, bidirectional):
         """
         similar to add_proc_pipe but communicate works
         via a new socket.
@@ -1241,7 +1295,7 @@ class work_generator:
         so it knows the socket address I am listening to.
         
         """
-        ss = self.add_server_sock(addr, n_accepts)
+        ss = self.add_server_sock(addr, n_accepts, bidirectional)
         x,y = os.pipe()         # pipe to detect his death
         addr = ss.getsockname()
         pid = os.fork()
@@ -1290,14 +1344,34 @@ class work_generator:
         create a new work_stream object out of
         the accepted connection.
         """
+        n_accepts,bidirectional = self.server_socks[ss]
         so,_ = ss.accept()
-        ws = work_stream_socket(self.server, so)
-        self.streams[ws] = None
+        if bidirectional:
+            ws = work_stream_socket_bidirectional(self.server)
+        else:
+            ws = work_stream_socket(self.server)
+        if ws.init(so) == -1: bomb
+        if 0:
+            # do not wait for work at this point but
+            # later in process_incoming_events.
+            # pros: never block
+            # cons: too many sockets in streams, and poll will
+            # incur too much overhead?
+            self.streams[ws] = None
+            n_received = 0
+        else:
+            # wait for work now.
+            # pros: do not have to manage too many sockets with poll
+            # cons: may block (should not be an issue if the sender
+            # immediately send msg after connecting)
+            # FIXIT: we go back and forth between server and wkg...
+            n_received = self.server.receive_works(self, ws)
         # close after the specified number of connections
         # have been accepted. 
-        self.server_socks[ss] = self.server_socks[ss] - 1
-        if self.server_socks[ss] == 0:
+        self.server_socks[ss] = (n_accepts - 1, bidirectional)
+        if n_accepts == 1:
             self.cleanup_server_sock(ss)
+        return n_received
 
     def reap_child(self, r):
         """
@@ -1317,13 +1391,13 @@ class work_generator:
         if ss and self.server_socks.has_key(ss):
             self.cleanup_server_sock(ss)
 
-    def finish_work(self, work_idx, exit_status, term_sig):
+    def finish_work(self, work_idx, exit_status, term_sig, man_name):
         """
         this is the place where we should notify the client
         of the finished work.
         """
         ws,w = self.work_stream[work_idx]
-        ws.finish_work(work_idx, w, exit_status, term_sig)
+        ws.finish_work(work_idx, w, exit_status, term_sig, man_name)
         self.max_exit_status = max(self.max_exit_status, exit_status)
         self.max_term_sig = max(self.max_term_sig, term_sig)
 
@@ -1338,6 +1412,8 @@ class work_generator:
                 exit_status = max(exit_status, os.WEXITSTATUS(wait_status))
             elif os.WIFSIGNALED(wait_status):
                 term_sig = max(term_sig, os.WTERMSIG(wait_status))
+            else:
+                bomb
         if term_sig is not None:
             return (None, term_sig)
         if exit_status is not None:
@@ -1346,6 +1422,7 @@ class work_generator:
             return (None, self.max_term_sig)
         if self.max_exit_status is not None:
             return (self.max_exit_status, None)
+        # this happens when no work is dispatched
         return (None, None)
 
 def mk_work_generator(conf, server):
@@ -1369,10 +1446,15 @@ def mk_work_generator(conf, server):
     for cmd in conf.work_proc_pipe2:
         wkg.add_proc_pipe2(cmd, 1, 0)
     for cmd in conf.work_proc_sock:
-        wkg.add_proc_sock(cmd, "", float("inf"))
+        wkg.add_proc_sock(cmd, "", float("inf"), 0) # bidirectional = no
+    for cmd in conf.work_proc_sock2:
+        wkg.add_proc_sock(cmd, "", float("inf"), 1) # bidirectional = yes
     for addr in conf.work_server_sock:
         # FIXIT : fix 10
-        wkg.add_server_sock(addr, 10)
+        wkg.add_server_sock(addr, 1, 0) # bidirectional = no
+    for addr in conf.work_server_sock2:
+        # FIXIT : fix 10
+        wkg.add_server_sock(addr, 1, 1) # bidirectional = yes
     return wkg
 
 class work_db_base:
@@ -2200,7 +2282,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         return R0,W0,E0
 
     def select(self, R, W, E, T):
-        return self.select_by_poll(R, W, E, T)
+        return self.select_by_select(R, W, E, T)
 
     def process_incoming_events(self, timeout):
         """
@@ -2213,13 +2295,19 @@ class job_scheduler(gxpc.cmd_interpreter):
         self.LOG("process_incoming_events: timeout=%f\n" % timeout)
         assert self.so
         wkg = self.wkg
+        streams = wkg.streams.keys()
+        server_socks = wkg.server_socks.keys()
+        child_pipes = wkg.child_pipes.keys()
         R_ = []
-        R_.extend(wkg.streams.keys())
-        R_.extend(wkg.server_socks.keys())
-        R_.extend(wkg.child_pipes.keys())
+       
+        R_.extend(streams)
+        R_.extend(server_socks)
+        R_.extend(child_pipes)
         if self.so: R_.append(self.so)
-        self.LOG("checking streams and deamon socket %s\n" % R_)
+        self.LOG("checking %d streams, %d server_socks, and %d child_pipes\n"
+                 % (len(streams), len(server_socks), len(child_pipes)))
         R,_,_ = self.select(R_, [], [], timeout)
+        n_received = 0
         for r in R:
             if r is self.so:
                 # process_msg_from_deamon (in gxpc.py),
@@ -2228,17 +2316,14 @@ class job_scheduler(gxpc.cmd_interpreter):
                 # handle_event_die (see above)
                 self.process_msg_from_daemon(self.so)
             elif r in wkg.streams:
-                self.receive_works(wkg, r)
+                n_received = n_received + self.receive_works(wkg, r)
             elif r in wkg.server_socks:
-                wkg.accept_connection(r)
+                n_received = n_received + wkg.accept_connection(r)
             elif r in wkg.child_pipes:
                 wkg.reap_child(r)
             else:
                 assert 0
-        if len(R) > 0:
-            return 1
-        else:
-            return 0
+        return n_received
 
     def make_matches(self):
         if self.logfp:
@@ -2257,13 +2342,15 @@ class job_scheduler(gxpc.cmd_interpreter):
             if self.logfp:
                 self.LOG("make_matches: check if %s can exec %s\n" 
                          % (man, run))
-            if not man.has_resource(run.work.requirement):
-                # no, this man cannot exec this run
-                # man is popped off the list
+            if not man.has_affinity(run.work.affinity) \
+                   or not man.has_resource(run.work.requirement):
                 if self.logfp:
-                    self.LOG("make_matches: no, %s does not have resource for %s\n" 
+                    self.LOG("make_matches: no, %s does not have resource or affinity for %s\n" 
                              % (man, run))
                 self.men_free.pop(0)
+                # FIXIT: almost wrong.  even though this man may be able to
+                # accommodate other jobs, we forget this man as long as
+                # one job is running on it.
                 if len(man.runs_running) == 0:
                     new_men_free.append(man)
                 continue
@@ -2349,9 +2436,30 @@ class job_scheduler(gxpc.cmd_interpreter):
         m = gxpm.down(tgt, tid, persist, keep_connection, gcmds)
         msg = gxpm.unparse(m)
         if self.asend(msg) == -1:
+            Es("gxp_js.py: could not send msg to gxp daemon (he may be dead)\n")
             return None
         else:
             return tid
+
+    def send_sigs(self):
+        self.LOG("send_sigs:\n")
+        ct = self.cur_time()
+        n_dispatched = 0
+        clauses = {}
+        for run in self.runs_running:
+            rid = "run_%d_%d" % (run.work_idx, run.run_idx)
+            man_name = run.man_name
+            self.LOG("send_sig to run[%d,%d] (%s) to %s\n" 
+                     % (run.work_idx, run.run_idx, run.work.cmd, man_name))
+            act = gxpm.action_sig(rid, signal.SIGINT)
+            if not clauses.has_key(man_name):
+                clauses[man_name] = []
+            clauses[man_name].append(act)
+        if len(clauses) > 0:
+            this_tgt = self.mk_target_tree(clauses)
+            x = self.send_clauses(this_tgt, self.tid, clauses, 0, 1)
+            if x is None: return -1
+        return 0
 
     def dispatch_runs(self):
         self.LOG("dispatch_runs:\n")
@@ -2386,8 +2494,9 @@ class job_scheduler(gxpc.cmd_interpreter):
             self.ts["run_counts"].add_dx(ct, 1, n_dispatched)
             this_tgt = self.mk_target_tree(clauses)
             x = self.send_clauses(this_tgt, self.tid, clauses, 0, 1)
-            assert x is not None
+            if x is None: return -1
         self.LOG("dispatch_runs: %d runs dispatched\n" % n_dispatched)
+        return 0
 
     def server_iterate(self):
         if self.logfp:
@@ -2410,14 +2519,15 @@ class job_scheduler(gxpc.cmd_interpreter):
         # (just check incoming events if any)
         # no jobs to dispatch -> save work. wait until
         # events come
-        timeout = 0.01
+        timeout = 0.001
         if len(self.matches) == 0:
             timeout = max(timeout, 
                           self.next_update_time - self.cur_time())
         # FIXIT: sufficient matches -> do dispatch
         if self.process_incoming_events(timeout) == 0 \
                or self.n_pending_matches > 1000:
-            self.dispatch_runs()
+            if self.dispatch_runs() == -1:
+                return -1
         return 1
         
     def expandpath(self, p):
@@ -2515,11 +2625,13 @@ class job_scheduler(gxpc.cmd_interpreter):
             return cmd_interpreter.RET_NOT_RUN
         while 1:
             try:
-                if self.server_iterate() == 0: break
+                x = self.server_iterate()
             except KeyboardInterrupt:
                 # FIXIT
                 raise           
                 self.interrupted = self.interrupted + 1
+            if x == 0: break
+            if x == -1: return 1
         # done. generate the last html
         self.final_status = self.wkg.determine_final_status()
         self.record_everything(1)
@@ -2599,7 +2711,7 @@ class job_scheduler(gxpc.cmd_interpreter):
             a = args.pop(0)
             if a == "--": break
             make_args.append(a)
-        make_cmd = 'work_proc_sock="make %s"' % (" ".join(make_args))
+        make_cmd = 'work_proc_sock2="make %s"' % (" ".join(make_args))
         return self.server_main([ "-a", make_cmd ] + args)
         
     # db related stuff
@@ -2623,9 +2735,10 @@ class job_scheduler(gxpc.cmd_interpreter):
                 return "job_success",("exited 0")
             elif exit_status is not None:
                 return "job_failed",("exited %d" % exit_status)
-            else:
+            elif term_sig is not None:
                 return "job_killed",("killed %d" % term_sig)
-        
+            else:
+                return "job_success","no jobs"
 
     def get_td_start_time(self):
         return time.strftime("%Y-%m-%d %H:%M:%S", 

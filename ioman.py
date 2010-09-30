@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.16 2010/05/25 18:13:58 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/ioman.py,v 1.17 2010/09/30 18:40:02 ttaauu Exp $
 # $Name:  $
 #
 
@@ -228,7 +228,7 @@ class non_interruptible_select_by_poll:
         return R0,W0,E0
 
 
-if 0 and hasattr(select, "poll"):
+if hasattr(select, "poll"):
     nointr_select = non_interruptible_select_by_poll()
 else:
     nointr_select = non_interruptible_select()
@@ -2614,6 +2614,9 @@ if 0 and __name__ == "__main__":
     test_recv_msg()
 
 # $Log: ioman.py,v $
+# Revision 1.17  2010/09/30 18:40:02  ttaauu
+# *** empty log message ***
+#
 # Revision 1.16  2010/05/25 18:13:58  ttaauu
 # support --translate_dir src,dst1,dst2,... and associated changes. ChangeLog 2010-05-25
 #
