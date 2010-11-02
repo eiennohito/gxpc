@@ -982,6 +982,8 @@ class work_stream_base:
                 pid = None
                 dirs = []
                 envs = {}
+                requirement = { "cpu" : 1 }     # bare minimum default
+                affinity = {}
                 leftover_elements = []
         if self.closed:
             assert (self.leftover == ""), self.leftover
