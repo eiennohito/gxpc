@@ -3,7 +3,7 @@
 <title>GXP3 User's Guide</title>
 <meta http-equiv="Content-Type" content="text/html">
 <meta name="description" content="GXP3 User's Guide">
-<meta name="generator" content="makeinfo 4.11">
+<meta name="generator" content="makeinfo 4.13">
 <link title="Top" rel="top" href="#Top">
 <link href="http://www.gnu.org/software/texinfo/" rel="generator-home" title="Texinfo Homepage">
 <meta http-equiv="Content-Style-Type" content="text/css">
@@ -23,8 +23,8 @@
 Copyright 2007 Kenjiro Taura (Read COPYRIGHT for detailed information.)
 
 <div class="node">
-<p><hr>
 <a name="Top"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Getting-Started">Getting Started</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#dir">(dir)</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#dir">(dir)</a>
@@ -36,12 +36,13 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#dir">(dir)</a>
 <ul class="menu">
 <li><a accesskey="1" href="#Getting-Started">Getting Started</a>
 <li><a accesskey="2" href="#Tutorial">Tutorial</a>
-<li><a accesskey="3" href="#Using-GXP-for-Parallel-Processing">Using GXP for Parallel Processing</a>
-<li><a accesskey="4" href="#Command-Reference">Command Reference</a>
-<li><a accesskey="5" href="#Tools-Reference">Tools Reference</a>
-<li><a accesskey="6" href="#Troubleshooting">Troubleshooting</a>
-<li><a accesskey="7" href="#Environment-Variables-Reference">Environment Variables Reference</a>
-<li><a accesskey="8" href="#Key-Stroke-Reference">Key Stroke Reference</a>
+<li><a accesskey="3" href="#Using-GXP-make-for-Parallel-Processing">Using GXP make for Parallel Processing</a>
+<li><a accesskey="4" href="#GXP-internals">GXP internals</a>
+<li><a accesskey="5" href="#Command-Reference">Command Reference</a>
+<li><a accesskey="6" href="#Tools-Reference">Tools Reference</a>
+<li><a accesskey="7" href="#Troubleshooting">Troubleshooting</a>
+<li><a accesskey="8" href="#Environment-Variables-Reference">Environment Variables Reference</a>
+<li><a accesskey="9" href="#Key-Stroke-Reference">Key Stroke Reference</a>
 
 </li></ul>
 <p>--- The Detailed Node Listing ---
@@ -50,7 +51,7 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#dir">(dir)</a>
 
 </p>
 <ul class="menu">
-<li><a accesskey="9" href="#Prerequisites">Prerequisites</a>
+<li><a href="#Prerequisites">Prerequisites</a>
 <li><a href="#Installation">Installation</a>
 
 </li></ul>
@@ -65,6 +66,20 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#dir">(dir)</a>
 <li><a href="#Quick-Reference-of-Frequently-Used-Commands">Quick Reference of Frequently Used Commands</a>
 
 </li></ul>
+<p>Using GXP make for Parallel Processing
+
+</p>
+<ul class="menu">
+<li><a href="#GXP-make">GXP make</a>
+
+</li></ul>
+<p>GXP internals
+
+</p>
+<ul class="menu">
+<li><a href="#Files">Files</a>
+
+</li></ul>
 <p>Command Reference
 
 </p>
@@ -76,7 +91,9 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#dir">(dir)</a>
 <li><a href="#export">export</a>
 <li><a href="#help">help</a>
 <li><a href="#i">i</a>
+<li><a href="#js">js</a>
 <li><a href="#log_005flevel">log_level</a>
+<li><a href="#make2">make2</a>
 <li><a href="#make">make</a>
 <li><a href="#makectl">makectl</a>
 <li><a href="#makeman">makeman</a>
@@ -126,8 +143,8 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#dir">(dir)</a>
    </ul>
 
 <div class="node">
-<p><hr>
 <a name="Getting-Started"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Tutorial">Tutorial</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Top">Top</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
@@ -142,8 +159,8 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 </ul>
 
 <div class="node">
-<p><hr>
 <a name="Prerequisites"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Installation">Installation</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Getting-Started">Getting Started</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Getting-Started">Getting Started</a>
@@ -170,8 +187,8 @@ accepts SSH logins. Thus there are chances that the above prerequisits
 are already satisfied in your platform.
 
 <div class="node">
-<p><hr>
 <a name="Installation"></a>
+<p><hr>
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Prerequisites">Prerequisites</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Getting-Started">Getting Started</a>
 
@@ -221,9 +238,9 @@ something like this.
    <p>See <a href="#Troubleshooting">Troubleshooting</a>, if you fail.
 
 <div class="node">
-<p><hr>
 <a name="Tutorial"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#Using-GXP-for-Parallel-Processing">Using GXP for Parallel Processing</a>,
+<p><hr>
+Next:&nbsp;<a rel="next" accesskey="n" href="#Using-GXP-make-for-Parallel-Processing">Using GXP make for Parallel Processing</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Getting-Started">Getting Started</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 
@@ -240,8 +257,8 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 </ul>
 
 <div class="node">
-<p><hr>
 <a name="Testing-Your-Installation"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Running-commands-via-e-command">Running commands via e command</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Tutorial">Tutorial</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Tutorial">Tutorial</a>
@@ -258,8 +275,8 @@ acquire those hosts.
 versions of GXP, this has been changed in this version.
 
 <div class="node">
-<p><hr>
 <a name="Running-commands-via-e-command"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Getting-more-hosts-with-use_002fexplore-commands">Getting more hosts with use/explore commands</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Testing-Your-Installation">Testing Your Installation</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Tutorial">Tutorial</a>
@@ -333,9 +350,9 @@ for how to have more hosts and how to select a set of hosts for
 execution.
 
 <div class="node">
-<p><hr>
 <a name="Getting-more-hosts-with-use%2fexplore-commands"></a>
 <a name="Getting-more-hosts-with-use_002fexplore-commands"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Introduction-to-SSH-for-GXP-Users">Introduction to SSH for GXP Users</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Running-commands-via-e-command">Running commands via e command</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Tutorial">Tutorial</a>
@@ -562,8 +579,8 @@ a single node tries to keep the number of its children no more than
 nine.
 
 <div class="node">
-<p><hr>
 <a name="Introduction-to-SSH-for-GXP-Users"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Quick-Reference-of-Frequently-Used-Commands">Quick Reference of Frequently Used Commands</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Getting-more-hosts-with-use_002fexplore-commands">Getting more hosts with use/explore commands</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Tutorial">Tutorial</a>
@@ -575,8 +592,8 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Tutorial">Tutorial</a>
 <p>todo
 
 <div class="node">
-<p><hr>
 <a name="Quick-Reference-of-Frequently-Used-Commands"></a>
+<p><hr>
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Introduction-to-SSH-for-GXP-Users">Introduction to SSH for GXP Users</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Tutorial">Tutorial</a>
 
@@ -700,28 +717,83 @@ type 'gxpc' everytime.
 </ul>
 
 <div class="node">
+<a name="Using-GXP-make-for-Parallel-Processing"></a>
 <p><hr>
-<a name="Using-GXP-for-Parallel-Processing"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#Command-Reference">Command Reference</a>,
+Next:&nbsp;<a rel="next" accesskey="n" href="#GXP-internals">GXP internals</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Tutorial">Tutorial</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 
 </div>
 
-<h2 class="chapter">3 Using GXP for Parallel Processing</h2>
+<h2 class="chapter">3 Using GXP make for Parallel Processing</h2>
 
-<p>todo
+<ul class="menu">
+<li><a accesskey="1" href="#GXP-make">GXP make</a>
+</ul>
 
 <div class="node">
+<a name="GXP-make"></a>
 <p><hr>
-<a name="Command-Reference"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#Tools-Reference">Tools Reference</a>,
-Previous:&nbsp;<a rel="previous" accesskey="p" href="#Using-GXP-for-Parallel-Processing">Using GXP for Parallel Processing</a>,
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#Using-GXP-make-for-Parallel-Processing">Using GXP make for Parallel Processing</a>,
+Up:&nbsp;<a rel="up" accesskey="u" href="#Using-GXP-make-for-Parallel-Processing">Using GXP make for Parallel Processing</a>
+
+</div>
+
+<h3 class="section">3.1 GXP make</h3>
+
+<div class="node">
+<a name="GXP-internals"></a>
+<p><hr>
+Next:&nbsp;<a rel="next" accesskey="n" href="#Command-Reference">Command Reference</a>,
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#Using-GXP-make-for-Parallel-Processing">Using GXP make for Parallel Processing</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 
 </div>
 
-<h2 class="chapter">4 Command Reference</h2>
+<h2 class="chapter">4 GXP internals</h2>
+
+<ul class="menu">
+<li><a accesskey="1" href="#Files">Files</a>
+</ul>
+
+<div class="node">
+<a name="Files"></a>
+<p><hr>
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#GXP-internals">GXP internals</a>,
+Up:&nbsp;<a rel="up" accesskey="u" href="#GXP-internals">GXP internals</a>
+
+</div>
+
+<h3 class="section">4.1 Files</h3>
+
+<p>There are the following files in the toplevel directory.  This is a bit
+messy and I like to make it cleaner some day.
+
+     <ul>
+<li>ioman.py : main event handler
+<li>gxpm.py : definition of messages among gxpc and gxpd
+<li>gxpd.py : GXP daemon main program
+<li>gxpc.py : gxpc command main program
+<li>expectd.py : implements explore command
+<li>inst_remote_stub.py : implements explore command
+<li>inst_remote.py : implements explore command
+<li>inst_local.py : implements explore command
+<li>opt.py : a small utility defining command line options
+<li>ifconfig.py : a small utility giving ifconfig-like function
+<li>this_file.py : a small utility giving path name of the program
+<li>gxp_js.py : implements js command
+</ul>
+
+<div class="node">
+<a name="Command-Reference"></a>
+<p><hr>
+Next:&nbsp;<a rel="next" accesskey="n" href="#Tools-Reference">Tools Reference</a>,
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#GXP-internals">GXP internals</a>,
+Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
+
+</div>
+
+<h2 class="chapter">5 Command Reference</h2>
 
 <ul class="menu">
 <li><a accesskey="1" href="#cd">cd</a>
@@ -731,8 +803,10 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 <li><a accesskey="5" href="#export">export</a>
 <li><a accesskey="6" href="#help">help</a>
 <li><a accesskey="7" href="#i">i</a>
-<li><a accesskey="8" href="#log_005flevel">log_level</a>
-<li><a accesskey="9" href="#make">make</a>
+<li><a accesskey="8" href="#js">js</a>
+<li><a accesskey="9" href="#log_005flevel">log_level</a>
+<li><a href="#make2">make2</a>
+<li><a href="#make">make</a>
 <li><a href="#makectl">makectl</a>
 <li><a href="#makeman">makeman</a>
 <li><a href="#mapred">mapred</a>
@@ -757,15 +831,15 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 </ul>
 
 <div class="node">
-<p><hr>
 <a name="cd"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#e">e</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Command-Reference">Command Reference</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.1 cd</h3>
+<h3 class="section">5.1 cd</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -779,15 +853,15 @@ Subsequent commands will start at the specified directory.
 Options are the same as those of `<tt>e</tt>' command.
 
 <div class="node">
-<p><hr>
 <a name="e"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#ep">ep</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#cd">cd</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.2 e, mw</h3>
+<h3 class="section">5.2 e, mw</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -859,15 +933,15 @@ as soon as they are newlined.
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="ep"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#explore">explore</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#e">e</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.3 ep</h3>
+<h3 class="section">5.3 ep</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -939,15 +1013,15 @@ as soon as they are newlined.
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="explore"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#export">export</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#ep">ep</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.4 explore</h3>
+<h3 class="section">5.4 explore</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1225,15 +1299,15 @@ because <tt>/etc/hosts</tt> typically includes hosts you don't want to
 <tt>use</tt>.
 
 <div class="node">
-<p><hr>
 <a name="export"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#help">help</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#explore">explore</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.5 export</h3>
+<h3 class="section">5.5 export</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1246,15 +1320,15 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 Options are the same as those of `<tt>e</tt>' command.
 
 <div class="node">
-<p><hr>
 <a name="help"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#i">i</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#export">export</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.6 help</h3>
+<h3 class="section">5.6 help</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1267,15 +1341,15 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
    <p>Show summary of <tt>gxpc</tt> commands or a <tt>help</tt> on a specific <var>COMMAND</var>.
 
 <div class="node">
-<p><hr>
 <a name="i"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#log_005flevel">log_level</a>,
+<p><hr>
+Next:&nbsp;<a rel="next" accesskey="n" href="#js">js</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#help">help</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.7 i</h3>
+<h3 class="section">5.7 i</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1287,16 +1361,32 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
    <p>Enter a new shell with a <tt>gxpc</tt> session.
 
 <div class="node">
+<a name="js"></a>
 <p><hr>
-<a name="log_level"></a>
-<a name="log_005flevel"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#make">make</a>,
+Next:&nbsp;<a rel="next" accesskey="n" href="#log_005flevel">log_level</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#i">i</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.8 log_level, log_base_time</h3>
+<h3 class="section">5.8 js</h3>
+
+<p><b>Usage:</b>
+<pre class="example">     
+       <tt>gxpc</tt> <tt>js</tt> [<var>OPTION</var> ...]
+     
+</pre>
+   <div class="node">
+<a name="log_level"></a>
+<a name="log_005flevel"></a>
+<p><hr>
+Next:&nbsp;<a rel="next" accesskey="n" href="#make2">make2</a>,
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#js">js</a>,
+Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
+
+</div>
+
+<h3 class="section">5.9 log_level, log_base_time</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1313,15 +1403,31 @@ to zero.  Subsequent log entries will record the time relative to
 this time.
 
 <div class="node">
+<a name="make2"></a>
 <p><hr>
-<a name="make"></a>
-Next:&nbsp;<a rel="next" accesskey="n" href="#makectl">makectl</a>,
+Next:&nbsp;<a rel="next" accesskey="n" href="#make">make</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#log_005flevel">log_level</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.9 make</h3>
+<h3 class="section">5.10 make2</h3>
+
+<p><b>Usage:</b>
+<pre class="example">     
+       <tt>gxpc</tt> <tt>make2</tt> [<var>OPTION</var> ...]
+     
+</pre>
+   <div class="node">
+<a name="make"></a>
+<p><hr>
+Next:&nbsp;<a rel="next" accesskey="n" href="#makectl">makectl</a>,
+Previous:&nbsp;<a rel="previous" accesskey="p" href="#make2">make2</a>,
+Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
+
+</div>
+
+<h3 class="section">5.11 make</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1337,15 +1443,15 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 </dl>
 
 <div class="node">
-<p><hr>
 <a name="makectl"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#makeman">makeman</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#make">make</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.10 makectl</h3>
+<h3 class="section">5.12 makectl</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1361,15 +1467,15 @@ or join the gxp <tt>make</tt> computation.
 </dl>
 
 <div class="node">
-<p><hr>
 <a name="makeman"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#mapred">mapred</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#makectl">makectl</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.11 makeman</h3>
+<h3 class="section">5.13 makeman</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1381,15 +1487,15 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
    <p>Generate command reference chapter of gxp manual.
 
 <div class="node">
-<p><hr>
 <a name="mapred"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#ping">ping</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#makeman">makeman</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.12 mapred</h3>
+<h3 class="section">5.14 mapred</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1453,15 +1559,15 @@ final_merger takes the filenames of all the reducers' output and
 outputs the final result.
 
 <div class="node">
-<p><hr>
 <a name="ping"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#popmask">popmask</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#mapred">mapred</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.13 ping</h3>
+<h3 class="section">5.15 ping</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1482,15 +1588,15 @@ of nodes and <tt>trim</tt> non-responding nodes.
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="popmask"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#pp">pp</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#ping">ping</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.14 popmask</h3>
+<h3 class="section">5.16 popmask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1510,15 +1616,15 @@ for execution.
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="pp"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#prof_005fstart">prof_start</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#popmask">popmask</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.15 pp</h3>
+<h3 class="section">5.17 pp</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1547,16 +1653,16 @@ this command line.
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="prof_start"></a>
 <a name="prof_005fstart"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#smask">smask</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#pp">pp</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.16 prof_start, prof_stop</h3>
+<h3 class="section">5.18 prof_start, prof_stop</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1570,15 +1676,15 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 the <var>FILENAME</var>.
 
 <div class="node">
-<p><hr>
 <a name="smask"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#quit">quit</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#prof_005fstart">prof_start</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.17 smask, savemask, pushmask</h3>
+<h3 class="section">5.19 smask, savemask, pushmask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1677,15 +1783,15 @@ the distance from the top.
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="quit"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#reclaim">reclaim</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#smask">smask</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.18 quit</h3>
+<h3 class="section">5.20 quit</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1699,15 +1805,15 @@ If <tt>&ndash;session_only</tt> is given, daemons keep running and only the
 session will cease.
 
 <div class="node">
-<p><hr>
 <a name="reclaim"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#restoremask">restoremask</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#quit">quit</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.19 reclaim</h3>
+<h3 class="section">5.21 reclaim</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1719,15 +1825,15 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
    <p>Command <tt>reclaim</tt> will <tt>reclaim</tt> task tid unconditionally.
 
 <div class="node">
-<p><hr>
 <a name="restoremask"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#rmask">rmask</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#reclaim">reclaim</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.20 restoremask</h3>
+<h3 class="section">5.22 restoremask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1735,15 +1841,15 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="rmask"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#rsh">rsh</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#restoremask">restoremask</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.21 rmask</h3>
+<h3 class="section">5.23 rmask</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1760,15 +1866,15 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="rsh"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#set_005fmax_005fbuf_005flen">set_max_buf_len</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#rmask">rmask</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.22 rsh</h3>
+<h3 class="section">5.24 rsh</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1855,16 +1961,16 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="set_max_buf_len"></a>
 <a name="set_005fmax_005fbuf_005flen"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#show_005fexplore">show_explore</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#rsh">rsh</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.23 set_max_buf_len</h3>
+<h3 class="section">5.25 set_max_buf_len</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1878,16 +1984,16 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
   is given, <tt>use</tt> the default value.
 
 <div class="node">
-<p><hr>
 <a name="show_explore"></a>
 <a name="show_005fexplore"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#showmasks">showmasks</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#set_005fmax_005fbuf_005flen">set_max_buf_len</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.24 show_explore</h3>
+<h3 class="section">5.26 show_explore</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1899,15 +2005,15 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
    <p>Show command used to <tt>explore</tt> <var>TARGET</var> from <var>SRC</var>.
 
 <div class="node">
-<p><hr>
 <a name="showmasks"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#stat">stat</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#show_005fexplore">show_explore</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.25 showmasks</h3>
+<h3 class="section">5.27 showmasks</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -1983,15 +2089,15 @@ nodes.
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="stat"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#trim">trim</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#showmasks">showmasks</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.26 stat</h3>
+<h3 class="section">5.28 stat</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -2004,15 +2110,15 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
 determines the detail level of the information shown.
 
 <div class="node">
-<p><hr>
 <a name="trim"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#use">use</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#stat">stat</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.27 trim</h3>
+<h3 class="section">5.29 trim</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -2038,15 +2144,15 @@ the subtree from the tree of gxp daemons. For example,
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="use"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#version">version</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#trim">trim</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.28 use, edges</h3>
+<h3 class="section">5.30 use, edges</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -2154,15 +2260,15 @@ is allocated by the scheduler.
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="version"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#vgxp">vgxp</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#use">use</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.29 version</h3>
+<h3 class="section">5.31 version</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -2170,14 +2276,14 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="vgxp"></a>
+<p><hr>
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#version">version</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</a>
 
 </div>
 
-<h3 class="section">4.30 vgxp</h3>
+<h3 class="section">5.32 vgxp</h3>
 
 <p><b>Usage:</b>
 <pre class="example">     
@@ -2185,53 +2291,53 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Command-Reference">Command Reference</
      
 </pre>
    <div class="node">
-<p><hr>
 <a name="Tools-Reference"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Troubleshooting">Troubleshooting</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Command-Reference">Command Reference</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 
 </div>
 
-<h2 class="chapter">5 Tools Reference</h2>
+<h2 class="chapter">6 Tools Reference</h2>
 
 <p>todo
 
 <div class="node">
-<p><hr>
 <a name="Troubleshooting"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Environment-Variables-Reference">Environment Variables Reference</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Tools-Reference">Tools Reference</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 
 </div>
 
-<h2 class="chapter">6 Troubleshooting</h2>
+<h2 class="chapter">7 Troubleshooting</h2>
 
 <p>todo
 
 <div class="node">
-<p><hr>
 <a name="Environment-Variables-Reference"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Key-Stroke-Reference">Key Stroke Reference</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Troubleshooting">Troubleshooting</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 
 </div>
 
-<h2 class="chapter">7 Environment Variables Reference</h2>
+<h2 class="chapter">8 Environment Variables Reference</h2>
 
 <p>todo
 
 <div class="node">
-<p><hr>
 <a name="Key-Stroke-Reference"></a>
+<p><hr>
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Environment-Variables-Reference">Environment Variables Reference</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 
 </div>
 
-<h2 class="chapter">8 Key Stroke Reference</h2>
+<h2 class="chapter">9 Key Stroke Reference</h2>
 
 <p>todo
 
@@ -2245,8 +2351,8 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Top">Top</a>
 </ul>
 
 <div class="node">
-<p><hr>
 <a name="Indices"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Function-Index">Function Index</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Key-Stroke-Reference">Key Stroke Reference</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Reference</a>
@@ -2264,8 +2370,8 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Refer
 </ul>
 
 <div class="node">
-<p><hr>
 <a name="Function-Index"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Variable-Index">Variable Index</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Indices">Indices</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Reference</a>
@@ -2276,8 +2382,8 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Refer
 
 <ul class="index-fn" compact>
 </ul><div class="node">
-<p><hr>
 <a name="Variable-Index"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Data-Type-Index">Data Type Index</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Function-Index">Function Index</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Reference</a>
@@ -2290,8 +2396,8 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Refer
 
 <ul class="index-vr" compact>
    </ul><div class="node">
-<p><hr>
 <a name="Data-Type-Index"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Program-Index">Program Index</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Variable-Index">Variable Index</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Reference</a>
@@ -2304,8 +2410,8 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Refer
 
 <ul class="index-tp" compact>
    </ul><div class="node">
-<p><hr>
 <a name="Program-Index"></a>
+<p><hr>
 Next:&nbsp;<a rel="next" accesskey="n" href="#Concept-Index">Concept Index</a>,
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Data-Type-Index">Data Type Index</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Reference</a>
@@ -2318,8 +2424,8 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Refer
 
 <ul class="index-pg" compact>
    </ul><div class="node">
-<p><hr>
 <a name="Concept-Index"></a>
+<p><hr>
 Previous:&nbsp;<a rel="previous" accesskey="p" href="#Program-Index">Program Index</a>,
 Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Reference</a>
 
@@ -2347,44 +2453,53 @@ Up:&nbsp;<a rel="up" accesskey="u" href="#Key-Stroke-Reference">Key Stroke Refer
 <li><a href="#Introduction-to-SSH-for-GXP-Users">2.4 Introduction to SSH for GXP Users</a>
 <li><a href="#Quick-Reference-of-Frequently-Used-Commands">2.5 Quick Reference of Frequently Used Commands</a>
 </li></ul>
-<li><a name="toc_Using-GXP-for-Parallel-Processing" href="#Using-GXP-for-Parallel-Processing">3 Using GXP for Parallel Processing</a>
-<li><a name="toc_Command-Reference" href="#Command-Reference">4 Command Reference</a>
+<li><a name="toc_Using-GXP-make-for-Parallel-Processing" href="#Using-GXP-make-for-Parallel-Processing">3 Using GXP make for Parallel Processing</a>
 <ul>
-<li><a href="#cd">4.1 cd</a>
-<li><a href="#e">4.2 e, mw</a>
-<li><a href="#ep">4.3 ep</a>
-<li><a href="#explore">4.4 explore</a>
-<li><a href="#export">4.5 export</a>
-<li><a href="#help">4.6 help</a>
-<li><a href="#i">4.7 i</a>
-<li><a href="#log_005flevel">4.8 log_level, log_base_time</a>
-<li><a href="#make">4.9 make</a>
-<li><a href="#makectl">4.10 makectl</a>
-<li><a href="#makeman">4.11 makeman</a>
-<li><a href="#mapred">4.12 mapred</a>
-<li><a href="#ping">4.13 ping</a>
-<li><a href="#popmask">4.14 popmask</a>
-<li><a href="#pp">4.15 pp</a>
-<li><a href="#prof_005fstart">4.16 prof_start, prof_stop</a>
-<li><a href="#smask">4.17 smask, savemask, pushmask</a>
-<li><a href="#quit">4.18 quit</a>
-<li><a href="#reclaim">4.19 reclaim</a>
-<li><a href="#restoremask">4.20 restoremask</a>
-<li><a href="#rmask">4.21 rmask</a>
-<li><a href="#rsh">4.22 rsh</a>
-<li><a href="#set_005fmax_005fbuf_005flen">4.23 set_max_buf_len</a>
-<li><a href="#show_005fexplore">4.24 show_explore</a>
-<li><a href="#showmasks">4.25 showmasks</a>
-<li><a href="#stat">4.26 stat</a>
-<li><a href="#trim">4.27 trim</a>
-<li><a href="#use">4.28 use, edges</a>
-<li><a href="#version">4.29 version</a>
-<li><a href="#vgxp">4.30 vgxp</a>
+<li><a href="#GXP-make">3.1 GXP make</a>
 </li></ul>
-<li><a name="toc_Tools-Reference" href="#Tools-Reference">5 Tools Reference</a>
-<li><a name="toc_Troubleshooting" href="#Troubleshooting">6 Troubleshooting</a>
-<li><a name="toc_Environment-Variables-Reference" href="#Environment-Variables-Reference">7 Environment Variables Reference</a>
-<li><a name="toc_Key-Stroke-Reference" href="#Key-Stroke-Reference">8 Key Stroke Reference</a>
+<li><a name="toc_GXP-internals" href="#GXP-internals">4 GXP internals</a>
+<ul>
+<li><a href="#Files">4.1 Files</a>
+</li></ul>
+<li><a name="toc_Command-Reference" href="#Command-Reference">5 Command Reference</a>
+<ul>
+<li><a href="#cd">5.1 cd</a>
+<li><a href="#e">5.2 e, mw</a>
+<li><a href="#ep">5.3 ep</a>
+<li><a href="#explore">5.4 explore</a>
+<li><a href="#export">5.5 export</a>
+<li><a href="#help">5.6 help</a>
+<li><a href="#i">5.7 i</a>
+<li><a href="#js">5.8 js</a>
+<li><a href="#log_005flevel">5.9 log_level, log_base_time</a>
+<li><a href="#make2">5.10 make2</a>
+<li><a href="#make">5.11 make</a>
+<li><a href="#makectl">5.12 makectl</a>
+<li><a href="#makeman">5.13 makeman</a>
+<li><a href="#mapred">5.14 mapred</a>
+<li><a href="#ping">5.15 ping</a>
+<li><a href="#popmask">5.16 popmask</a>
+<li><a href="#pp">5.17 pp</a>
+<li><a href="#prof_005fstart">5.18 prof_start, prof_stop</a>
+<li><a href="#smask">5.19 smask, savemask, pushmask</a>
+<li><a href="#quit">5.20 quit</a>
+<li><a href="#reclaim">5.21 reclaim</a>
+<li><a href="#restoremask">5.22 restoremask</a>
+<li><a href="#rmask">5.23 rmask</a>
+<li><a href="#rsh">5.24 rsh</a>
+<li><a href="#set_005fmax_005fbuf_005flen">5.25 set_max_buf_len</a>
+<li><a href="#show_005fexplore">5.26 show_explore</a>
+<li><a href="#showmasks">5.27 showmasks</a>
+<li><a href="#stat">5.28 stat</a>
+<li><a href="#trim">5.29 trim</a>
+<li><a href="#use">5.30 use, edges</a>
+<li><a href="#version">5.31 version</a>
+<li><a href="#vgxp">5.32 vgxp</a>
+</li></ul>
+<li><a name="toc_Tools-Reference" href="#Tools-Reference">6 Tools Reference</a>
+<li><a name="toc_Troubleshooting" href="#Troubleshooting">7 Troubleshooting</a>
+<li><a name="toc_Environment-Variables-Reference" href="#Environment-Variables-Reference">8 Environment Variables Reference</a>
+<li><a name="toc_Key-Stroke-Reference" href="#Key-Stroke-Reference">9 Key Stroke Reference</a>
 <ul>
 <li><a href="#Indices">Indices</a>
 <li><a href="#Function-Index">Function Index</a>

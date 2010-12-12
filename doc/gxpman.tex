@@ -1,5 +1,8 @@
 \input texinfo  @c -*-texinfo-*-
 
+@c see README for how to edit this file
+@c DO NOT EDIT gxpman.tex, but gxpman_src.tex
+@c
 @c (texinfo-insert-node-lines) will add @node to section/chapter
 @c C-c C-u C-e will complete their names.
 @c 
@@ -40,7 +43,8 @@ Copyright @copyright{} 2007 Kenjiro Taura
 @menu
 * Getting Started::             
 * Tutorial::                    
-* Using GXP for Parallel Processing::  
+* Using GXP make for Parallel Processing::  
+* GXP internals::               
 * Command Reference::           
 * Tools Reference::             
 * Troubleshooting::             
@@ -63,6 +67,14 @@ Tutorial
 * Introduction to SSH for GXP Users::  
 * Quick Reference of Frequently Used Commands::  
 
+Using GXP make for Parallel Processing
+
+* GXP make::                    
+
+GXP internals
+
+* Files::                       
+
 Command Reference
 
 * cd::                          
@@ -72,7 +84,9 @@ Command Reference
 * export::                      
 * help::                        
 * i::                           
+* js::                          
 * log_level::                   
+* make2::                       
 * make::                        
 * makectl::                     
 * makeman::                     
@@ -198,7 +212,7 @@ gxpc: no daemon found, create one
 @xref{Troubleshooting}, if you fail.
 
 
-@node Tutorial, Using GXP for Parallel Processing, Getting Started, Top
+@node Tutorial, Using GXP make for Parallel Processing, Getting Started, Top
 @chapter Tutorial
 
 @menu
@@ -691,12 +705,58 @@ type 'gxpc' everytime.
 
 
 
+@node Using GXP make for Parallel Processing, GXP internals, Tutorial, Top
+@chapter Using GXP make for Parallel Processing
 
-@node Using GXP for Parallel Processing, Command Reference, Tutorial, Top
-@chapter Using GXP for Parallel Processing
-todo
+@menu
+* GXP make::                    
+@end menu
 
-@node Command Reference, Tools Reference, Using GXP for Parallel Processing, Top
+@node GXP make,  , Using GXP make for Parallel Processing, Using GXP make for Parallel Processing
+@section GXP make
+
+@node GXP internals, Command Reference, Using GXP make for Parallel Processing, Top
+@chapter GXP internals
+
+@menu
+* Files::                       
+@end menu
+
+@node Files,  , GXP internals, GXP internals
+@section Files
+
+There are the following files in the toplevel directory.  This is a bit
+messy and I like to make it cleaner some day.
+
+@itemize
+@item 
+ioman.py : main event handler
+@item 
+gxpm.py : definition of messages among gxpc and gxpd
+@item 
+gxpd.py : GXP daemon main program
+@item 
+gxpc.py : gxpc command main program
+@item 
+expectd.py : implements explore command
+@item 
+inst_remote_stub.py : implements explore command
+@item 
+inst_remote.py : implements explore command
+@item 
+inst_local.py : implements explore command
+@item 
+opt.py : a small utility defining command line options
+@item 
+ifconfig.py : a small utility giving ifconfig-like function
+@item 
+this_file.py : a small utility giving path name of the program
+@item 
+gxp_js.py : implements js command
+@end itemize
+
+
+@node Command Reference, Tools Reference, GXP internals, Top
 @chapter Command Reference
 
 @menu
@@ -707,7 +767,9 @@ todo
 * export::                      
 * help::                        
 * i::                           
+* js::                          
 * log_level::                   
+* make2::                       
 * make::                        
 * makectl::                     
 * makeman::                     
@@ -1356,7 +1418,7 @@ Options are the same as those of `@t{e}' command.
 
   Show summary of @t{gxpc} commands or a @t{help} on a specific @var{COMMAND}.
 
-@node i, log_level, help, Command Reference
+@node i, js, help, Command Reference
 @section i
 @vskip 5mm
 @b{Usage:}
@@ -1373,7 +1435,18 @@ Options are the same as those of `@t{e}' command.
 
   Enter a new shell with a @t{gxpc} session.
 
-@node log_level, make, i, Command Reference
+@node js, log_level, i, Command Reference
+@section js
+@vskip 5mm
+@b{Usage:}
+@example
+
+  @t{gxpc} @t{js} [@var{OPTION} ...]
+
+@end example
+@vskip 5mm
+
+@node log_level, make2, js, Command Reference
 @section log_level, log_base_time
 @vskip 5mm
 @b{Usage:}
@@ -1395,7 +1468,18 @@ Command @t{log_base_time} will reset the time of the selected nodes
 to zero.  Subsequent log entries will record the time relative to
 this time.
 
-@node make, makectl, log_level, Command Reference
+@node make2, make, log_level, Command Reference
+@section make2
+@vskip 5mm
+@b{Usage:}
+@example
+
+  @t{gxpc} @t{make2} [@var{OPTION} ...]
+
+@end example
+@vskip 5mm
+
+@node make, makectl, make2, Command Reference
 @section make
 @vskip 5mm
 @b{Usage:}

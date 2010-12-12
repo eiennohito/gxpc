@@ -11,7 +11,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.90 2010/09/15 09:59:00 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/xmake,v 1.91 2010/12/12 06:54:29 ttaauu Exp $
 # $Name:  $
 #
 
@@ -396,8 +396,8 @@ class Man:
         self.runs_running = {} # run_idx -> run
         self.n_runs = 0
 
-    def prio(self):
-        return -self.n_runs
+    def reinit(self):
+        self.state = man_state.active
 
     def set_heartbeat(self, cur_time):
         self.time_last_heartbeat = cur_time
@@ -686,7 +686,7 @@ class Run:
             server.works.update_run(self)
             if man.state == man_state.active:
                 # this man is now free
-                server.men_free.append((man.prio(), man))
+                server.men_free.append(man)
             if dbg>=2:
                 if server.logfp:
                     server.LOG("man %s in state %s finished a run with status=%s exit_status=%s\n"
@@ -2628,16 +2628,28 @@ class xmake_server:
         cur_time = self.cur_time()
         if rid == self.id_gen.join:
             # got notifications saying a worker has joined
+            capacity = self.conf.get_cpu_count(man_name)
             if man is None:
                 # the first msg from this man
-                capacity = self.conf.get_cpu_count(man_name)
                 if self.logfp:
                     self.LOG("new worker %s joined with %d cpus\n" 
                              % (man_name, capacity))
                 man = Man(len(self.men), man_name, capacity, cur_time)
                 self.men[man_name] = man
-                for i in range(capacity):
-                    self.men_free.append((man.prio(), man))
+            else:
+                if self.logfp:
+                    self.LOG("worker %s re-joined with %d cpus\n" 
+                             % (man_name, capacity))
+                man.reinit()
+            cur_count = self.men_free.count(man) + len(man.runs_running)
+            if cur_count < capacity:
+                for i in range(cur_count, capacity):
+                    self.men_free.append(man)
+            else:
+                for i in range(capacity, cur_count):
+                    self.men_free.remove(man)
+            new_count = self.men_free.count(man) + len(man.runs_running)
+            assert (new_count == capacity), (cur_count, capacity, new_count)
         elif rid == self.id_gen.ping:
             # notifications saying ping to a worker has finished
             if man:
@@ -2804,17 +2816,16 @@ class xmake_server:
         find man for this run from free men.
         """
         hold = 0
-        for prio_man in self.men_free:
-            _,man = prio_man
+        for man in self.men_free:
             if man.state == man_state.active:
                 if self.check_constraint(run, man):
-                    self.men_free.remove(prio_man)
+                    self.men_free.remove(man)
                     return man
                 else:
                     hold = 1
             else:
                 # the man is dead
-                self.men_free.remove(prio_man)
+                self.men_free.remove(man)
                 if dbg>=2:
                     Es("xmake: man %s in state %d found in "
                        "men_free queue\n" % (man.name, man.stat))
@@ -2832,7 +2843,6 @@ class xmake_server:
             self.LOG("matching men and works\n")
         matches = []                          # work -> man
         new_runs_todo = []
-        # self.men_free.sort()
         while len(self.runs_todo) > 0 and len(self.men_free) > 0:
             run = self.runs_todo.pop(0)
             if dbg>=2:
@@ -3653,6 +3663,9 @@ if __name__ == "__main__":
 #
 
 # $Log: xmake,v $
+# Revision 1.91  2010/12/12 06:54:29  ttaauu
+# *** empty log message ***
+#
 # Revision 1.90  2010/09/15 09:59:00  ttaauu
 # recover from my committing broken xmake
 #

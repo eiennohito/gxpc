@@ -1,5 +1,8 @@
 \input texinfo  @c -*-texinfo-*-
 
+@c see README for how to edit this file
+@c DO NOT EDIT gxpman.tex, but gxpman_src.tex
+@c
 @c (texinfo-insert-node-lines) will add @node to section/chapter
 @c C-c C-u C-e will complete their names.
 @c 
@@ -30,26 +33,64 @@ Copyright 2007 Kenjiro Taura (Read COPYRIGHT for detailed information.)
 Copyright @copyright{} 2007 Kenjiro Taura
 @end titlepage
 
-@node Top, , (dir), (dir)
+@node Top, Getting Started, (dir), (dir)
 
 @ifhtml
 @c HTML <link rel="STYLESHEET" href="gxpman.css" type="text/css" />
 @c HTML <h1>GXP3 User Manual</h1>
 @end ifhtml
 
-
-
-
 @menu
+* Getting Started::             
+* Tutorial::                    
+* Using GXP make for Parallel Processing::  
+* GXP internals::               
+
+@detailmenu
+ --- The Detailed Node Listing ---
+
+Getting Started
+
+* Prerequisites::               
+* Installation::                
+
+Tutorial
+
+* Testing Your Installation::   
+* Running commands via e command::  
+* Getting more hosts with use/explore commands::  
+* Introduction to SSH for GXP Users::  
+* Quick Reference of Frequently Used Commands::  
+
+Using GXP make for Parallel Processing
+
+* GXP make::                    
+
+GXP internals
+
+* Files::                       
+
+Indices
+
+* Function Index::              
+* Variable Index::              
+* Data Type Index::             
+* Program Index::               
+* Concept Index::               
+
+@end detailmenu
 @end menu
 
-
-
-
-
+@node Getting Started, Tutorial, Top, Top
 @chapter Getting Started
 
 
+@menu
+* Prerequisites::               
+* Installation::                
+@end menu
+
+@node Prerequisites, Installation, Getting Started, Getting Started
 @section Prerequisites
 
 In order to play with GXP, you need
@@ -69,6 +110,7 @@ most Linux platforms. For remote logins, it's very likely that it
 accepts SSH logins. Thus there are chances that the above prerequisits
 are already satisfied in your platform.
 
+@node Installation,  , Prerequisites, Getting Started
 @section Installation
 
 You can obtain the latest version (tarball) from sourceforge:
@@ -121,8 +163,18 @@ gxpc: no daemon found, create one
 @xref{Troubleshooting}, if you fail.
 
 
+@node Tutorial, Using GXP make for Parallel Processing, Getting Started, Top
 @chapter Tutorial
 
+@menu
+* Testing Your Installation::   
+* Running commands via e command::  
+* Getting more hosts with use/explore commands::  
+* Introduction to SSH for GXP Users::  
+* Quick Reference of Frequently Used Commands::  
+@end menu
+
+@node Testing Your Installation, Running commands via e command, Tutorial, Tutorial
 @section Testing Your Installation
 
 The most basic function of GXP is to run commands on many hosts. To
@@ -132,6 +184,7 @@ acquire those hosts.
 GXP is run from a regular shell prompt. For those who have used prior
 versions of GXP, this has been changed in this version.
 
+@node Running commands via e command, Getting more hosts with use/explore commands, Testing Your Installation, Tutorial
 @section Running commands via e command
 Given you put gxpc in your PATH in one way or another, type
 the following to your shell prompt.
@@ -207,6 +260,7 @@ is selected. @xref{Getting more hosts with use/explore commands},
 for how to have more hosts and how to select a set of hosts for
 execution.
 
+@node Getting more hosts with use/explore commands, Introduction to SSH for GXP Users, Running commands via e command, Tutorial
 @section Getting more hosts with use/explore commands
 
 With GXP, you will probably want to use many hosts in parallel.  You
@@ -456,9 +510,11 @@ The indentations indicate that @t{hongo008} issued logins to
 a single node tries to keep the number of its children no more than
 nine.
 
+@node Introduction to SSH for GXP Users, Quick Reference of Frequently Used Commands, Getting more hosts with use/explore commands, Tutorial
 @section Introduction to SSH for GXP Users
 todo
 
+@node Quick Reference of Frequently Used Commands,  , Introduction to SSH for GXP Users, Tutorial
 @section Quick Reference of Frequently Used Commands
 
 @itemize
@@ -600,11 +656,70 @@ type 'gxpc' everytime.
 
 
 
-
+@node Using GXP make for Parallel Processing, GXP internals, Tutorial, Top
 @chapter Using GXP make for Parallel Processing
 
+@menu
+* GXP make::                    
+@end menu
+
+@node GXP make,  , Using GXP make for Parallel Processing, Using GXP make for Parallel Processing
 @section GXP make
 
+@node GXP internals,  , Using GXP make for Parallel Processing, Top
+@chapter GXP internals
+
+@menu
+* Files::                       
+@end menu
+
+@node Files,  , GXP internals, GXP internals
+@section Files
+
+There are the following files in the toplevel directory.  This is a bit
+messy and I like to make it cleaner some day.
+
+@itemize
+@item 
+@t{ioman.py} : main event handler
+@item 
+@t{gxpm.py} : definition of messages among gxpc and gxpd
+@item 
+@t{gxpd.py} : GXP daemon main program
+@item 
+@t{gxpc.py} : gxpc command core part
+@item 
+@t{gxpc} : gxpc command invoked by shell
+@item 
+@t{expectd.py} : implements explore command
+@item 
+@t{inst_remote_stub.py} : implements explore command
+@item 
+@t{inst_remote.py} : implements explore command
+@item 
+@t{inst_local.py} : implements explore command
+@item 
+@t{opt.py} : a small utility defining command line options
+@item 
+@t{ifconfig.py} : a small utility giving ifconfig-like function
+@item 
+@t{this_file.py} : a small utility giving path name of the program
+@item 
+@t{gxp_js.py} : implements js command
+@end itemize
+
+Among them, true ``core'' files are @t{ioman.py, gxpd.py,} and
+@t{gxpc.py}.  @t{gxpd.py} is the program running as a daemon, on your
+local host and remote hosts.  @t{ioman.py} implements an event handler
+loop used by @t{gxpd.py}.  @t{gxpc.py} is the core of the @t{gxpc}
+command you invoke.  @t{gxpc}, the command you actually invoke from your
+shell, is actually a very small program that does almost nothing but
+including @t{gxpc.py}.  Most of the functions you use when interacting
+with GXP start from somewhere in @t{gxpc.py}.
+
+
+gxpm.py is also very important in the sense that it
+defines the message format among daemons (gxpd.py) and frontend (gxpc)
 
 
 @chapter Command Reference

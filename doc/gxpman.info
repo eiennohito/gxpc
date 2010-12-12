@@ -1,4 +1,4 @@
-This is gxpman.info, produced by makeinfo version 4.11 from
+This is gxpman.info, produced by makeinfo version 4.13 from
 gxpman.tex.
 
 Copyright 2007 Kenjiro Taura (Read COPYRIGHT for detailed
@@ -11,7 +11,8 @@ File: gxpman.info,  Node: Top,  Next: Getting Started,  Prev: (dir),  Up: (dir)
 
 * Getting Started::
 * Tutorial::
-* Using GXP for Parallel Processing::
+* Using GXP make for Parallel Processing::
+* GXP internals::
 * Command Reference::
 * Tools Reference::
 * Troubleshooting::
@@ -33,6 +34,14 @@ Tutorial
 * Introduction to SSH for GXP Users::
 * Quick Reference of Frequently Used Commands::
 
+Using GXP make for Parallel Processing
+
+* GXP make::
+
+GXP internals
+
+* Files::
+
 Command Reference
 
 * cd::
@@ -42,7 +51,9 @@ Command Reference
 * export::
 * help::
 * i::
+* js::
 * log_level::
+* make2::
 * make::
 * makectl::
 * makeman::
@@ -160,7 +171,7 @@ something like this.
    *Note Troubleshooting::, if you fail.
 
 
-File: gxpman.info,  Node: Tutorial,  Next: Using GXP for Parallel Processing,  Prev: Getting Started,  Up: Top
+File: gxpman.info,  Node: Tutorial,  Next: Using GXP make for Parallel Processing,  Prev: Getting Started,  Up: Top
 
 2 Tutorial
 **********
@@ -552,17 +563,68 @@ File: gxpman.info,  Node: Quick Reference of Frequently Used Commands,  Prev: In
 
 
 
-File: gxpman.info,  Node: Using GXP for Parallel Processing,  Next: Command Reference,  Prev: Tutorial,  Up: Top
+File: gxpman.info,  Node: Using GXP make for Parallel Processing,  Next: GXP internals,  Prev: Tutorial,  Up: Top
 
-3 Using GXP for Parallel Processing
-***********************************
+3 Using GXP make for Parallel Processing
+****************************************
 
-todo
+* Menu:
+
+* GXP make::
 
 
-File: gxpman.info,  Node: Command Reference,  Next: Tools Reference,  Prev: Using GXP for Parallel Processing,  Up: Top
+File: gxpman.info,  Node: GXP make,  Prev: Using GXP make for Parallel Processing,  Up: Using GXP make for Parallel Processing
 
-4 Command Reference
+3.1 GXP make
+============
+
+
+File: gxpman.info,  Node: GXP internals,  Next: Command Reference,  Prev: Using GXP make for Parallel Processing,  Up: Top
+
+4 GXP internals
+***************
+
+* Menu:
+
+* Files::
+
+
+File: gxpman.info,  Node: Files,  Prev: GXP internals,  Up: GXP internals
+
+4.1 Files
+=========
+
+There are the following files in the toplevel directory.  This is a
+bit messy and I like to make it cleaner some day.
+
+   * ioman.py : main event handler
+
+   * gxpm.py : definition of messages among gxpc and gxpd
+
+   * gxpd.py : GXP daemon main program
+
+   * gxpc.py : gxpc command main program
+
+   * expectd.py : implements explore command
+
+   * inst_remote_stub.py : implements explore command
+
+   * inst_remote.py : implements explore command
+
+   * inst_local.py : implements explore command
+
+   * opt.py : a small utility defining command line options
+
+   * ifconfig.py : a small utility giving ifconfig-like function
+
+   * this_file.py : a small utility giving path name of the program
+
+   * gxp_js.py : implements js command
+
+
+File: gxpman.info,  Node: Command Reference,  Next: Tools Reference,  Prev: GXP internals,  Up: Top
+
+5 Command Reference
 *******************
 
 * Menu:
@@ -574,7 +636,9 @@ File: gxpman.info,  Node: Command Reference,  Next: Tools Reference,  Prev: Usin
 * export::
 * help::
 * i::
+* js::
 * log_level::
+* make2::
 * make::
 * makectl::
 * makeman::
@@ -601,7 +665,7 @@ File: gxpman.info,  Node: Command Reference,  Next: Tools Reference,  Prev: Usin
 
 File: gxpman.info,  Node: cd,  Next: e,  Prev: Command Reference,  Up: Command Reference
 
-4.1 cd
+5.1 cd
 ======
 
 Usage:
@@ -617,7 +681,7 @@ are the same as those of `e' command.
 
 File: gxpman.info,  Node: e,  Next: ep,  Prev: cd,  Up: Command Reference
 
-4.2 e, mw
+5.2 e, mw
 =========
 
 Usage:
@@ -713,7 +777,7 @@ newlined.
 
 File: gxpman.info,  Node: ep,  Next: explore,  Prev: e,  Up: Command Reference
 
-4.3 ep
+5.3 ep
 ======
 
 Usage:
@@ -809,7 +873,7 @@ newlined.
 
 File: gxpman.info,  Node: explore,  Next: export,  Prev: ep,  Up: Command Reference
 
-4.4 explore
+5.4 explore
 ===========
 
 Usage:
@@ -1095,7 +1159,7 @@ equivalent to `gxpc explore -h /etc/hosts .'  That is, all hosts in
 
 File: gxpman.info,  Node: export,  Next: help,  Prev: explore,  Up: Command Reference
 
-4.5 export
+5.5 export
 ==========
 
 Usage:
@@ -1110,7 +1174,7 @@ Options are the same as those of `e' command.
 
 File: gxpman.info,  Node: help,  Next: i,  Prev: export,  Up: Command Reference
 
-4.6 help
+5.6 help
 ========
 
 Usage:
@@ -1123,9 +1187,9 @@ Usage:
    Show summary of gxpc commands or a help on a specific COMMAND.
 
 
-File: gxpman.info,  Node: i,  Next: log_level,  Prev: help,  Up: Command Reference
+File: gxpman.info,  Node: i,  Next: js,  Prev: help,  Up: Command Reference
 
-4.7 i
+5.7 i
 =====
 
 Usage:
@@ -1137,9 +1201,19 @@ Usage:
    Enter a new shell with a gxpc session.
 
 
-File: gxpman.info,  Node: log_level,  Next: make,  Prev: i,  Up: Command Reference
+File: gxpman.info,  Node: js,  Next: log_level,  Prev: i,  Up: Command Reference
 
-4.8 log_level, log_base_time
+5.8 js
+======
+
+Usage:
+
+       gxpc js [OPTION ...]
+
+
+File: gxpman.info,  Node: log_level,  Next: make2,  Prev: js,  Up: Command Reference
+
+5.9 log_level, log_base_time
 ============================
 
 Usage:
@@ -1156,10 +1230,20 @@ zero.  Subsequent log entries will record the time relative to this
 time.
 
 
-File: gxpman.info,  Node: make,  Next: makectl,  Prev: log_level,  Up: Command Reference
+File: gxpman.info,  Node: make2,  Next: make,  Prev: log_level,  Up: Command Reference
 
-4.9 make
-========
+5.10 make2
+==========
+
+Usage:
+
+       gxpc make2 [OPTION ...]
+
+
+File: gxpman.info,  Node: make,  Next: makectl,  Prev: make2,  Up: Command Reference
+
+5.11 make
+=========
 
 Usage:
 
@@ -1174,7 +1258,7 @@ Usage:
 
 File: gxpman.info,  Node: makectl,  Next: makeman,  Prev: make,  Up: Command Reference
 
-4.10 makectl
+5.12 makectl
 ============
 
 Usage:
@@ -1189,7 +1273,7 @@ or join the gxp make computation.  Options:
 
 File: gxpman.info,  Node: makeman,  Next: mapred,  Prev: makectl,  Up: Command Reference
 
-4.11 makeman
+5.13 makeman
 ============
 
 Usage:
@@ -1203,7 +1287,7 @@ Usage:
 
 File: gxpman.info,  Node: mapred,  Next: ping,  Prev: makeman,  Up: Command Reference
 
-4.12 mapred
+5.14 mapred
 ===========
 
 Usage:
@@ -1264,7 +1348,7 @@ result.
 
 File: gxpman.info,  Node: ping,  Next: popmask,  Prev: mapred,  Up: Command Reference
 
-4.13 ping
+5.15 ping
 =========
 
 Usage:
@@ -1286,7 +1370,7 @@ trim non-responding nodes.
 
 File: gxpman.info,  Node: popmask,  Next: pp,  Prev: ping,  Up: Command Reference
 
-4.14 popmask
+5.16 popmask
 ============
 
 Usage:
@@ -1307,7 +1391,7 @@ execution.
 
 File: gxpman.info,  Node: pp,  Next: prof_start,  Prev: popmask,  Up: Command Reference
 
-4.15 pp
+5.17 pp
 =======
 
 Usage:
@@ -1337,7 +1421,7 @@ commands are going to be executed by this command line.
 
 File: gxpman.info,  Node: prof_start,  Next: smask,  Prev: pp,  Up: Command Reference
 
-4.16 prof_start, prof_stop
+5.18 prof_start, prof_stop
 ==========================
 
 Usage:
@@ -1353,7 +1437,7 @@ FILENAME.
 
 File: gxpman.info,  Node: smask,  Next: quit,  Prev: prof_start,  Up: Command Reference
 
-4.17 smask, savemask, pushmask
+5.19 smask, savemask, pushmask
 ==============================
 
 Usage:
@@ -1445,7 +1529,7 @@ from the top.
 
 File: gxpman.info,  Node: quit,  Next: reclaim,  Prev: smask,  Up: Command Reference
 
-4.18 quit
+5.20 quit
 =========
 
 Usage:
@@ -1461,7 +1545,7 @@ will cease.
 
 File: gxpman.info,  Node: reclaim,  Next: restoremask,  Prev: quit,  Up: Command Reference
 
-4.19 reclaim
+5.21 reclaim
 ============
 
 Usage:
@@ -1475,7 +1559,7 @@ Usage:
 
 File: gxpman.info,  Node: restoremask,  Next: rmask,  Prev: reclaim,  Up: Command Reference
 
-4.20 restoremask
+5.22 restoremask
 ================
 
 Usage:
@@ -1485,7 +1569,7 @@ Usage:
 
 File: gxpman.info,  Node: rmask,  Next: rsh,  Prev: restoremask,  Up: Command Reference
 
-4.21 rmask
+5.23 rmask
 ==========
 
 Usage:
@@ -1503,7 +1587,7 @@ Usage:
 
 File: gxpman.info,  Node: rsh,  Next: set_max_buf_len,  Prev: rmask,  Up: Command Reference
 
-4.22 rsh
+5.24 rsh
 ========
 
 Usage:
@@ -1583,7 +1667,7 @@ and %cmd% by whatever commands it wants   to execute on the target.
 
 File: gxpman.info,  Node: set_max_buf_len,  Next: show_explore,  Prev: rsh,  Up: Command Reference
 
-4.23 set_max_buf_len
+5.25 set_max_buf_len
 ====================
 
 Usage:
@@ -1599,7 +1683,7 @@ argument   is given, use the default value.
 
 File: gxpman.info,  Node: show_explore,  Next: showmasks,  Prev: set_max_buf_len,  Up: Command Reference
 
-4.24 show_explore
+5.26 show_explore
 =================
 
 Usage:
@@ -1613,7 +1697,7 @@ Usage:
 
 File: gxpman.info,  Node: showmasks,  Next: stat,  Prev: show_explore,  Up: Command Reference
 
-4.25 showmasks
+5.27 showmasks
 ==============
 
 Usage:
@@ -1687,7 +1771,7 @@ nodes.
 
 File: gxpman.info,  Node: stat,  Next: trim,  Prev: showmasks,  Up: Command Reference
 
-4.26 stat
+5.28 stat
 =========
 
 Usage:
@@ -1702,7 +1786,7 @@ determines the detail level of the information shown.
 
 File: gxpman.info,  Node: trim,  Next: use,  Prev: stat,  Up: Command Reference
 
-4.27 trim
+5.29 trim
 =========
 
 Usage:
@@ -1729,7 +1813,7 @@ the tree of gxp daemons. For example,
 
 File: gxpman.info,  Node: use,  Next: version,  Prev: trim,  Up: Command Reference
 
-4.28 use, edges
+5.30 use, edges
 ===============
 
 Usage:
@@ -1831,7 +1915,7 @@ allocated by the scheduler.
 
 File: gxpman.info,  Node: version,  Next: vgxp,  Prev: use,  Up: Command Reference
 
-4.29 version
+5.31 version
 ============
 
 Usage:
@@ -1841,7 +1925,7 @@ Usage:
 
 File: gxpman.info,  Node: vgxp,  Prev: version,  Up: Command Reference
 
-4.30 vgxp
+5.32 vgxp
 =========
 
 Usage:
@@ -1851,7 +1935,7 @@ Usage:
 
 File: gxpman.info,  Node: Tools Reference,  Next: Troubleshooting,  Prev: Command Reference,  Up: Top
 
-5 Tools Reference
+6 Tools Reference
 *****************
 
 todo
@@ -1859,7 +1943,7 @@ todo
 
 File: gxpman.info,  Node: Troubleshooting,  Next: Environment Variables Reference,  Prev: Tools Reference,  Up: Top
 
-6 Troubleshooting
+7 Troubleshooting
 *****************
 
 todo
@@ -1867,7 +1951,7 @@ todo
 
 File: gxpman.info,  Node: Environment Variables Reference,  Next: Key Stroke Reference,  Prev: Troubleshooting,  Up: Top
 
-7 Environment Variables Reference
+8 Environment Variables Reference
 *********************************
 
 todo
@@ -1875,7 +1959,7 @@ todo
 
 File: gxpman.info,  Node: Key Stroke Reference,  Prev: Environment Variables Reference,  Up: Top
 
-8 Key Stroke Reference
+9 Key Stroke Reference
 **********************
 
 todo
@@ -1947,56 +2031,61 @@ Concept Index
 
 Tag Table:
 Node: Top146
-Node: Getting Started1308
-Node: Prerequisites1474
-Node: Installation2287
-Node: Tutorial3866
-Node: Testing Your Installation4213
-Node: Running commands via e command4685
-Node: Getting more hosts with use/explore commands7111
-Node: Introduction to SSH for GXP Users15623
-Node: Quick Reference of Frequently Used Commands15889
-Node: Using GXP for Parallel Processing19002
-Node: Command Reference19197
-Node: cd19693
-Node: e20033
-Node: ep22735
-Node: explore25436
-Node: export34231
-Node: help34505
-Node: i34742
-Node: log_level34924
-Node: make35423
-Node: makectl35661
-Node: makeman35963
-Node: mapred36182
-Node: ping38489
-Node: popmask38971
-Node: pp39367
-Node: prof_start40326
-Node: smask40631
-Node: quit43291
-Node: reclaim43599
-Node: restoremask43829
-Node: rmask43997
-Node: rsh44300
-Node: set_max_buf_len46614
-Node: show_explore46987
-Node: showmasks47244
-Node: stat49743
-Node: trim50028
-Node: use50778
-Node: version54498
-Node: vgxp54640
-Node: Tools Reference54761
-Node: Troubleshooting54909
-Node: Environment Variables Reference55071
-Node: Key Stroke Reference55270
-Node: Indices55539
-Node: Function Index55776
-Node: Variable Index55937
-Node: Data Type Index56106
-Node: Program Index56276
-Node: Concept Index56441
+Node: Getting Started1428
+Node: Prerequisites1594
+Node: Installation2407
+Node: Tutorial3986
+Node: Testing Your Installation4338
+Node: Running commands via e command4810
+Node: Getting more hosts with use/explore commands7236
+Node: Introduction to SSH for GXP Users15748
+Node: Quick Reference of Frequently Used Commands16014
+Node: Using GXP make for Parallel Processing19127
+Node: GXP make19350
+Node: GXP internals19507
+Node: Files19686
+Node: Command Reference20516
+Node: cd21009
+Node: e21349
+Node: ep24051
+Node: explore26752
+Node: export35547
+Node: help35821
+Node: i36058
+Node: js36233
+Node: log_level36369
+Node: make236870
+Node: make37023
+Node: makectl37259
+Node: makeman37561
+Node: mapred37780
+Node: ping40087
+Node: popmask40569
+Node: pp40965
+Node: prof_start41924
+Node: smask42229
+Node: quit44889
+Node: reclaim45197
+Node: restoremask45427
+Node: rmask45595
+Node: rsh45898
+Node: set_max_buf_len48212
+Node: show_explore48585
+Node: showmasks48842
+Node: stat51341
+Node: trim51626
+Node: use52376
+Node: version56096
+Node: vgxp56238
+Node: Tools Reference56359
+Node: Troubleshooting56507
+Node: Environment Variables Reference56669
+Node: Key Stroke Reference56868
+Node: Indices57137
+Node: Function Index57374
+Node: Variable Index57535
+Node: Data Type Index57704
+Node: Program Index57874
+Node: Concept Index58039
 
 End Tag Table

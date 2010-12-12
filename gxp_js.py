@@ -1,11 +1,16 @@
 #!/usr/bin/env python
 
+# in order to support join/leave
+# we need to update session.peer_tree
+
+
+
 import errno,math,os,re,select,socket,string,sys,time,types
 import gxpc,gxpm,ioman,opt
 
 import cPickle,cStringIO
 
-dbg=0
+dbg=2
 
 def Ws(s):
     sys.stdout.write(s)
@@ -15,6 +20,9 @@ def Es(s):
 
 
 class jobsched_cmd_opts(opt.cmd_opts):
+    """
+    command line options we accept
+    """
     def __init__(self):
         #             (type, default)
         # types supported
@@ -24,14 +32,17 @@ class jobsched_cmd_opts(opt.cmd_opts):
         #   l : list of strings
         #   None : flag
         opt.cmd_opts.__init__(self)
-        self.conf  = ("s", "gxp_js.conf")
-        self.attrs = ("s*", [])
+        self.conf  = ("s", "gxp_js.conf") # config file
+        self.attrs = ("s*", [])           # --attr x=y
         self.help  = (None, 0)
         self.c     = "conf"
         self.a     = "attrs"
         self.h     = "help"
 
 class jobsched_tokenizer:
+    """
+    config file tokenizer
+    """
     def __init__(self):
         self.elem_reg_str = self.elem_regexp()
         self.elem_reg = re.compile(self.elem_reg_str)
@@ -155,13 +166,16 @@ class jobsched_tokenizer:
         return s
 
 class jobsched_config:
+    """
+    object representing configuration
+    """
     db_fields = [ "opts",
                   "work_file", "work_fd", "work_py_module", "work_server_sock",
                   "work_proc_pipe", "work_proc_pipe2", "work_proc_sock",
                   "worker_prof_cmd",
                   "work_list_limit", "state_dir", "template_html",
                   "gen_html_overhead", "refresh_interval",
-                  "cpu_factor", "mem_factor", "job_output",
+                  "cpu_factor", "mem_factor", "trans_dirs", "job_output",
                   "conf_file", "log_file", "host_job_attrs" ]
 
     
@@ -185,7 +199,10 @@ class jobsched_config:
         self.refresh_interval = 60
         self.cpu_factor = 1.0
         self.mem_factor = 0.9
+        self.trans_dirs = []
         self.job_output = [ 1, 2 ]
+
+        self.ctl = None
 
         # probably you will not be interested in
         # the following configs, but just for the
@@ -244,6 +261,9 @@ class jobsched_config:
         return n
 
     def parse_line(self, filename, lineno, line, tok):
+        """
+        parse a single line
+        """
         if dbg>=2:
             Es("parse_line: %s:%d [%s]\n" % (filename, lineno, line))
         ls = line.lstrip()
@@ -264,7 +284,17 @@ class jobsched_config:
                 Es(" setting attributes %s %s\n" % (scope, reg_str))
             if self.set_host_job_attrs(scope, reg_str, reg, tok) == 0:
                 self.set_scope(scope, reg_str, reg)
+        elif x == "trans_dirs":
+            tok.next()
+            rest = tok.rest
+            rhs_items = []
+            while tok.s != "":
+                rhs_items.append(tok.val)
+                tok.next()
+            assert (len(rhs_items) > 0), tok.rest
+            self.trans_dirs.append((rhs_items[0], rhs_items[1:]))
         elif hasattr(self, x):
+            # generic attributes (cpu_factor, mem_factor, etc)
             orig = getattr(self, x)
             rest = tok.rest
             eq = tok.next().s
@@ -377,45 +407,31 @@ def dbg_jobsched_config():
     Ws("%s\n" % c)
     return c
 
+# --------------------
+# main things
+# --------------------
+
 class man_state:
+    """
+    worker (man) state
+    """
     active = "0_active"
     leaving = "1_leaving"
     gone = "2_gone"
 
-class Man:
+class man_join_leave_record:
     """
-    a worker, or a man
+    whenever a man joins or leaves, the user does 
+      gxpc js -a ctl=join or gxpc js -a ctl=leave
+    this creates a process and gxp_js.py will receive
+    its IO and exit status. for each join/leave operation,
+    we record them
     """
-    db_fields = [ "man_idx", "name", "n_runs", "capacity", 
-                  "time_last_heartbeat" ]
-    default_capacity = { "cpu" : 1 }
-
-    def __init__(self, man_idx, name, capacity, cur_time, server):
-        self.man_idx = man_idx  # serial number
-        self.name = name        # name (gupid)
-        self.capacity = capacity
-        self.capacity_left = {} # set in finalize_capacity
-        self.state = man_state.active
-        # created time
-        self.create_time = cur_time
-        # last time at which I heard from him
-        self.time_last_heartbeat = cur_time
-        self.runs_running = {} # run_idx -> run
-        self.n_runs = 0
-        # volatile
-        self.server = server
+    def __init__(self):
         self.io = { 1 : cStringIO.StringIO(), 
                     2 : cStringIO.StringIO() }
         self.done_io = {}
         self.wait_status = None
-
-    def __str__(self):
-        S = []
-        S.append("%s" % self.name)
-        for k,v in self.capacity.items():
-            vl = self.capacity_left.get(k)
-            S.append(" %s: %s/%s" % (k, vl, v))
-        return "\n".join(S)
 
     def completed(self):
         if len(self.io) > 0: return 0
@@ -428,8 +444,9 @@ class Man:
         the initial hello process exited (gxpd 'waited' it).
         some outputs from the process may still be coming.
         """
-        assert wait_status is not None
-        self.wait_status = wait_status
+        # assert wait_status is not None
+        if self.wait_status is None:
+            self.wait_status = wait_status
 
     def record_io(self, fd, payload, eof):
         """
@@ -444,6 +461,10 @@ class Man:
         # this is normally a string telling us
         # about the spec of this worker (e.g.,
         # cpu 5 mem 4g
+        # if io[fd] does not exist, this man
+        # has already been working, so we ignore
+        # it
+        # if not self.io.has_key(fd): return
         if payload != "":
             self.io[fd].write(payload)
         if eof:
@@ -455,7 +476,63 @@ class Man:
             assert not self.done_io.has_key(fd)
             self.done_io[fd] = s
 
-    def finalize_capacity(self, conf):
+
+class Man:
+    """
+    a worker, or a man
+    """
+    db_fields = [ "man_idx", "name", "n_runs", "capacity", 
+                  "time_last_heartbeat" ]
+    default_capacity = { "cpu" : 1 }
+
+    def __init__(self, man_idx, name, capacity, cur_time, server):
+        self.man_idx = man_idx  # serial number
+        self.name = name        # name (gupid)
+        self.capacity = capacity # dictionary of label : integer
+        self.capacity_left = {} # set in finalize_capacity
+        self.state = man_state.active
+        # created time
+        self.create_time = cur_time
+        # last time at which I heard from him
+        self.time_last_heartbeat = cur_time
+        self.runs_running = {} # run_idx -> run
+        self.n_runs = 0
+        # volatile
+        self.server = server
+        if 0:
+            self.io = { 1 : cStringIO.StringIO(), 
+                        2 : cStringIO.StringIO() }
+            self.done_io = {}
+            self.wait_status = None
+        else:
+            # join/leave records (rid -> man_join_leave_record)
+            self.jl_recs = {} 
+
+    def __str__(self):
+        S = []
+        S.append("%s" % self.name)
+        for k,v in self.capacity.items():
+            vl = self.capacity_left.get(k)
+            S.append(" %s: %s/%s" % (k, vl, v))
+        return "\n".join(S)
+
+    def ensure_jl_rec(self, rid):
+        if not self.jl_recs.has_key(rid):
+            self.jl_recs[rid] = man_join_leave_record()
+        
+    def completed(self, rid):
+        self.ensure_jl_rec(rid)
+        return self.jl_recs[rid].completed()
+
+    def record_io(self, rid, fd, payload, eof):
+        self.ensure_jl_rec(rid)
+        self.jl_recs[rid].record_io(fd, payload, eof)
+
+    def record_die(self, rid, status):
+        self.ensure_jl_rec(rid)
+        self.jl_recs[rid].record_die(status)
+
+    def finalize_capacity(self, conf, rid):
         """
         called when we detect that the initial hello process
         completely terminated (got the wait notification and 
@@ -466,7 +543,8 @@ class Man:
                             % self.name)
         # parse its standard output, expecting worker spec
         # like "cpu 8 mem 4g"
-        fields = self.done_io[1].split()
+        # get its standard output
+        fields = self.jl_recs[rid].done_io[1].split()
         n = len(fields)
         if n % 2 == 1: n = n - 1
         # split into key-value pairs
@@ -481,7 +559,7 @@ class Man:
                     self.server.LOG("setting %s %s to %d\n" 
                                     % (self.name, key, val))
                 self.capacity[key] = val
-        # supply default
+        # supply global default
         for k,v in Man.default_capacity.items():
             if not self.capacity.has_key(k):
                 self.capacity[k] = v
@@ -569,6 +647,9 @@ class run_status:
     interrupted = "interrupted"
 
 class Run:
+    """
+    state of a running task
+    """
     def init(self, work, run_idx, io_dir, job_output):
         self.work_idx = work.work_idx # work idx
         self.run_idx = run_idx
@@ -798,7 +879,7 @@ class Work:
     """
     a work or a job sent from clients
     """
-    db_fields = [ "work_idx", "cmd", "time_req" ]
+    db_fields = [ "work_idx", "cmd", "pid", "dirs", "time_req" ]
 
     def init(self, cmd, pid, dirs, envs, req, affinity):
         # command line (string)
@@ -929,6 +1010,34 @@ class work_stream_base:
                         % len(elements))
         return elements
 
+    def translate_dir(self, cwd):
+        trans = self.server.conf.trans_dirs
+        for src,dsts in trans:
+            # look for src that match dire
+            # canonicalize src so both end with "/"
+            if src[-1:] != os.path.sep: src = src + os.path.sep
+            if cwd[-1:] != os.path.sep: cwd = cwd + os.path.sep
+            n = len(src)
+            if cwd[:n] == src:
+                dirs = []
+                for dst in dsts:
+                    new_dir = os.path.normpath(os.path.join(dst, cwd[n:]))
+                    # remove trailing "/"
+                    if new_dir != os.path.sep and new_dir[-1:] == os.path.sep:
+                        new_dir = new_dir[:-1]
+                    dirs.append(new_dir)
+                return dirs
+        if cwd != os.path.sep and cwd[-1:] == os.path.sep:
+            cwd = cwd[:-1]
+        return [ cwd ]
+
+    def translate_dirs(self, cwds):
+        dirs = []
+        for cwd in cwds:
+            for d in self.translate_dir(cwd):
+                dirs.append(d)
+        return dirs
+
     def read_works(self):
         """
         assume data is ready in self.lines + self.partial_line
@@ -976,7 +1085,10 @@ class work_stream_base:
                     cmd = rest
                 else:
                     cmd = element.strip()
-                w = Work().init(cmd, pid, dirs, envs, requirement, affinity)
+                # if no cwd: is given, supply the current directory
+                if len(dirs) == 0: dirs.append(self.server.cwd)
+                dirs_t = self.translate_dirs(dirs)
+                w = Work().init(cmd, pid, dirs_t, envs, requirement, affinity)
                 works.append(w)
                 cmd = None
                 pid = None
@@ -1775,23 +1887,33 @@ class time_series_data:
         self.last_t = 0.0
         self.last_x = (0.0,) * len(line_titles)
         dim = len(line_titles)
-        dat = os.path.join(directory, "%s.dat" % file_prefix)
-        self.wp = open(dat, "wb")
         self.template = (" %f" * dim) + "\n"
-        self.wp.write("0.0")
-        self.wp.write(self.template % self.last_x)
+        self.wp = None
+
+    def ensure_dat(self):
+        if self.wp is None and self.directory != "":
+            dat = os.path.join(self.directory, "%s.dat" % self.file_prefix)
+            self.wp = open(dat, "wb")
+            self.wp.write("0.0")
+            self.wp.write(self.template % self.last_x)
+        if self.wp:
+            return 1
+        else:
+            return 0
         
     def refresh(self, t):
-        self.wp.write("%f" % t)
-        self.wp.write(self.template % self.last_x)
+        if self.ensure_dat():
+            self.wp.write("%f" % t)
+            self.wp.write(self.template % self.last_x)
         self.last_t = t
 
     def add_x(self, t, i, x):
         new_x = self.last_x[:i] + (x,) + self.last_x[i+1:]
-        self.wp.write("%f" % t)
-        self.wp.write(self.template % self.last_x)
-        self.wp.write("%f" % t)
-        self.wp.write(self.template % new_x)
+        if self.ensure_dat():
+            self.wp.write("%f" % t)
+            self.wp.write(self.template % self.last_x)
+            self.wp.write("%f" % t)
+            self.wp.write(self.template % new_x)
         self.last_t = t
         self.last_x = new_x
 
@@ -1799,17 +1921,20 @@ class time_series_data:
         self.add_x(t, i, self.last_x[i] + dx)
 
     def sync(self):
-        self.wp.flush()
+        if self.ensure_dat():
+            self.wp.flush()
 
     def close(self):
-        self.wp.close()
+        if self.ensure_dat():
+            self.wp.close()
         
     def run_gnuplot(self):
         # make sure the graph reflects current time
+        dir = self.directory
+        if dir == "": return 0
         self.refresh(self.server.cur_time())
         self.sync()
         pre = self.file_prefix
-        dir = self.directory
         dat = "%s.dat" % pre
         gpl = "%s.gpl" % pre
         err = "%s.err" % pre
@@ -2143,6 +2268,10 @@ class job_scheduler(gxpc.cmd_interpreter):
         run.finish(ct)
 
     def handle_event_io_run(self, gupid, tid, ev):
+        if self.logfp:
+            self.LOG("handle_event_io_run"
+                     "(gupid=%s, tid=%s, ev.fd=%s, ev.kind=%s)\n" 
+                     % (gupid, tid, ev.fd, ev.kind))
         run = self.runs_running[ev.rid]
         if ev.kind == ioman.ch_event.OK:
             eof = 0
@@ -2154,10 +2283,15 @@ class job_scheduler(gxpc.cmd_interpreter):
         self.works.update_run(run)
         
     def handle_event_die_run(self, gupid, tid, ev):
+        if self.logfp:
+            self.LOG("handle_event_die_run"
+                     "(gupid=%s, tid=%s, ev.rid=%s ev.status=%s)\n" 
+                     % (gupid, tid, ev.rid, ev.status))
         run = self.runs_running[ev.rid]
         worker_time_start = ev.time_start - self.time_start
         worker_time_end = ev.time_end - self.time_start
-        run.record_die(ev.status, ev.rusage, worker_time_start, worker_time_end)
+        run.record_die(ev.status, ev.rusage, 
+                       worker_time_start, worker_time_end)
         if run.is_finished(): 
             self.finish_run(gupid, run)
         self.works.update_run(run)
@@ -2172,9 +2306,14 @@ class job_scheduler(gxpc.cmd_interpreter):
             self.men[gupid] = man
         return man
 
-    def check_completed(self, man):
-        if man.completed():
-            man.finalize_capacity(self.conf)
+    def check_completed(self, man, rid):
+        if man.completed(rid):
+
+            ### think twice if we should do it many times
+            ### we may break capacity_left??
+            ### also think twice how to maintain men_free
+
+            man.finalize_capacity(self.conf, rid)
             assert man not in self.men_free
             self.men_free.append(man)
             if self.logfp:
@@ -2184,41 +2323,85 @@ class job_scheduler(gxpc.cmd_interpreter):
                 self.LOG("man %s not completed yet\n" % man.name)
 
     def handle_event_io_join(self, gupid, tid, ev):
+        """
+        received IO result of hello message
+        """
+        if self.logfp:
+            self.LOG("handle_event_io_join"
+                     "(gupid=%s,tid=%s,ev.fd=%s,ev.kind=%s)\n" 
+                     % (gupid, tid, ev.fd, ev.kind))
         man = self.ensure_man(gupid)
         if ev.kind == ioman.ch_event.OK:
             eof = 0
         else:
             eof = 1
-        man.record_io(ev.fd, ev.payload, eof)
-        self.check_completed(man)
+        man.record_io(ev.rid, ev.fd, ev.payload, eof)
+        self.check_completed(man, ev.rid)
 
     def handle_event_die_join(self, gupid, tid, ev):
+        """
+        received a notification of hello message
+        """
+        if self.logfp:
+            self.LOG("handle_event_die_join"
+                     "(gupid=%s,tid=%s,ev.rid=%s,ev.status=%s)\n" 
+                     % (gupid, tid, ev.rid, ev.status))
         man = self.ensure_man(gupid)
-        man.record_die(ev.status)
-        self.check_completed(man)
+        man.record_die(ev.rid, ev.status)
+        self.check_completed(man, ev.rid)
+
+    def handle_event_io_leave(self, gupid, tid, ev):
+        """
+        received IO result of hello message
+        """
+        if self.logfp:
+            self.LOG("handle_event_io_leave"
+                     "(gupid=%s,tid=%s,ev.fd=%s,ev.kind=%s)\n" 
+                     % (gupid, tid, ev.fd, ev.kind))
+        # nothing to do here
+
+    def handle_event_die_leave(self, gupid, tid, ev):
+        """
+        received a notification of hello message
+        """
+        if self.logfp:
+            self.LOG("handle_event_die_leave"
+                     "(gupid=%s,tid=%s,ev.rid=%s,ev.status=%s)\n" 
+                     % (gupid, tid, ev.rid, ev.status))
+        man = self.men.get(gupid)
+        if man:
+            if self.logfp:
+                self.LOG("man %s leaving after current job (if any)\n" 
+                         % gupid)
+            man.state = man_state.leaving
 
     def handle_event_io(self, gupid, tid, ev):
         if self.logfp:
-            self.LOG("handle_event_io(gupid=%s, rid=%s, fd=%s, kind=%s, payload=%s)\n" 
+            self.LOG("handle_event_io"
+                     "(gupid=%s,rid=%s,fd=%s,kind=%s,payload=%s)\n" 
                      % (gupid, ev.rid, ev.fd, ev.kind, ev.payload))
         rid = ev.rid
         if rid.startswith("run_"):
             self.handle_event_io_run(gupid, tid, ev)
-        elif rid.startswith("join"):
+        elif rid.startswith("join_"):
             self.handle_event_io_join(gupid, tid, ev)
+        elif rid.startswith("leave_"):
+            self.handle_event_io_leave(gupid, tid, ev)
         else:
             Es("rid = %s!!\n" % rid)
             bomb
             
     def handle_event_die(self, gupid, tid, ev):
         if self.logfp:
-            self.LOG("handle_event_die(gupid=%s, rid=%s, status=%s)\n" 
+            self.LOG("handle_event_die(gupid=%s,rid=%s,status=%s)\n" 
                      % (gupid, ev.rid, ev.status))
         rid = ev.rid
         if rid.startswith("run_"):
             self.handle_event_die_run(gupid, tid, ev)
         elif rid.startswith("join"):
             self.handle_event_die_join(gupid, tid, ev)
+        elif rid.startswith("leave"):
+            self.handle_event_die_leave(gupid, tid, ev)
         else:
             Es("rid = %s!!\n" % rid)
             bomb
@@ -2344,7 +2527,13 @@ class job_scheduler(gxpc.cmd_interpreter):
             if self.logfp:
                 self.LOG("make_matches: check if %s can exec %s\n" 
                          % (man, run))
-            if not man.has_affinity(run.work.affinity) \
+            if man.state != man_state.active:
+                if self.logfp:
+                    self.LOG("make_matches: no, %s is not active any more\n" 
+                             % man)
+                self.men_free.pop(0)
+                continue
+            elif not man.has_affinity(run.work.affinity) \
                    or not man.has_resource(run.work.requirement):
                 if self.logfp:
                     self.LOG("make_matches: no, %s does not have resource or affinity for %s\n" 
@@ -2373,6 +2562,9 @@ class job_scheduler(gxpc.cmd_interpreter):
                      % (self.prog, matches_found))
 
     def mk_target_tree_rec(self, ptree, gupids):
+        """
+        make a subtree of ptree, containing gupids
+        """
         if ptree is None: return None
         if ptree.name is None: return None
         child_trees = []
@@ -2381,56 +2573,52 @@ class job_scheduler(gxpc.cmd_interpreter):
             if t is not None:
                 child_trees.append(t)
         if ptree.name in gupids:
-            return gxpm.target_tree(ptree.name, ptree.hostname, ptree.target_label,
+            del gupids[ptree.name]
+            return gxpm.target_tree(ptree.name, ptree.hostname, 
+                                    ptree.target_label,
                                     1, None, ptree.eenv, child_trees)
         elif len(child_trees) > 0:
-            return gxpm.target_tree(ptree.name, ptree.hostname, ptree.target_label,
+            return gxpm.target_tree(ptree.name, ptree.hostname, 
+                                    ptree.target_label,
                                     0, None, ptree.eenv, child_trees)
         else:
             return None
 
-    def mk_target_tree(self, gupids):
+
+    def mk_target_tree_1(self, clauses):
         """
         gupids : dictionary having gupids as keys
         """
-        return self.mk_target_tree_rec(self.session.peer_tree, gupids)
+        gupids = {}
+        for g in clauses.keys(): 
+            gupids[g] = None
+        t = self.mk_target_tree_rec(self.session.peer_tree, gupids)
+        if len(gupids) == 0:
+            return t
+        else:
+            return None
 
-    def mk_singleton_target_tree_rec(self, ptree, gupid):
-        if ptree is None: return None
-        if ptree.name is None: return None
-        if ptree.name == gupid: 
-            return gxpm.target_tree(ptree.name, ptree.hostname, ptree.target_label,
-                                    1, None, ptree.eenv, [])
-        for child in ptree.children.values():
-            t = self.mk_singleton_target_tree_rec(child, gupid)
-            if t is not None: 
-                return gxpm.target_tree(ptree.name, ptree.hostname, ptree.target_label,
-                                        0, None, ptree.eenv, [ t ])
-        return None
-
-    def mk_singleton_target_tree(self, gupid):
-        t = self.target_tree_cache.get(gupid)
-        if t is None:
-            t = self.mk_singleton_target_tree_rec(self.session.peer_tree, gupid)
-            self.target_tree_cache[gupid] = t
-        return t
+    def mk_target_tree(self, clauses):
+        for i in range(2):
+            t = self.mk_target_tree_1(clauses)
+            if t: return t
+            if self.logfp:
+                self.LOG("%s : reloading session file %s\n" 
+                         % (self.prog, self.session_file))
+            self.session
+            self.session = self.reload_session(self.session_file, 1)
+        assert 0
 
     def send_clauses(self, tgt, tid, clauses, persist, keep_connection):
         """
         do action (act) on some nodes.
-        
-        return (term_status,out_list):
-
-         term_status : dictionary of termination status
-         out_list    : output list
-        
         """
         if self.opts.verbosity>=2:
             Es("gxpc: send clauses %s to daemon %s persist=%d keep_connection=%d\n"
                % (clauses, tgt, persist, keep_connection))
         gcmds = [ clauses ]
-        peer_tree = self.session.peer_tree
-
+        assert tgt is not None
+        assert tid is not None
         if tgt is None: return None
         if tid is None:
             tid = "t%s" % self.session.gen_random_id()
@@ -2459,6 +2647,7 @@ class job_scheduler(gxpc.cmd_interpreter):
             clauses[man_name].append(act)
         if len(clauses) > 0:
             this_tgt = self.mk_target_tree(clauses)
+            assert self.tid is not None
             x = self.send_clauses(this_tgt, self.tid, clauses, 0, 1)
             if x is None: return -1
         return 0
@@ -2495,8 +2684,11 @@ class job_scheduler(gxpc.cmd_interpreter):
             self.ts["parallelism"].add_dx(ct, 0, n_dispatched)
             self.ts["run_counts"].add_dx(ct, 1, n_dispatched)
             this_tgt = self.mk_target_tree(clauses)
+            assert self.tid is not None
             x = self.send_clauses(this_tgt, self.tid, clauses, 0, 1)
-            if x is None: return -1
+            if x is None: 
+                self.LOG("dispatch_runs: could not send clauses\n")
+                return -1
         self.LOG("dispatch_runs: %d runs dispatched\n" % n_dispatched)
         return 0
 
@@ -2535,6 +2727,13 @@ class job_scheduler(gxpc.cmd_interpreter):
     def expandpath(self, p):
         return os.path.expanduser(os.path.expandvars(p))
 
+    def gen_join_leave_rid(self, ctl):
+        prefix = ctl
+        if ctl is None: prefix = "join"
+        x = self.join_leave_rid_idx
+        self.join_leave_rid_idx = x + 1
+        return "%s_%d" % (prefix, x)
+
     def send_initial_hello(self):
         """
         send a dummy job (do nothing) to know how many workers.
@@ -2548,7 +2747,8 @@ class job_scheduler(gxpc.cmd_interpreter):
         ex,tgt = self.session.select_exec_tree(opts)
         if ex == -1: return -1
         if self.logfp:
-            self.LOG("opts = %s\ntarget of initial hello %d %s\n" % (opts, ex, tgt))
+            self.LOG("opts = %s\ntarget of initial hello %d %s\n"
+                     % (opts, ex, tgt))
         if tgt is not None:
             # self.LOG("%s: toplevel tree = %s\n" % (self.prog, tgt.show()))
             # dir=[] envs=None cmd="echo cpu 7 mem 5000000"
@@ -2556,8 +2756,8 @@ class job_scheduler(gxpc.cmd_interpreter):
             for fd in [ 1, 2 ]:
                 pipes.append(("pipe", [ ("r", fd, "eof") ], [ ("w", fd) ]))
             cmd = self.expandpath(self.conf.worker_prof_cmd)
-            act = gxpm.action_createproc("join", [], None, 
-                                         cmd, pipes, [])
+            rid = self.gen_join_leave_rid(conf.ctl)
+            act = gxpm.action_createproc(rid, [], None, cmd, pipes, [])
             # persist=1, keep_connection=1
             tid = self.send_action(tgt, self.tid, act, 1, 1)
         return 0
@@ -2581,6 +2781,12 @@ class job_scheduler(gxpc.cmd_interpreter):
                                         section_title, graph_title, line_spec, line_titles)
         return TS
 
+    def gen_tid(self):
+        tid = self.opts.tid
+        if tid is None:
+            tid = "tid-%d" % self.self_pid
+        return tid
+
     def server_main_init(self):
         """
         real initialization
@@ -2592,7 +2798,9 @@ class job_scheduler(gxpc.cmd_interpreter):
         self.hostname = socket.gethostname()
 
         # task id shared by all runs
-        self.tid = "tid-%d" % self.self_pid
+        self.tid = self.gen_tid()
+        assert self.tid is not None
+        self.join_leave_rid_idx = 0
         self.work_idx = 0
         self.wkg = mk_work_generator(self.conf, self)
         self.mang = man_generator(self.conf, self)
@@ -2615,16 +2823,18 @@ class job_scheduler(gxpc.cmd_interpreter):
         for fd in self.conf.job_output:
             pipes.append(("pipe", [ ("r", fd, "eof") ], [ ("w", fd) ]))
         self.pipes = pipes
-        self.target_tree_cache = {}
         # send a dummy cmd to all workers to know how many are working
         if self.send_initial_hello() == -1: return -1
         return 0
 
-    def server_main_with_log(self, args):
+    def server_main_with_log(self):
         if self.logfp:
             self.LOG("server_main_with_log: config\n%s\n" % self.conf)
         if self.server_main_init() == -1: 
             return cmd_interpreter.RET_NOT_RUN
+        # if -a ctl=xxx is specified, return 
+        if self.conf.ctl is not None:
+            return 0
         while 1:
             try:
                 x = self.server_iterate()
@@ -2657,14 +2867,16 @@ class job_scheduler(gxpc.cmd_interpreter):
         self.prog = sys.argv[0]
         self.time_start = time.time()
         self.logfp = None
-        # create state dir and open the log file
-        if self.ensure_directory(self.conf.state_dir) == -1: 
-            return gxpc.cmd_interpreter.RET_NOT_RUN
-        if self.open_LOG() == -1: 
-            return gxpc.cmd_interpreter.RET_NOT_RUN
+        # create state dir and open the log file,
+        # but only if -a ctl=xxxx is NOT specified
+        if self.conf.ctl is None:
+            if self.ensure_directory(self.conf.state_dir) == -1: 
+                return gxpc.cmd_interpreter.RET_NOT_RUN
+            if self.open_LOG() == -1: 
+                return gxpc.cmd_interpreter.RET_NOT_RUN
         try:
             # real main with log opened
-            return self.server_main_with_log(args)
+            return self.server_main_with_log()
         finally:
             self.close_LOG()
 
@@ -2719,7 +2931,7 @@ class job_scheduler(gxpc.cmd_interpreter):
     # db related stuff
 
     db_fields = [ "sys_argv", "cwd", "hostname",
-                  "self_pid", "start_time", 
+                  "self_pid", "tid", "start_time", 
                   "current_time", 
                   "n_runs_todo",
                   "n_runs_running",
