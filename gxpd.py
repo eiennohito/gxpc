@@ -10,7 +10,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.21 2010/09/08 04:08:22 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.22 2010/12/15 08:48:12 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1377,8 +1377,10 @@ class gxpd(ioman.ioman):
     def get_signum(self, sig):
         """
         translate symbolic signal name (e.g., KILL) to the
-        signal number (e.g., 9)
+        signal number (e.g., 9).
+        if it is alreday an integer, use it as it is
         """
+        if type(sig) is types.IntType: return sig
         sigsym = "SIG%s" % string.upper(sig)
         if hasattr(signal, sigsym):
             return getattr(signal, sigsym)
@@ -2312,6 +2314,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.22  2010/12/15 08:48:12  ttaauu
+# *** empty log message ***
+#
 # Revision 1.21  2010/09/08 04:08:22  ttaauu
 # a new job scheduling framework (gxpc js). see ChangeLog 2010-09-08
 #

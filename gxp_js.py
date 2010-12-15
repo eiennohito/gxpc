@@ -5,7 +5,7 @@
 
 
 
-import errno,math,os,re,select,socket,string,sys,time,types
+import errno,math,os,re,select,signal,socket,string,sys,time,types
 import gxpc,gxpm,ioman,opt
 
 import cPickle,cStringIO
@@ -820,7 +820,8 @@ class Run:
             # we consider them just started now
             self.time_start = cur_time
         self.time_since_start = self.time_end - self.time_start
-        self.work.finish_or_retry(self.status, self.exit_status, self.term_sig, self.man_name)
+        return self.work.finish_or_retry(self.status, self.exit_status,
+                                         self.term_sig, self.man_name)
 
     def sync(self, cur_time):
         self.time_since_start = cur_time - self.time_start
@@ -845,7 +846,7 @@ class Run:
                 else:
                     return ("job_failed", ("exit %d" % self.exit_status))
             elif self.term_sig is not None:
-                return ("job_killed", ("killed %d" % term_sig))
+                return ("job_killed", ("killed %d" % self.term_sig))
             else:
                 assert 0, (self.status, self.exit_status, self.term_sig)
         else:
@@ -933,8 +934,9 @@ class Work:
         if status == run_status.worker_died \
                 or status == run_status.worker_left:
             self.retry()
+            return 0
         else:
-            self.server.wkg.finish_work(self.work_idx, exit_status, term_sig, man_name)
+            return self.server.wkg.finish_work(self.work_idx, exit_status, term_sig, man_name)
 
 # 
 # work generation framework
@@ -1117,7 +1119,7 @@ class work_stream_base:
         self.server.LOG("read_works: %d works retruned\n" % len(works))
         return works
     def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
-        pass
+        return 0                        # OK
 
 class work_stream_fd(work_stream_base):
     def init(self, fd):
@@ -1139,6 +1141,16 @@ class work_stream_fd_pair(work_stream_fd):
         work_stream_fd.init(self, rfd)
         self.wfd = wfd
         return 0                # OK
+
+    def safe_write(self, fd, msg):
+        try:
+            os.write(fd, msg)
+            return 0                    # OK
+        except OSError,e:
+            return -1
+        except IOError,e:
+            return -1
+
     def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
         if exit_status is None: exit_status = "-"
         if term_sig is None: term_sig = "-"
@@ -1146,7 +1158,7 @@ class work_stream_fd_pair(work_stream_fd):
         msg = "%9d %s" % (len(payload), payload)
         if dbg>=2:
             Es("write notification to %d [%s]\n" % (self.wfd, msg))
-        os.write(self.wfd, msg)
+        return self.safe_write(self.wfd, msg)
         
 class work_stream_file(work_stream_base):
     def init(self, filename):
@@ -1172,6 +1184,7 @@ class work_stream_file(work_stream_base):
 class work_stream_socket(work_stream_base):
     def init(self, so):
         self.so = so
+        self.warnings_issued = 0
         return 0
     def close(self):
         assert self.so is not None
@@ -1187,6 +1200,17 @@ class work_stream_socket(work_stream_base):
         return self.so.recv(sz)
 
 class work_stream_socket_bidirectional(work_stream_socket):
+    def safe_send(self, so, msg):
+        try:
+            self.so.send(msg)
+            return 0                    # OK
+        except socket.error,e:
+            return -1                   # NG
+            if self.warnings_issued == 0:
+                Es("warning: could not send task termination notification %s, "
+                   "probably the client program has gone\n" % (e.args,))
+                self.warnings_issued = 1
+
     def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
         if exit_status is None: exit_status = "-"
         if term_sig is None: term_sig = "-"
@@ -1194,7 +1218,7 @@ class work_stream_socket_bidirectional(work_stream_socket):
         msg = "%9d %s" % (len(payload), payload)
         if dbg>=2:
             Es("write notification [%s]\n" % msg)
-        self.so.send(msg)
+        return self.safe_send(self.so, msg)
 
 class work_stream_generator(work_stream_base):
     def init(self, generator_module):
@@ -1305,11 +1329,15 @@ class work_stream_generator(work_stream_base):
         if self.fun_finish:
             try:
                 self.fun_finish(x, exit_status, term_sig, man_name)
+                return 0
             except Exception,e:
                 Es("Error while calling fin() on %s.fin():\n\n%s\n"
                    % (self.generator_module, self.get_exception_trace()))
                 self.close()
                 self.closed = 1
+                return -1
+        else:
+            return 0
         
 class work_generator:
     """
@@ -1520,9 +1548,10 @@ class work_generator:
         of the finished work.
         """
         ws,w = self.work_stream[work_idx]
-        ws.finish_work(work_idx, w, exit_status, term_sig, man_name)
+        r = ws.finish_work(work_idx, w, exit_status, term_sig, man_name)
         self.max_exit_status = max(self.max_exit_status, exit_status)
         self.max_term_sig = max(self.max_term_sig, term_sig)
+        return r
 
     def determine_final_status(self):
         """
@@ -2182,7 +2211,19 @@ class job_scheduler(gxpc.cmd_interpreter):
         pass
 
     def check_interrupted(self):
-        return 0
+        for i in range(self.interrupts_seen, self.interrupted):
+            if i == 0:
+                time.sleep(0.5)
+                Es("\nwarning: *** GXP got 1st interrupt, waiting for running jobs to finish\n")
+                Es("Hit Ctrl-C once more to send them signals (SIGINT)\n")
+            elif i == 1:
+                Es("\nwarning: *** GXP got 2nd interrupt, trying to kill running jobs with SIGINT\n")
+                self.send_sigs_to_running_jobs()
+            elif i == 2:
+                Es("\nwarning: *** GXP got 3rd interrupt, GXP will finish, possibly with jobs on remote hosts running\n")
+            else:
+                assert (i < 3), i
+        self.interrupts_seen = self.interrupted
 
     def get_loadavg(self):
         fp = os.popen("uptime")
@@ -2299,7 +2340,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         # FIXIT: slow
         if man not in self.men_free and man.state == man_state.active:
             self.men_free.append(man)
-        run.finish(ct)
+        return run.finish(ct)
 
     def handle_event_io_run(self, gupid, tid, ev):
         if self.logfp:
@@ -2665,17 +2706,17 @@ class job_scheduler(gxpc.cmd_interpreter):
         else:
             return tid
 
-    def send_sigs(self):
+    def send_sigs_to_running_jobs(self):
         self.LOG("send_sigs:\n")
         ct = self.cur_time()
         n_dispatched = 0
         clauses = {}
-        for run in self.runs_running:
+        for run in self.runs_running.values():
             rid = "run_%d_%d" % (run.work_idx, run.run_idx)
             man_name = run.man_name
             self.LOG("send_sig to run[%d,%d] (%s) to %s\n" 
                      % (run.work_idx, run.run_idx, run.work.cmd, man_name))
-            act = gxpm.action_sig(rid, signal.SIGINT)
+            act = gxpm.action_sig(rid, "INT") # SIGINT
             if not clauses.has_key(man_name):
                 clauses[man_name] = []
             clauses[man_name].append(act)
@@ -2728,9 +2769,20 @@ class job_scheduler(gxpc.cmd_interpreter):
 
     def server_iterate(self):
         if self.logfp:
-            self.LOG("server_iterate: %d runs running %d matches %d todo wkg=%s\n"
+            self.LOG("server_iterate: %d runs running %d matches %d todo %d interrupted %d interrupts_seen wkg=%s\n"
                      % (len(self.runs_running), 
-                        len(self.matches), len(self.runs_todo), self.wkg))
+                        len(self.matches), len(self.runs_todo),
+                        self.interrupted, self.interrupts_seen,
+                        self.wkg))
+        # check for unnoticed interrupts
+        self.check_interrupted()
+        # termination condition: case 1
+        # no more jobs coming in fiture (wkg.closed()), 
+        # no jobs running (len(self.runs_running) == 0),
+        # no job-worker pairs previously matched and waiting to be dispatched
+        # (len(self.matches) == 0), and
+        # no jobs in the queue waiting for a matching worker.
+        # this is true, successful termination
         if self.wkg.closed() \
                 and len(self.runs_running) == 0 \
                 and len(self.matches) == 0 \
@@ -2738,8 +2790,22 @@ class job_scheduler(gxpc.cmd_interpreter):
             if self.logfp:
                 self.LOG("server_iterate: finished\n")
             return 0
-        self.check_time_limit()
-        self.check_interrupted()
+        # termination condition: case 2
+        # we got an interrupt (ctrl-c) and
+        # no jobs running (len(self.runs_running) == 0)
+        # or we got interrupts three times or more
+        if self.interrupted > 2 or (self.interrupted > 0 and len(self.runs_running) == 0):
+            if self.logfp:
+                self.LOG("server_iterate: finished after %d interrupts\n"
+                         % self.interrupted)
+            return 0
+        if self.so is None:
+            msg = "warning: found socket to daemon broken, forced to quit (probably gxpd died)\n"
+            Es(msg)
+            if self.logfp:
+                self.LOG(msg)
+            return 0
+        # self.check_time_limit()
         self.record_everything(0)
         self.make_matches()
         # calc timeout:
@@ -2754,7 +2820,8 @@ class job_scheduler(gxpc.cmd_interpreter):
         # FIXIT: sufficient matches -> do dispatch
         if self.process_incoming_events(timeout) == 0 \
                or self.n_pending_matches > 1000:
-            if self.dispatch_runs() == -1:
+            # we dispatch runs only when not interrupted
+            if self.interrupted == 0 and self.dispatch_runs() == -1:
                 return -1
         return 1
         
@@ -2853,6 +2920,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         self.next_update_time = 0.0
         self.n_events = 0
         self.interrupted = 0
+        self.interrupts_seen = 0
         pipes = []
         for fd in self.conf.job_output:
             pipes.append(("pipe", [ ("r", fd, "eof") ], [ ("w", fd) ]))
@@ -2873,10 +2941,13 @@ class job_scheduler(gxpc.cmd_interpreter):
             try:
                 x = self.server_iterate()
             except KeyboardInterrupt:
-                # FIXIT
-                raise           
+                # when interrupted, we continue to gracefully
+                # wait for running jobs to finish
                 self.interrupted = self.interrupted + 1
+                continue
+            # finished
             if x == 0: break
+            # something wrong happened
             if x == -1: return 1
         # done. generate the last html
         self.final_status = self.wkg.determine_final_status()
