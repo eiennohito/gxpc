@@ -10,7 +10,7 @@ import gxpc,gxpm,ioman,opt
 
 import cPickle,cStringIO
 
-dbg=2
+dbg=0
 
 def Ws(s):
     sys.stdout.write(s)
@@ -201,6 +201,12 @@ class jobsched_config:
         self.mem_factor = 0.9
         self.trans_dirs = []
         self.job_output = [ 1, 2 ]
+
+        # some make specific ones
+        self.make_cmd = "make"
+        self.make_exit_status_connect_failed = 125
+        self.make_exit_status_server_died = 126
+        self.make_local_exec_cmd = None
 
         self.ctl = None
 
@@ -1402,6 +1408,9 @@ class work_generator:
             self.child_pipes[x] = (pid, None)
 
     def add_proc_sock(self, cmd, addr, n_accepts, bidirectional):
+        return self.add_proc_sock_no_sh([ "/bin/sh", "-c", cmd ], addr, n_accepts, bidirectional)
+
+    def add_proc_sock_no_sh(self, cmdline, addr, n_accepts, bidirectional):
         """
         similar to add_proc_pipe but communicate works
         via a new socket.
@@ -1416,7 +1425,7 @@ class work_generator:
         if pid == 0:
             ss.close()
             os.close(x)
-            cmdline = [ "/bin/sh", "-c", cmd ]
+            # cmdline = [ "/bin/sh", "-c", cmd ]
             os.environ["GXP_JOBSCHED_WORK_SERVER_SOCK"] = str(addr)
             os.execvp(cmdline[0], cmdline)
         else:
@@ -1539,7 +1548,30 @@ class work_generator:
         # this happens when no work is dispatched
         return (None, None)
 
-def mk_work_generator(conf, server):
+def set_make_environ(conf):
+    makefiles = os.environ.get("MAKEFILES")
+    xmake_mk = os.path.join(os.environ["GXP_DIR"],
+                            os.path.join("gxpbin", "xmake2.mk"))
+    if makefiles is None:
+        os.environ["MAKEFILES"] = xmake_mk
+    else:
+        os.environ["MAKEFILES"] = "%s %s" % (xmake_mk, makefiles)
+    os.environ["GXP_MAKELEVEL"] = "1"
+    x = ("%d" % conf.make_exit_status_connect_failed)
+    os.environ["GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"] = x
+    x = ("%d" % conf.make_exit_status_server_died)
+    os.environ["GXP_MAKE_EXIT_STATUS_SERVER_DIED"] = x
+    if conf.make_local_exec_cmd is not None:
+        os.environ["GXP_MAKE_LOCAL_EXEC_CMD"] = conf.make_local_exec_cmd
+    # set include files
+    gxp_make_pp_inc = os.path.join(os.environ["GXP_DIR"],
+                                   os.path.join("gxpmake", "gxp_make_pp_inc.mk"))
+    gxp_make_mapred_inc = os.path.join(os.environ["GXP_DIR"],
+                                       os.path.join("gxpmake", "gxp_make_mapred_inc.mk"))
+    os.environ["GXP_MAKE_PP"] = gxp_make_pp_inc
+    os.environ["GXP_MAKE_MAPRED"] = gxp_make_mapred_inc
+
+def mk_work_generator(conf, server, make_args):
     wkg = work_generator(conf, server)
     # FIXIT. handle cases where some of them failed.
     # will require two step initializtion to avoid exception
@@ -1563,11 +1595,13 @@ def mk_work_generator(conf, server):
         wkg.add_proc_sock(cmd, "", float("inf"), 0) # bidirectional = no
     for cmd in conf.work_proc_sock2:
         wkg.add_proc_sock(cmd, "", float("inf"), 1) # bidirectional = yes
+    if make_args is not None:
+        make_cmdline = [ conf.make_cmd ] + make_args
+        set_make_environ(conf)
+        wkg.add_proc_sock_no_sh(make_cmdline, "", float("inf"), 1) # bidirectional = yes
     for addr in conf.work_server_sock:
-        # FIXIT : fix 10
         wkg.add_server_sock(addr, 1, 0) # bidirectional = no
     for addr in conf.work_server_sock2:
-        # FIXIT : fix 10
         wkg.add_server_sock(addr, 1, 1) # bidirectional = yes
     return wkg
 
@@ -2787,7 +2821,7 @@ class job_scheduler(gxpc.cmd_interpreter):
             tid = "tid-%d" % self.self_pid
         return tid
 
-    def server_main_init(self):
+    def server_main_init(self, make_args):
         """
         real initialization
         """
@@ -2802,7 +2836,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         assert self.tid is not None
         self.join_leave_rid_idx = 0
         self.work_idx = 0
-        self.wkg = mk_work_generator(self.conf, self)
+        self.wkg = mk_work_generator(self.conf, self, make_args)
         self.mang = man_generator(self.conf, self)
         self.mon = men_monitor(self.conf, self)
         self.works = mk_work_db(self.conf)
@@ -2827,10 +2861,10 @@ class job_scheduler(gxpc.cmd_interpreter):
         if self.send_initial_hello() == -1: return -1
         return 0
 
-    def server_main_with_log(self):
+    def server_main_with_log(self, make_args):
         if self.logfp:
             self.LOG("server_main_with_log: config\n%s\n" % self.conf)
-        if self.server_main_init() == -1: 
+        if self.server_main_init(make_args) == -1: 
             return cmd_interpreter.RET_NOT_RUN
         # if -a ctl=xxx is specified, return 
         if self.conf.ctl is not None:
@@ -2854,7 +2888,7 @@ class job_scheduler(gxpc.cmd_interpreter):
     def cur_time(self):
         return time.time() - self.time_start
         
-    def server_main(self, args):
+    def server_main(self, args, make_args):
         opts = jobsched_cmd_opts()
         if opts.parse(args) == -1:
             return gxpc.cmd_interpreter.RET_NOT_RUN
@@ -2876,7 +2910,7 @@ class job_scheduler(gxpc.cmd_interpreter):
                 return gxpc.cmd_interpreter.RET_NOT_RUN
         try:
             # real main with log opened
-            return self.server_main_with_log()
+            return self.server_main_with_log(make_args)
         finally:
             self.close_LOG()
 
@@ -2885,48 +2919,22 @@ class job_scheduler(gxpc.cmd_interpreter):
         args : whatever is given after 'js'
         """
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
-        return self.server_main(args)
+        return self.server_main(args, None)
         
-    def set_make_environ(self):
-        makefiles = os.environ.get("MAKEFILES")
-        xmake_mk = os.path.join(os.environ["GXP_DIR"],
-                                os.path.join("gxpbin", "xmake2.mk"))
-        if makefiles is None:
-            os.environ["MAKEFILES"] = xmake_mk
-        else:
-            os.environ["MAKEFILES"] = "%s %s" % (xmake_mk, makefiles)
-        os.environ["GXP_MAKELEVEL"] = "1"
-        if 0:                           # FIXIT. can't get conf here
-            x = ("%d" % self.opts.exit_status_connect_failed)
-            os.environ["GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"] = x
-            x = ("%d" % self.opts.exit_status_server_died)
-            os.environ["GXP_MAKE_EXIT_STATUS_SERVER_DIED"] = x
-            if self.opts.local_exec_cmd is not None:
-                os.environ["GXP_MAKE_LOCAL_EXEC_CMD"] = self.opts.local_exec_cmd
-            if self.opts.make_envs is not None:
-                os.environ["GXP_MAKE_ENVS"] = self.opts.make_envs
-        # set include files
-        gxp_make_pp_inc = os.path.join(os.environ["GXP_DIR"],
-                                       os.path.join("gxpmake", "gxp_make_pp_inc.mk"))
-        gxp_make_mapred_inc = os.path.join(os.environ["GXP_DIR"],
-                                           os.path.join("gxpmake", "gxp_make_mapred_inc.mk"))
-        os.environ["GXP_MAKE_PP"] = gxp_make_pp_inc
-        os.environ["GXP_MAKE_MAPRED"] = gxp_make_mapred_inc
-
     def do_make2_cmd(self, args):
         """
         args : whatever is given after 'make2'
         """
         # FIXIT: parse args and give them to make
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
-        self.set_make_environ()
+        # self.set_make_environ()
         make_args = []
         while args:
             a = args.pop(0)
             if a == "--": break
             make_args.append(a)
-        make_cmd = 'work_proc_sock2="make %s"' % (" ".join(make_args))
-        return self.server_main([ "-a", make_cmd ] + args)
+        # make_cmd = 'work_proc_sock2="make %s"' % (" ".join(make_args))
+        return self.server_main(args, make_args)
         
     # db related stuff
 
