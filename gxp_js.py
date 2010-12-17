@@ -2856,7 +2856,8 @@ class job_scheduler(gxpc.cmd_interpreter):
             pipes = []
             for fd in [ 1, 2 ]:
                 pipes.append(("pipe", [ ("r", fd, "eof") ], [ ("w", fd) ]))
-            cmd = self.expandpath(self.conf.worker_prof_cmd)
+            # cmd = self.expandpath(self.conf.worker_prof_cmd)
+            cmd = self.conf.worker_prof_cmd
             rid = self.gen_join_leave_rid(conf.ctl)
             act = gxpm.action_createproc(rid, [], None, cmd, pipes, [])
             # persist=1, keep_connection=1
