@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.29 2010/12/15 06:33:25 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.30 2010/12/17 08:28:35 ttaauu Exp $
 # $Name:  $
 #
 
@@ -118,6 +118,7 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/gxpbin/mksh",
                       "$GXP_DIR/gxpbin/xmake2.mk",
                       "$GXP_DIR/gxpbin/mksh2",
+                      "$GXP_DIR/gxpbin/worker_prof",
                       "$GXP_DIR/gxpbin/qsub_wrap",
                       "$GXP_DIR/gxpbin/qsub_wrap_client",
                       "$GXP_DIR/gxpbin/consub",
@@ -624,6 +625,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.30  2010/12/17 08:28:35  ttaauu
+# *** empty log message ***
+#
 # Revision 1.29  2010/12/15 06:33:25  ttaauu
 # *** empty log message ***
 #
