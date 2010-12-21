@@ -175,7 +175,8 @@ class jobsched_config:
                   "worker_prof_cmd",
                   "work_list_limit", "state_dir", "template_html",
                   "gen_html_overhead", "refresh_interval",
-                  "cpu_factor", "mem_factor", "trans_dirs", "job_output",
+                  "no_dispatch_after", "interrupt_at",
+                  "cpu_factor", "mem_factor", "translate_dir", "job_output",
                   "conf_file", "log_file", "host_job_attrs" ]
 
     
@@ -197,9 +198,11 @@ class jobsched_config:
         self.template_html = "${GXP_DIR}/gxpbin/gxp_js_template.html"
         self.gen_html_overhead = 0.05
         self.refresh_interval = 60
+        self.no_dispatch_after = float("inf")
+        self.interrupt_at = float("inf")
         self.cpu_factor = 1.0
         self.mem_factor = 0.9
-        self.trans_dirs = []
+        self.translate_dir = []
         self.job_output = [ 1, 2 ]
 
         # some make specific ones
@@ -298,7 +301,7 @@ class jobsched_config:
                 rhs_items.append(tok.val)
                 tok.next()
             assert (len(rhs_items) > 0), tok.rest
-            self.trans_dirs.append((rhs_items[0], rhs_items[1:]))
+            self.translate_dir.append((rhs_items[0], rhs_items[1:]))
         elif hasattr(self, x):
             # generic attributes (cpu_factor, mem_factor, etc)
             orig = getattr(self, x)
@@ -1019,7 +1022,7 @@ class work_stream_base:
         return elements
 
     def translate_dir(self, cwd):
-        trans = self.server.conf.trans_dirs
+        trans = self.server.conf.translate_dir
         for src,dsts in trans:
             # look for src that match dire
             # canonicalize src so both end with "/"
@@ -1354,6 +1357,11 @@ class work_generator:
         self.idx = 0            # serial no given to works
         self.max_exit_status = None
         self.max_term_sig = None
+
+    def kill_procs(self):
+        for pid,_ in self.child_pipes.values():
+            Es("warning: killing child process %d\n" % pid)
+            os.kill(pid, signal.SIGINT)
 
     def closed(self):
         if len(self.streams) > 0: return 0
@@ -2223,7 +2231,25 @@ class job_scheduler(gxpc.cmd_interpreter):
                 Es("\nwarning: *** GXP got 3rd interrupt, GXP will finish, possibly with jobs on remote hosts running\n")
             else:
                 assert (i < 3), i
-        self.interrupts_seen = self.interrupted
+        self.interrupts_seen = max(self.interrupts_seen, self.interrupted)
+        # pseudo interrupt based on no_dispatch_after and interrupt_at
+        ct = self.cur_time()
+        if ct > self.conf.interrupt_at:
+            pseudo_interrupt = 2
+        elif ct > self.conf.no_dispatch_after:
+            pseudo_interrupt = 1
+        else:
+            pseudo_interrupt = 0
+        for i in range(self.interrupts_seen, pseudo_interrupt):
+            if i == 0:
+                Es("\nwarning: *** no_dispatch_after time reached, no more dispatches from now\n")
+            elif i == 1:
+                Es("\nwarning: *** interrupt_at time reached, trying to kill running jobs with SIGINT\n")
+                self.send_sigs_to_running_jobs()
+            else:
+                assert (i < 2), i
+        self.interrupts_seen = max(self.interrupts_seen, pseudo_interrupt)
+            
 
     def get_loadavg(self):
         fp = os.popen("uptime")
@@ -2794,10 +2820,10 @@ class job_scheduler(gxpc.cmd_interpreter):
         # we got an interrupt (ctrl-c) and
         # no jobs running (len(self.runs_running) == 0)
         # or we got interrupts three times or more
-        if self.interrupted > 2 or (self.interrupted > 0 and len(self.runs_running) == 0):
+        if self.interrupts_seen > 2 or (self.interrupts_seen > 0 and len(self.runs_running) == 0):
             if self.logfp:
                 self.LOG("server_iterate: finished after %d interrupts\n"
-                         % self.interrupted)
+                         % self.interrupts_seen)
             return 0
         if self.so is None:
             msg = "warning: found socket to daemon broken, forced to quit (probably gxpd died)\n"
@@ -2815,13 +2841,23 @@ class job_scheduler(gxpc.cmd_interpreter):
         # events come
         timeout = 0.001
         if len(self.matches) == 0:
-            timeout = max(timeout, 
-                          self.next_update_time - self.cur_time())
+            ct = self.cur_time()
+            timeout0 = self.next_update_time - ct
+            if self.interrupts_seen < 1:
+                timeout1 = self.conf.no_dispatch_after - ct
+            else:
+                timeout1 = float("inf")
+            if self.interrupts_seen < 2:
+                timeout2 = self.conf.interrupt_at - ct
+            else:
+                timeout2 = float("inf")
+            timeout = max(timeout, min(timeout0, timeout1, timeout2))
         # FIXIT: sufficient matches -> do dispatch
         if self.process_incoming_events(timeout) == 0 \
                or self.n_pending_matches > 1000:
             # we dispatch runs only when not interrupted
-            if self.interrupted == 0 and self.dispatch_runs() == -1:
+            if self.interrupts_seen == 0 \
+                    and self.dispatch_runs() == -1:
                 return -1
         return 1
         
@@ -2950,6 +2986,7 @@ class job_scheduler(gxpc.cmd_interpreter):
             if x == 0: break
             # something wrong happened
             if x == -1: return 1
+        self.wkg.kill_procs()
         # done. generate the last html
         self.final_status = self.wkg.determine_final_status()
         self.record_everything(1)
