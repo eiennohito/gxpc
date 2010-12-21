@@ -290,9 +290,9 @@ class jobsched_config:
                 Es(" setting attributes %s %s\n" % (scope, reg_str))
             if self.set_host_job_attrs(scope, reg_str, reg, tok) == 0:
                 self.set_scope(scope, reg_str, reg)
-        elif x == "trans_dirs":
+        elif x in [ "trans_dir", "trans_dirs", "translate_dir" ]:
             tok.next()
-            rest = tok.rest
+            if tok.s == "=": tok.next()
             rhs_items = []
             while tok.s != "":
                 rhs_items.append(tok.val)
@@ -362,7 +362,7 @@ class jobsched_config:
 
     def parse_cmdline(self, attrs, tok):
         # attrs : attributes given in the command line
-        self.parse_list("<cmdline>", attrs, tok)
+        return self.parse_list("<cmdline>", attrs, tok)
 
     def parse(self):
         tok = jobsched_tokenizer()
@@ -2160,7 +2160,7 @@ class job_scheduler(gxpc.cmd_interpreter):
     def ensure_directory(self, dire):
         if dire == "": return 0
         try:
-            os.mkdir(dire)
+            os.makedirs(dire)
         except OSError,e:
             if e.args[0] == errno.EEXIST:
                 pass
