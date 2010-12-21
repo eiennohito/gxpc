@@ -684,10 +684,9 @@ class Run:
         # volatile (not persistent) fields. not put in database
         self.work = work
         self.man = None
-        # FIXIT: make them configurable
+        # FIXIT: make them configurable??
+        self.job_output = job_output
         self.io = {}
-        for fd in job_output:
-            self.io[fd] = (cStringIO.StringIO(), None, None)
         self.done_io = {}
         self.hold_limit = float("inf")
         return self
@@ -721,6 +720,16 @@ class Run:
             self.isrss = rusage[5]
             self.minflt = rusage[6]
             self.majflt = rusage[7]
+
+    def record_running(self, t):
+        assert (self.time_start is None), self.time_start
+        self.time_start = t
+        self.status = run_status.running
+        for fd in self.job_output:
+            self.io[fd] = (cStringIO.StringIO(), None, None)
+
+    def record_no_throw(self):
+        self.status = run_status.no_throw
 
     def add_io(self, fd, payload, eof):
         """
@@ -1809,13 +1818,14 @@ class work_db_text(work_db_base):
 
         # keep runs we cannot write to disks yet
         # for each category
+        self.such_runs = {}
         for name,sort_key in self.table_spec:
             self.such_runs[name] = ([], sort_key)
 
         self.wp = self.open_work_db()
 
     def open_work_db(self):
-        wp = open(os.path.join(self.conf.state_dir, "work.txt"))
+        wp = open(os.path.join(self.conf.state_dir, "work.txt"), "wb")
         wp.write("\t".join(Run.db_fields + Work.db_fields))
         return wp
 
@@ -2774,9 +2784,7 @@ class job_scheduler(gxpc.cmd_interpreter):
                 acts.append(act)
                 self.runs_running[rid] = run
                 man.runs_running[rid] = run
-                assert (run.time_start is None), run.time_start
-                run.time_start = ct
-                run.status = run_status.running
+                run.record_running(ct)
                 n_dispatched = n_dispatched + 1
             assert len(acts) > 0
             clauses[man.name] = acts
@@ -2792,6 +2800,13 @@ class job_scheduler(gxpc.cmd_interpreter):
                 return -1
         self.LOG("dispatch_runs: %d runs dispatched\n" % n_dispatched)
         return 0
+
+    def record_no_throw_runs(self):
+        for runs in self.matches.values():
+            for run in runs:
+                run.record_no_throw()
+        for run in self.runs_todo:
+            run.record_no_throw()
 
     def server_iterate(self):
         if self.logfp:
@@ -2987,6 +3002,7 @@ class job_scheduler(gxpc.cmd_interpreter):
             # something wrong happened
             if x == -1: return 1
         self.wkg.kill_procs()
+        self.record_no_throw_runs()
         # done. generate the last html
         self.final_status = self.wkg.determine_final_status()
         self.record_everything(1)
