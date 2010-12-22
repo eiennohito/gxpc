@@ -1246,7 +1246,12 @@ class work_stream_socket_bidirectional(work_stream_socket):
         msg = "%9d %s" % (len(payload), payload)
         if dbg>=2:
             Es("write notification [%s]\n" % msg)
-        return self.safe_send(self.so, msg)
+        r = self.safe_send(self.so, msg)
+        # FIXIT. a single socket may send multiple tasks,
+        # so this is not exactly right, but works for make2.
+        # go with this for now
+        self.close()
+        return r
 
 class work_stream_generator(work_stream_base):
     def init(self, generator_module):
