@@ -5,7 +5,7 @@
 
 
 
-import errno,heapq,math,os,re,select,signal,socket,string,sys,time,types
+import errno,heapq,math,os,random,re,select,signal,socket,string,sys,time,types
 import gxpc,gxpm,ioman,opt
 
 import cPickle,cStringIO
@@ -476,15 +476,24 @@ class man_join_leave_record:
         # it
         # if not self.io.has_key(fd): return
         if payload != "":
-            self.io[fd].write(payload)
+            ioo = self.io.get(fd) # cStringIO object
+            if ioo:
+                ioo.write(payload)
+            else:
+                Es("BUG: could not get IO object for fd=%s payload=%s\n" % (fd, payload))
         if eof:
             # this is the last msg. we indicate
             # it by moving the record from io to
             # done_io.
-            s = self.io[fd].getvalue()
-            del self.io[fd]
-            assert not self.done_io.has_key(fd)
-            self.done_io[fd] = s
+            ioo = self.io.get(fd) # cStringIO object
+            if ioo is None:
+                Es("BUG: could not get IO object for fd=%s eof=1 payload=%s\n" % (fd, payload))
+            else:
+                s = ioo.getvalue()
+                del self.io[fd]
+                if self.done_io.has_key(fd):
+                    Es("BUG: done_io has already fd=%s s=%s\n" % (fd, self.done_io[fd]))
+                self.done_io[fd] = s
 
 
 class Man:
@@ -509,14 +518,11 @@ class Man:
         self.n_runs = 0
         # volatile
         self.server = server
-        if 0:
-            self.io = { 1 : cStringIO.StringIO(), 
-                        2 : cStringIO.StringIO() }
-            self.done_io = {}
-            self.wait_status = None
-        else:
-            # join/leave records (rid -> man_join_leave_record)
-            self.jl_recs = {} 
+        # join/leave records (rid -> man_join_leave_record)
+        self.jl_recs = {} 
+
+    def reinit(self):
+        self.state = man_state.active
 
     def __str__(self):
         S = []
@@ -533,6 +539,13 @@ class Man:
     def completed(self, rid):
         self.ensure_jl_rec(rid)
         return self.jl_recs[rid].completed()
+
+    def n_completed(self):
+        x = 0
+        for jl_rec in self.jl_recs.values():
+            if jl_rec.completed():
+                x += 1
+        return x
 
     def record_io(self, rid, fd, payload, eof):
         self.ensure_jl_rec(rid)
@@ -622,7 +635,7 @@ class Man:
             c = self.capacity[k]
             cl = self.capacity_left.get(k)
             C.append("%s: %s / %s" % (k, cl, c))
-        return "<br>".join(C)
+        return "\n".join(C)
 
 class man_generator:
     """
@@ -2484,16 +2497,30 @@ class job_scheduler(gxpc.cmd_interpreter):
 
     def check_completed(self, man, rid):
         if man.completed(rid):
-
+            Ws("gxp_js.py: man %s joins\n" % man)
             ### think twice if we should do it many times
             ### we may break capacity_left??
             ### also think twice how to maintain men_free
-
-            man.finalize_capacity(self.conf, rid)
-            assert man not in self.men_free
-            self.men_free.append(man)
-            if self.logfp:
-                self.LOG("a man initialized\n%s\n" % man)
+            ### we finalize_capacity only when this is the
+            ### first time this guy joined
+            nc = man.n_completed()
+            if nc == 1:
+                assert (man.state == man_state.active), man.state
+                man.finalize_capacity(self.conf, rid)
+                assert man not in self.men_free
+                if self.logfp:
+                    self.LOG("a man joined for the first time\n%s\n" % man)
+            else:
+                man.reinit()
+                if self.logfp:
+                    self.LOG("a man joined again\n%s\n" % man)
+            if man in self.men_free:
+                if self.logfp:
+                    self.LOG("a man already in free pool\n%s\n" % man)
+            else:
+                if self.logfp:
+                    self.LOG("a man (re)entered free pool\n%s\n" % man)
+                self.men_free.append(man)
         else:
             if self.logfp:
                 self.LOG("man %s not completed yet\n" % man.name)
@@ -2504,8 +2531,8 @@ class job_scheduler(gxpc.cmd_interpreter):
         """
         if self.logfp:
             self.LOG("handle_event_io_join"
-                     "(gupid=%s,tid=%s,ev.fd=%s,ev.kind=%s)\n" 
-                     % (gupid, tid, ev.fd, ev.kind))
+                     "(gupid=%s,tid=%s,ev.rid=%s,ev.fd=%s,ev.kind=%s)\n" 
+                     % (gupid, tid, ev.rid, ev.fd, ev.kind))
         man = self.ensure_man(gupid)
         if ev.kind == ioman.ch_event.OK:
             eof = 0
@@ -2532,8 +2559,8 @@ class job_scheduler(gxpc.cmd_interpreter):
         """
         if self.logfp:
             self.LOG("handle_event_io_leave"
-                     "(gupid=%s,tid=%s,ev.fd=%s,ev.kind=%s)\n" 
-                     % (gupid, tid, ev.fd, ev.kind))
+                     "(gupid=%s,tid=%s,ev.rid=%s,ev.fd=%s,ev.kind=%s)\n" 
+                     % (gupid, tid, ev.rid, ev.fd, ev.kind))
         # nothing to do here
 
     def handle_event_die_leave(self, gupid, tid, ev):
@@ -2546,9 +2573,10 @@ class job_scheduler(gxpc.cmd_interpreter):
                      % (gupid, tid, ev.rid, ev.status))
         man = self.men.get(gupid)
         if man:
+            msg = ("man %s leaving after current job (if any)\n" % gupid)
+            Ws("gxp_js.py: %s" % msg)
             if self.logfp:
-                self.LOG("man %s leaving after current job (if any)\n" 
-                         % gupid)
+                self.LOG(msg)
             man.state = man_state.leaving
 
     def handle_event_io(self, gupid, tid, ev):
@@ -2948,9 +2976,8 @@ class job_scheduler(gxpc.cmd_interpreter):
     def gen_join_leave_rid(self, ctl):
         prefix = ctl
         if ctl is None: prefix = "join"
-        x = self.join_leave_rid_idx
-        self.join_leave_rid_idx = x + 1
-        return "%s_%d" % (prefix, x)
+        x = random.randint(0, 999999999)
+        return "%s_%d_%d" % (prefix, self.self_pid, x)
 
     def send_initial_hello(self):
         """
@@ -3019,7 +3046,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         # task id shared by all runs
         self.tid = self.gen_tid()
         assert self.tid is not None
-        self.join_leave_rid_idx = 0
+        # self.join_leave_rid_idx = 0
         self.work_idx = 0
         self.wkg = mk_work_generator(self.conf, self, make_args)
         self.mang = man_generator(self.conf, self)
