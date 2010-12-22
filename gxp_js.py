@@ -2024,7 +2024,7 @@ class work_db_text(work_db_base):
 
 
 def mk_work_db(conf):
-    return work_db_text(conf)
+    return work_db_naive_mem(conf)
 
 class time_series_data:
     def __init__(self, server, directory, file_prefix, 
