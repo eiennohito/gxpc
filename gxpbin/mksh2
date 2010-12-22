@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh2,v 1.1 2010/12/12 06:54:29 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh2,v 1.2 2010/12/22 06:18:54 ttaauu Exp $
 # $Name:  $
 #
 
@@ -51,8 +51,10 @@ def recv_exit_or_die(so):
 def submit(so_name, cmd):
     key_cf = "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"
     key_sd = "GXP_MAKE_EXIT_STATUS_SERVER_DIED"
+    key_nt = "GXP_MAKE_EXIT_STATUS_NO_THROW"
     exit_status_connect_failed = int(os.environ.get(key_cf, "125"))
     exit_status_server_dead = int(os.environ.get(key_sd, "126"))
+    exit_status_no_throw = int(os.environ.get(key_sd, "124"))
     
     cwd = os.path.normpath(os.getcwd())
     mksh_pid = ("%d" % os.getpid())
@@ -82,8 +84,8 @@ def submit(so_name, cmd):
     else:
         fd = so.fileno()
         os.dup2(fd, 0)
-        cmd = ("if read sz idx ex sig; then exit ${ex}; else exit %d; fi"
-               % exit_status_server_dead)
+        cmd = ('if read sz idx ex sig; then if [ "${ex}" = "-" ]; then exit %d ; else exit ${ex}; fi; else exit %d; fi'
+               % (exit_status_no_throw, exit_status_server_dead))
         os.execvp("sh", [ "sh", "-c", cmd ])
 
 local_pat = re.compile("(===+)")
@@ -147,6 +149,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: mksh2,v $
+# Revision 1.2  2010/12/22 06:18:54  ttaauu
+# implemented work_db_text
+#
 # Revision 1.1  2010/12/12 06:54:29  ttaauu
 # *** empty log message ***
 #

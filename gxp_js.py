@@ -5,7 +5,7 @@
 
 
 
-import errno,math,os,re,select,signal,socket,string,sys,time,types
+import errno,heapq,math,os,re,select,signal,socket,string,sys,time,types
 import gxpc,gxpm,ioman,opt
 
 import cPickle,cStringIO
@@ -207,6 +207,7 @@ class jobsched_config:
 
         # some make specific ones
         self.make_cmd = "make"
+        self.make_exit_status_no_throw = 124
         self.make_exit_status_connect_failed = 125
         self.make_exit_status_server_died = 126
         self.make_local_exec_cmd = None
@@ -721,15 +722,12 @@ class Run:
             self.minflt = rusage[6]
             self.majflt = rusage[7]
 
-    def record_running(self, t):
+    def record_running(self, cur_time):
         assert (self.time_start is None), self.time_start
-        self.time_start = t
+        self.time_start = cur_time
         self.status = run_status.running
         for fd in self.job_output:
             self.io[fd] = (cStringIO.StringIO(), None, None)
-
-    def record_no_throw(self):
-        self.status = run_status.no_throw
 
     def add_io(self, fd, payload, eof):
         """
@@ -825,6 +823,10 @@ class Run:
         if self.status == run_status.running: return 0
         return 1
 
+    def record_no_throw(self, cur_time):
+        self.status = run_status.no_throw
+        self.finish(cur_time)
+
     def finish(self, cur_time):
         self.time_end = cur_time
         if self.time_start is None:
@@ -881,7 +883,7 @@ class Run:
         for fd,(inline_s,_) in self.done_io.items():
             io.append(inline_s)
         x = "".join(io)
-        if len(x) == 0: return "<br>"
+        # if len(x) == 0: return "<br>"
         return x
 
     def get_td_io_filename(self):
@@ -934,6 +936,7 @@ class Work:
                          self.server.conf.state_dir,
                          self.server.conf.job_output)
         self.server.runs_todo.append(run)
+        # add run to DB
         self.server.works.add_run(self.work_idx, run)
 
     def retry(self):
@@ -1607,6 +1610,8 @@ def set_make_environ(conf):
     os.environ["GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"] = x
     x = ("%d" % conf.make_exit_status_server_died)
     os.environ["GXP_MAKE_EXIT_STATUS_SERVER_DIED"] = x
+    x = ("%d" % conf.make_exit_status_no_throw)
+    os.environ["GXP_MAKE_EXIT_STATUS_NO_THROW"] = x
     if conf.make_local_exec_cmd is not None:
         os.environ["GXP_MAKE_LOCAL_EXEC_CMD"] = conf.make_local_exec_cmd
     # set include files
@@ -1712,6 +1717,9 @@ class work_db_base:
         pass
     
     def commit(self):
+        pass
+
+    def close(self):
         pass
     
     def __len__(self):
@@ -1822,11 +1830,12 @@ class work_db_text(work_db_base):
         for name,sort_key in self.table_spec:
             self.such_runs[name] = ([], sort_key)
 
+        self.db_file = "work.txt"
         self.wp = self.open_work_db()
 
     def open_work_db(self):
-        wp = open(os.path.join(self.conf.state_dir, "work.txt"), "wb")
-        wp.write("\t".join(Run.db_fields + Work.db_fields))
+        wp = open(os.path.join(self.conf.state_dir, self.db_file), "wb")
+        wp.write("%s\n" % ("\t".join(Work.db_fields + Run.db_fields)))
         return wp
 
     def add_work(self, work):
@@ -1872,9 +1881,50 @@ class work_db_text(work_db_base):
             if not run.is_finished(): return 0
         return 1
 
+
+    def mk_txt_elem(self, v):
+        if v is None: return "-"
+        t = type(v) 
+        if t is types.IntType or t is types.LongType:
+            return "%d" % v
+        if t is types.FloatType:
+            return "%.3f" % v
+        return string.replace(string.replace(str(v), "\t", " "), "\n", " ")
+
+    def mk_object_row_text(self, columns, obj):
+        if type(obj) is types.DictType:
+            d = obj
+        else:
+            d = obj.__dict__
+        R = []
+        if dbg>=2:
+            Es("generating columns of object %s\n" % d)
+        for c in columns:
+            if dbg>=2:
+                Es(" column: %s:\n" % c)
+            m = None
+            # m = d.get("get_td_%s" % c)
+            if hasattr(obj, ("get_td_%s" % c)):
+                m = getattr(obj, ("get_td_%s" % c))
+                if dbg>=2:
+                    Es("  use method: %s:\n" % m)
+                v = m()
+                if type(v) is types.TupleType:
+                    _,v = v
+                v = self.mk_txt_elem(v)
+            else:
+                if dbg>=2:
+                    Es("  no method, use field\n")
+                v = self.mk_txt_elem(d.get(c, "???"))
+            if dbg>=2:
+                Es(" -> value=%s\n" % v)
+            R.append("%s" % v)
+        return R
+
+
     def mk_work_run_text_row(self, work, run):
-        work_row = adapt_to_text(work, Work.fields)
-        run_row = adapt_to_text(run, Run.fields)
+        work_row = self.mk_object_row_text(Work.db_fields, work)
+        run_row = self.mk_object_row_text(Run.db_fields, run)
         return "\t".join(work_row + run_row)
 
     def update_lists(self):
@@ -1932,6 +1982,9 @@ class work_db_text(work_db_base):
     def commit(self):
         self.update_lists()
 
+    def close(self):
+        self.wp.close()
+    
     def list_such_runs(self, such):
         """
         such : "long", "failed", "recent"
@@ -1953,7 +2006,7 @@ class work_db_text(work_db_base):
 
 
 def mk_work_db(conf):
-    return work_db_naive_mem(conf)
+    return work_db_text(conf)
 
 class time_series_data:
     def __init__(self, server, directory, file_prefix, 
@@ -2062,6 +2115,7 @@ class html_generator:
         v = string.replace(v, "<", "&lt;")
         v = string.replace(v, ">", "&gt;")
         v = string.replace(v, "\n", "<br>")
+        if v == "": v = "<br>"
         return v
 
     def mk_header_row(self, columns):
@@ -2091,8 +2145,7 @@ class html_generator:
                 v = m()
                 if type(v) is types.TupleType:
                     cls,v = v
-                if type(v) is not types.StringType:
-                    v = self.mk_td_elem(v)
+                v = self.mk_td_elem(v)
             else:
                 if dbg>=2:
                     Es("  no method, use field\n")
@@ -2147,6 +2200,15 @@ class html_generator:
             R.append("<tr>%s%s</tr>\n" % (w_row, r_row))
         return "".join(R)
 
+    def mk_link_to_work_runs(self):
+        works =self.server.works
+        db = works.db_file
+        cls = works.__class__.__name__
+        if db is None:
+            return "(not available in work db configuration %s)" % cls
+        else:
+            return "<a href=%s>%s</a> (%s)" % (db, db, cls)
+
     def expandpath(self, p):
         return os.path.expanduser(os.path.expandvars(p))
 
@@ -2155,11 +2217,14 @@ class html_generator:
         for ts in self.server.ts.values(): 
             ts.run_gnuplot()
         self.server.works.commit()
+        if finished:
+            self.server.works.close()
         D = {}
         D["basic_info_table"] = self.mk_basic_table()
         D["conf_table"] = self.mk_conf_table()
         for such,_ in self.server.works.table_spec:
             D["%s_jobs_table" % such] = self.mk_work_run_table(such)
+        D["all_jobs"] = self.mk_link_to_work_runs()
         D["workers_table"] = self.mk_men_table()
         html = os.path.join(self.conf.state_dir, "index.html")
         html_t = os.path.join(self.conf.state_dir, "index.html.tmp")
@@ -2352,7 +2417,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         n_received = len(works)
         self.LOG("received %d works from %s\n" % (n_received, ws))
         for w in works:
-            self.works.add_work(w)
+            self.works.add_work(w) # add work to DB
             w.make_run()
         if n_received > 0:
             self.ts["run_counts"].add_dx(self.cur_time(), 0, n_received)
@@ -2802,11 +2867,12 @@ class job_scheduler(gxpc.cmd_interpreter):
         return 0
 
     def record_no_throw_runs(self):
+        ct = self.cur_time()
         for runs in self.matches.values():
             for run in runs:
-                run.record_no_throw()
+                run.record_no_throw(ct)
         for run in self.runs_todo:
-            run.record_no_throw()
+            run.record_no_throw(ct)
 
     def server_iterate(self):
         if self.logfp:
