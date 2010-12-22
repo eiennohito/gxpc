@@ -170,13 +170,21 @@ class jobsched_config:
     object representing configuration
     """
     db_fields = [ "opts",
-                  "work_file", "work_fd", "work_py_module", "work_server_sock",
-                  "work_proc_pipe", "work_proc_pipe2", "work_proc_sock",
+                  "work_file", "work_fd", "work_py_module",
+                  "work_proc_pipe", "work_proc_pipe2",
+                  "work_proc_sock", "work_proc_sock2",
+                  "work_server_sock", "work_server_sock2",
+                  "work_db_type",
                   "worker_prof_cmd",
                   "work_list_limit", "state_dir", "template_html",
                   "gen_html_overhead", "refresh_interval",
                   "no_dispatch_after", "interrupt_at",
                   "cpu_factor", "mem_factor", "translate_dir", "job_output",
+                  "make_cmd",
+                  "make_exit_status_no_throw",
+                  "make_exit_status_connect_failed",
+                  "make_exit_status_server_died",
+                  "make_local_exec_cmd",
                   "conf_file", "log_file", "host_job_attrs" ]
 
     
@@ -191,6 +199,7 @@ class jobsched_config:
         self.work_proc_sock2 = []
         self.work_server_sock = []
         self.work_server_sock2= []
+        self.work_db_type = "text"
 
         self.worker_prof_cmd = "${GXP_DIR}/gxpbin/worker_prof"
         self.work_list_limit = 100
@@ -1707,14 +1716,17 @@ class work_db_base:
         if run.status == run_status.running: return None
         # succeeded
         if run.exit_status == 0: return None
+        # earliest end time first
         return run.time_end
 
     def run_started_order_by_rev_time_since_start(self, run):
+        # longest time first
         if run.time_since_start is None: return None
         return -run.time_since_start
 
     def run_started_order_by_rev_time_start(self, run):
-        return run.time_start
+        # latest start time first
+        return -run.time_start
 
     def add_work(self, work):
         """
@@ -2018,13 +2030,21 @@ class work_db_text(work_db_base):
         results = []
         while len(h) > 0:
             _,w,r = heapq.heappop(h)
-            results.insert(0, (w, r))
+            results.append((w, r))
         for w,r in results:
             yield (w, r)
 
 
 def mk_work_db(conf):
-    return work_db_naive_mem(conf)
+    db_type = conf.work_db_type
+    class_name = "work_db_%s" % db_type
+    g = globals()
+    if g.has_key(class_name):
+        cls = g[class_name]
+    else:
+        Es("no such work_db_type %s, defaults to text\n" % db_type)
+        cls = work_db_text
+    return cls(conf)
 
 class time_series_data:
     def __init__(self, server, directory, file_prefix, 
