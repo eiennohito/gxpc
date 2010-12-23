@@ -1023,6 +1023,7 @@ class work_stream_base:
         """
         pkt = self.readpkt(1024 * 1024)
         if pkt == "":
+            if 0: Es("get_pkt: readpkt returned empty\n")
             self.close()
             self.closed = 1
         else:
@@ -1224,6 +1225,7 @@ class work_stream_socket(work_stream_base):
         self.warnings_issued = 0
         return 0
     def close(self):
+        if 0: Es("work_stream_socket.close\n")
         assert self.so is not None
         self.so.close()
         # self.so.shutdown(socket.SHUT_RD)
@@ -1234,7 +1236,9 @@ class work_stream_socket(work_stream_base):
         return self.so.fileno()
     def readpkt(self, sz):
         assert self.so is not None
-        return self.so.recv(sz)
+        x = self.so.recv(sz)
+        if 0: Es("work_stream_socket.readpkt(%d) -> %d\n" % (sz, len(x)))
+        return x
 
 class work_stream_socket_bidirectional(work_stream_socket):
     def safe_send(self, so, msg):
@@ -1259,7 +1263,7 @@ class work_stream_socket_bidirectional(work_stream_socket):
         # FIXIT. a single socket may send multiple tasks,
         # so this is not exactly right, but works for make2.
         # go with this for now
-        self.close()
+        # self.close()
         return r
 
 class work_stream_generator(work_stream_base):
@@ -1513,6 +1517,7 @@ class work_generator:
         """
         works = ws.read_works()
         if ws.closed:
+            if 0: Es("work_generator.read_works: ws closed\n")
             del self.streams[ws]
         t = self.server.cur_time()
         for w in works:
@@ -1554,15 +1559,18 @@ class work_generator:
             # later in process_incoming_events.
             # pros: never block
             # cons: too many sockets in streams, and poll will
-            # incur too much overhead?
+            # incur too much overhead
+            # 2010.12.23: it seems too, too, slow
             self.streams[ws] = None
-            n_received = 0
+            n_received = self.server.receive_works(self, ws)
         else:
             # wait for work now.
             # pros: do not have to manage too many sockets with poll
             # cons: may block (should not be an issue if the sender
             # immediately send msg after connecting)
             # FIXIT: we go back and forth between server and wkg...
+            # FIXIT: this leads to memory leak because we never
+            # detect sockets closed
             n_received = self.server.receive_works(self, ws)
         # close after the specified number of connections
         # have been accepted. 
@@ -1595,7 +1603,9 @@ class work_generator:
         of the finished work.
         """
         ws,w = self.work_stream[work_idx]
+        del self.work_stream[work_idx]
         r = ws.finish_work(work_idx, w, exit_status, term_sig, man_name)
+        # 2010.12.23
         self.max_exit_status = max(self.max_exit_status, exit_status)
         self.max_term_sig = max(self.max_term_sig, term_sig)
         return r
@@ -1726,6 +1736,7 @@ class work_db_base:
 
     def run_started_order_by_rev_time_start(self, run):
         # latest start time first
+        if run.time_start is None: return None
         return -run.time_start
 
     def add_work(self, work):
@@ -2258,6 +2269,11 @@ class html_generator:
         if finished:
             self.server.works.close()
         D = {}
+        if finished:
+            reload_directive = ""
+        else:
+            reload_directive = '<meta http-equiv="refresh" content="60"/>'
+        D["reload_directive"] = reload_directive
         D["basic_info_table"] = self.mk_basic_table()
         D["conf_table"] = self.mk_conf_table()
         for such,_ in self.server.works.table_spec:
@@ -2696,7 +2712,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         return R0,W0,E0
 
     def select(self, R, W, E, T):
-        return self.select_by_select(R, W, E, T)
+        return self.select_by_poll(R, W, E, T)
 
     def process_incoming_events(self, timeout):
         """
