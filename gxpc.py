@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.66 2011/01/11 14:19:14 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.67 2011/01/12 16:06:55 ttaauu Exp $
 # $Name:  $
 #
 
@@ -156,9 +156,9 @@ class login_method_configs:
                           "-cp %cpu:-5%:00 -lm %mem:-28%gb "
                           "-nr -Pvn UNPack")
         self.tsubame2     = ("qsub_wrap --sys torque "
-                            "--timeout %timeout:-100% %cmd% "
+                            "--timeout %timeout:-100%  "
                             "--qsub t2sub --qstat t2stat --qdel t2del %cmd% "
-                             "-- -q %q% -g %g%")
+                             "-- -q %q% -g %group_list%")
 
 class mask_patterns:
     def __init__(self, hostmask, gupidmask, targetmask, idxmask):
@@ -5364,6 +5364,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.67  2011/01/12 16:06:55  ttaauu
+# *** empty log message ***
+#
 # Revision 1.66  2011/01/11 14:19:14  ttaauu
 # *** empty log message ***
 #
