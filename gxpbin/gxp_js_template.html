@@ -197,11 +197,18 @@ at the start of the entire make.
 <a href="#">page top</a><br><br>
 %(all_jobs)s
 
-<a name="Failed Jobs">
-<h1>Failed Jobs</h1>
+<a name="Failed Jobs (Earliest)">
+<h1>Failed Jobs (Earliest)</h1>
 <a href="#">page top</a><br><br>
 <table border=1>
-%(failed_jobs_table)s
+%(failed_earliest_jobs_table)s
+</table>
+
+<a name="Failed Jobs (Latest)">
+<h1>Failed Jobs (Latest)</h1>
+<a href="#">page top</a><br><br>
+<table border=1>
+%(failed_latest_jobs_table)s
 </table>
 
 <a name="Long Jobs">

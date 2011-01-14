@@ -185,6 +185,7 @@ class jobsched_config:
                   "make_exit_status_connect_failed",
                   "make_exit_status_server_died",
                   "make_local_exec_cmd",
+                  "redirect_output",
                   "conf_file", "log_file", "host_job_attrs" ]
 
     
@@ -213,6 +214,11 @@ class jobsched_config:
         self.mem_factor = 0.9
         self.translate_dir = []
         self.job_output = [ 1, 2 ]
+        # "x"      : x through
+        # "x,"     : x > /dev/null
+        # "x,file" : x > file
+        self.redirect_output = [ "1", "2" ]
+        self.echo_job_output = 1
 
         # some make specific ones
         self.make_cmd = "make"
@@ -1710,7 +1716,9 @@ class work_db_base:
         # list of (name, sort key)
         self.table_spec = [
             # some most early ended failed runs
-            ("failed", self.run_failed_order_by_time_end),
+            ("failed_earliest", self.run_failed_order_by_time_end_neg),
+            # some most early ended failed runs
+            ("failed_latest", self.run_failed_order_by_time_end),
             # some longest runs (finished or running)
             ("long",   self.run_started_order_by_rev_time_since_start),
             # some most recently started runs
@@ -1719,6 +1727,18 @@ class work_db_base:
         self.table_spec_dict = {}
         for name,sort_key in self.table_spec:
             self.table_spec_dict[name] = sort_key
+
+    # the following sort_key functions should return a larger
+    # value for a run that should come first in the list
+
+    def run_failed_order_by_time_end_neg(self, run):
+        # queued or running runs have never failed
+        if run.status == run_status.queued: return None
+        if run.status == run_status.running: return None
+        # succeeded
+        if run.exit_status == 0: return None
+        # earliest end time first
+        return -run.time_end
 
     def run_failed_order_by_time_end(self, run):
         # queued or running runs have never failed
@@ -1732,12 +1752,12 @@ class work_db_base:
     def run_started_order_by_rev_time_since_start(self, run):
         # longest time first
         if run.time_since_start is None: return None
-        return -run.time_since_start
+        return run.time_since_start
 
     def run_started_order_by_rev_time_start(self, run):
         # latest start time first
         if run.time_start is None: return None
-        return -run.time_start
+        return run.time_start
 
     def add_work(self, work):
         """
@@ -1979,6 +1999,7 @@ class work_db_text(work_db_base):
         thus, we compute them by merging the list of finished jobs
         and running ones.
         """
+        # Es("update_lists\n")
         new_works = []
         new_work_runs = {}
         # iterate over jobs that were running/queued when we saw them 
@@ -1993,8 +2014,11 @@ class work_db_text(work_db_base):
             # yes -> keep only runs that are long/failed/recent
             # in appropriate list and discard others.
             # no -> it reenters works and work_runs 
+            # Es("work: %s\n" % w.cmd)
             if self.all_runs_finished(w):
+                # Es("work %s has finished\n" % w.cmd)
                 for r in self.work_runs[w.work_idx]:
+                    # Es("work: %s run: %s\n" % (w.cmd, r.run_idx))
                     self.wp.write("%s\n" % self.mk_work_run_text_row(w, r))
                     # r should have finished.
                     # move it to longest/failed/recent heaps
@@ -2007,8 +2031,11 @@ class work_db_text(work_db_base):
                     for name,(runs,sort_key) in self.such_runs.items():
                         k = sort_key(r)
                         if k is not None:
+                            # Es("push_with_limit(%s, %s)\n" % (runs, (k, w.cmd, r.run_idx)))
                             self.push_with_limit(runs, (k, w, r), self.limit)
+                            # Es("runs = %s\n" % runs)
             else:
+                # Es("work %s not yet finished\n" % w)
                 # w is still running or queued
                 new_works.append(w)
                 new_work_runs[w.work_idx] = self.work_runs[w.work_idx]
@@ -2031,17 +2058,22 @@ class work_db_text(work_db_base):
         such : "long", "failed", "recent"
         """
         # assume commit was just called
+        # Es("list_such_runs(%s)\n" % such)
         runs,sort_key = self.such_runs[such]
         h = runs[:]             # make a copy of the heap
         for w in self.works:
+            # Es("work: %s\n" % w.cmd)
             for r in self.work_runs[w.work_idx]:
+                # Es("work: %s run: %s\n" % (w.cmd, r.run_idx))
                 k = sort_key(r)
                 if k is not None:
+                    # Es("push_with_limit(%s, %s)\n" % (h, (k, w.cmd, r.run_idx)))
                     self.push_with_limit(h, (k, w, r), self.limit)
+                    # Es("h = %s\n" % h)
         results = []
         while len(h) > 0:
             _,w,r = heapq.heappop(h)
-            results.append((w, r))
+            results.insert(0, (w, r))
         for w,r in results:
             yield (w, r)
 
@@ -2280,8 +2312,9 @@ class html_generator:
             D["%s_jobs_table" % such] = self.mk_work_run_table(such)
         D["all_jobs"] = self.mk_link_to_work_runs()
         D["workers_table"] = self.mk_men_table()
+        ttt = int(time.time() * 10)
         html = os.path.join(self.conf.state_dir, "index.html")
-        html_t = os.path.join(self.conf.state_dir, "index.html.tmp")
+        html_t = os.path.join(self.conf.state_dir, "index_%10d.html" % ttt)
         template_html = self.expandpath(self.conf.template_html)
         wp = open(html_t, "wb")
         fp = open(template_html, "rb")
@@ -2508,6 +2541,8 @@ class job_scheduler(gxpc.cmd_interpreter):
         else:
             eof = 1
         run.add_io(ev.fd, ev.payload, eof)
+        if self.conf.echo_job_output and ev.payload != "":
+            os.write(ev.fd, ev.payload)
         if run.is_finished(): 
             self.finish_run(gupid, run)
         self.works.update_run(run)
@@ -3243,3 +3278,8 @@ class job_scheduler(gxpc.cmd_interpreter):
 if __name__ == "__main__":
     # dbg_jobsched_config()
     sys.exit(job_scheduler().main(sys.argv))
+
+# $Log: gxp_js.py,v $
+# Revision 1.20  2011/01/14 01:00:58  ttaauu
+# fixed task ordering bug in gxp_js.py
+#
