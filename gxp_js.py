@@ -1261,7 +1261,8 @@ class work_stream_socket_bidirectional(work_stream_socket):
     def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
         if exit_status is None: exit_status = "-"
         if term_sig is None: term_sig = "-"
-        payload = "%d: %s %s %s\n" % (work_idx, exit_status, term_sig, man_name)
+        payload = ("%d: %s %s %s\n" 
+                   % (work_idx, exit_status, term_sig, man_name))
         msg = "%9d %s" % (len(payload), payload)
         if dbg>=2:
             Es("write notification [%s]\n" % msg)
@@ -1434,6 +1435,9 @@ class work_generator:
         return os.path.join(dire, ("jobsched-%s-%s" % (cookie, base)))
 
     def add_server_sock(self, addr, n_accepts, bidirectional):
+        """
+        add sockets receiving client requests
+        """
         if addr == "":
             addr = self.mk_tmp_socket_name()
         ss = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -1493,7 +1497,8 @@ class work_generator:
             self.child_pipes[x] = (pid, None)
 
     def add_proc_sock(self, cmd, addr, n_accepts, bidirectional):
-        return self.add_proc_sock_no_sh([ "/bin/sh", "-c", cmd ], addr, n_accepts, bidirectional)
+        return self.add_proc_sock_no_sh([ "/bin/sh", "-c", cmd ], 
+                                        addr, n_accepts, bidirectional)
 
     def add_proc_sock_no_sh(self, cmdline, addr, n_accepts, bidirectional):
         """
@@ -3280,6 +3285,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.21  2011/01/14 19:40:30  ttaauu
+# gxp_js.py now uses poll in event driven loop
+#
 # Revision 1.20  2011/01/14 01:00:58  ttaauu
 # fixed task ordering bug in gxp_js.py
 #
