@@ -979,6 +979,8 @@ class Work:
             self.retry()
             return 0
         else:
+            msg = ("work '%s' finished\n" % self.cmd)
+            if self.server.logfp: self.server.LOG(msg)
             return self.server.wkg.finish_work(self.work_idx, exit_status, term_sig, man_name)
 
 # 
@@ -1027,10 +1029,15 @@ class work_stream_base:
         self.closed flag must be set iff there are no
         chance that more data will come.
         """
+        assert self.closed == 0
         pkt = self.readpkt(1024 * 1024)
         if pkt == "":
-            if 0: Es("get_pkt: readpkt returned empty\n")
-            self.close()
+            # Es("get_pkt: readpkt returned empty\n")
+            # call .close() later after we unregister
+            # the descriptor. this is necessary because
+            # socket.fileno() raises exception when it is already
+            # closed
+            # self.close()
             self.closed = 1
         else:
             self.leftover = self.leftover + pkt
@@ -1163,6 +1170,7 @@ class work_stream_base:
         self.server.LOG("read_works: %d works retruned\n" % len(works))
         return works
     def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
+        self.server.LOG("work_stream_base.finish_work\n")
         return 0                        # OK
 
 class work_stream_fd(work_stream_base):
@@ -1200,8 +1208,10 @@ class work_stream_fd_pair(work_stream_fd):
         if term_sig is None: term_sig = "-"
         payload = "%d: %s %s %s\n" % (work_idx, exit_status, term_sig, man_name)
         msg = "%9d %s" % (len(payload), payload)
-        if dbg>=2:
-            Es("write notification to %d [%s]\n" % (self.wfd, msg))
+        log_msg = ("work_stream_fd_pair.finish_work: write notification [%s]\n"
+                   % msg)
+        self.server.LOG(log_msg)
+        if dbg>=2: Es(log_msg)
         return self.safe_write(self.wfd, msg)
         
 class work_stream_file(work_stream_base):
@@ -1231,7 +1241,7 @@ class work_stream_socket(work_stream_base):
         self.warnings_issued = 0
         return 0
     def close(self):
-        if 0: Es("work_stream_socket.close\n")
+        # Es("work_stream_socket.close\n")
         assert self.so is not None
         self.so.close()
         # self.so.shutdown(socket.SHUT_RD)
@@ -1264,13 +1274,16 @@ class work_stream_socket_bidirectional(work_stream_socket):
         payload = ("%d: %s %s %s\n" 
                    % (work_idx, exit_status, term_sig, man_name))
         msg = "%9d %s" % (len(payload), payload)
-        if dbg>=2:
-            Es("write notification [%s]\n" % msg)
+        log_msg = ("work_stream_socket_bidirectional.finish_work: write notification [%s]\n"
+                   % msg)
+        self.server.LOG(log_msg)
+        if dbg>=2: Es(log_msg)
         r = self.safe_send(self.so, msg)
         # FIXIT. a single socket may send multiple tasks,
         # so this is not exactly right, but works for make2.
         # go with this for now
-        # self.close()
+        if 0:
+            self.close()
         return r
 
 class work_stream_generator(work_stream_base):
@@ -1339,13 +1352,16 @@ class work_stream_generator(work_stream_base):
             try:
                 x = self.fun_generator.next()
             except StopIteration,e:
-                self.close()
+                # call .close() later after we unregister
+                # the descriptor
+                # self.close()
                 self.closed = 1
                 break
             except Exception,e:
                 Es("Error while calling next() on %s.gen():\n\n%s\n"
                    % (self.generator_module, self.get_exception_trace()))
-                self.close()
+                # ditto
+                # self.close()
                 self.closed = 1
                 break
             if x is None:
@@ -1392,6 +1408,50 @@ class work_stream_generator(work_stream_base):
         else:
             return 0
         
+class polling_manager:
+    def __init__(self):
+        if 1 and hasattr(select, "poll"):
+            self.po = select.poll()     # polling objects
+            self.fd_map = {}
+        else:
+            self.po = None
+            self.fd_map = None
+        
+    def add_object_to_poll(self, x):
+        """
+        x is either,
+        work_stream, server_socket, child_pipe (fd),
+        or self.so
+        """
+        if self.po:
+            if type(x) is types.IntType:
+                fd = x
+            else:
+                fd = x.fileno()
+            if not self.fd_map.has_key(fd):
+                self.fd_map[fd] = x
+                self.po.register(fd, select.POLLIN)
+
+    def del_object_to_poll(self, x):
+        if self.po:
+            if type(x) is types.IntType:
+                fd = x
+            else:
+                fd = x.fileno()
+            self.po.unregister(fd)
+            del self.fd_map[fd]
+
+    def poll(self, T):
+        if T is None or T == float("inf"):
+            poll_result = self.po.poll()
+        else:
+            poll_result = self.po.poll(int(T*1000))
+        R0 = []
+        for fd,ev in poll_result:
+            if ev & (select.POLLIN|select.POLLHUP):
+                R0.append(self.fd_map[fd])
+        return R0,[],[]
+
 class work_generator:
     """
     generate work from one or more work_streams
@@ -1419,8 +1479,9 @@ class work_generator:
         if len(self.child_pipes) > 0: return 0
         return 1
 
-    def add_work_stream(self, x):
-        self.streams[x] = None
+    def add_work_stream(self, ws):
+        self.streams[ws] = None
+        self.server.pm.add_object_to_poll(ws)
 
     def mk_tmp_socket_name(self):
         session = self.server.session_file
@@ -1444,6 +1505,7 @@ class work_generator:
         ss.bind(addr)
         ss.listen(50000)                # FIXIT: make it configurable
         self.server_socks[ss] = (n_accepts, bidirectional)
+        self.server.pm.add_object_to_poll(ss)
         return ss
 
     def add_proc_pipe(self, cmd, outfd):
@@ -1469,6 +1531,7 @@ class work_generator:
             else:
                 bomb
             self.child_pipes[x] = (pid, None)
+            self.server.pm.add_object_to_poll(x)
 
     def add_proc_pipe2(self, cmd, outfd, infd):
         """
@@ -1495,6 +1558,7 @@ class work_generator:
             if s.init(r1, w2) == 0:
                 self.add_work_stream(s)
             self.child_pipes[x] = (pid, None)
+            self.server.pm.add_object_to_poll(x)
 
     def add_proc_sock(self, cmd, addr, n_accepts, bidirectional):
         return self.add_proc_sock_no_sh([ "/bin/sh", "-c", cmd ], 
@@ -1521,15 +1585,20 @@ class work_generator:
         else:
             os.close(y)
             self.child_pipes[x] = (pid, ss)
+            self.server.pm.add_object_to_poll(x)
 
     def read_works(self, ws):
         """
         read works from a work_stream
         """
+        assert ws.closed == 0
         works = ws.read_works()
         if ws.closed:
             if 0: Es("work_generator.read_works: ws closed\n")
             del self.streams[ws]
+            self.server.pm.del_object_to_poll(ws)
+            # we call this here after we unregister it
+            ws.close()
         t = self.server.cur_time()
         for w in works:
             # FIXIT: track which work came from which stream,
@@ -1549,8 +1618,10 @@ class work_generator:
         addr = ss.getsockname()
         if os.path.exists(addr):
             os.remove(addr)
-        ss.close()
         del self.server_socks[ss]
+        self.server.pm.del_object_to_poll(ss)
+        ss.close()
+
 
     def accept_connection(self, ss):
         """
@@ -1565,17 +1636,22 @@ class work_generator:
         else:
             ws = work_stream_socket(self.server)
         if ws.init(so) == -1: bomb
-        if 0:
+        if 1:
             # do not wait for work at this point but
             # later in process_incoming_events.
             # pros: never block
             # cons: too many sockets in streams, and poll will
             # incur too much overhead
             # 2010.12.23: it seems too, too, slow
-            self.streams[ws] = None
-            n_received = self.server.receive_works(self, ws)
+            self.add_work_stream(ws)
+            # should not be necessary, but may still be
+            # meaningful to receive one here
+            # n_received = self.server.receive_works(self, ws)
+            n_received = 0
         else:
-            # wait for work now.
+            # wait for work now and do not register ws in
+            # self.streams.  this implies we receive work
+            # from this socket only once.
             # pros: do not have to manage too many sockets with poll
             # cons: may block (should not be an issue if the sender
             # immediately send msg after connecting)
@@ -1600,8 +1676,9 @@ class work_generator:
         pid,ss = self.child_pipes[r]
         qid,status = os.waitpid(pid, 0)
         assert (pid == qid), (pid, qid)
-        os.close(r)
         del self.child_pipes[r]
+        self.server.pm.del_object_to_poll(r)
+        os.close(r)
         self.child_status[pid] = status
         # ss is a server socket I opened for him,
         # so it is no longer necessary.
@@ -2697,7 +2774,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         else:
             return select.select(R, W, E, T)
 
-    def select_by_poll(self, R, W, E, T):
+    def select_by_poll_slow(self, R, W, E, T):
         d = {}
         for f in R:
             if type(f) is types.IntType:
@@ -2751,8 +2828,14 @@ class job_scheduler(gxpc.cmd_interpreter):
                 E0.append(f)
         return R0,W0,E0
 
+    def select_by_poll_fast(self, T):
+        return self.pm.poll(T)
+
     def select(self, R, W, E, T):
-        return self.select_by_poll(R, W, E, T)
+        if self.pm.po:
+            return self.select_by_poll_fast(T)
+        else:
+            return self.select_by_select(R, W, E, T)
 
     def process_incoming_events(self, timeout):
         """
@@ -2765,18 +2848,34 @@ class job_scheduler(gxpc.cmd_interpreter):
         self.LOG("process_incoming_events: timeout=%f\n" % timeout)
         assert self.so
         wkg = self.wkg
-        streams = wkg.streams.keys()
-        server_socks = wkg.server_socks.keys()
-        child_pipes = wkg.child_pipes.keys()
-        R_ = []
-       
-        R_.extend(streams)
-        R_.extend(server_socks)
-        R_.extend(child_pipes)
-        if self.so: R_.append(self.so)
+
         self.LOG("checking %d streams, %d server_socks, and %d child_pipes\n"
-                 % (len(streams), len(server_socks), len(child_pipes)))
-        R,_,_ = self.select(R_, [], [], timeout)
+                 % (len(wkg.streams), len(wkg.server_socks), len(wkg.child_pipes)))
+
+        # ugly. fix references to self.pm.po and
+        # the way we branch to select_by_select
+        # and select_by_poll
+        t0 = self.cur_time()
+        if self.pm.po is None:
+            # we use select to get inputs
+            streams = wkg.streams.keys()
+            server_socks = wkg.server_socks.keys()
+            child_pipes = wkg.child_pipes.keys()
+            R_ = []
+            R_.extend(streams)
+            R_.extend(server_socks)
+            R_.extend(child_pipes)
+            if self.so: R_.append(self.so)
+            R,_,_ = self.select(R_, [], [], timeout)
+        else:
+            if self.so is not None:
+                self.pm.add_object_to_poll(self.so)
+            # descriptors to watch are already registered
+            # R_ is insignificant
+            R,_,_ = self.select(None, None, None, timeout)
+        t1 = self.cur_time()
+
+        self.LOG("select took %f sec\n" % (t1 - t0))
         n_received = 0
         for r in R:
             if r is self.so:
@@ -3124,6 +3223,8 @@ class job_scheduler(gxpc.cmd_interpreter):
         self.final_status = None        # not known yet
         self.hostname = socket.gethostname()
 
+        self.pm = polling_manager()
+
         # task id shared by all runs
         self.tid = self.gen_tid()
         assert self.tid is not None
@@ -3285,6 +3386,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.22  2011/01/20 16:11:40  ttaauu
+# *** empty log message ***
+#
 # Revision 1.21  2011/01/14 19:40:30  ttaauu
 # gxp_js.py now uses poll in event driven loop
 #
