@@ -498,18 +498,22 @@ class GridMount:
         return 0
     
     # actions
-    def action_umount(self):
-        # gmount#aa /mountpoint fuse rw,nosuid,nodev,max_read=65536,user=foo
+    def action_umount(self, new=True):
+		# new: ama /data/local/dun/mnt fuse.gmount rw,nosuid,nodev,max_read=65536,user=dun 0 0
+        # old: gmount#aa /mountpoint fuse rw,nosuid,nodev,max_read=65536,user=foo
         fp = open("/etc/mtab", "rb")
         entry_to_umount = []
         for line in fp:
             line = line.strip()
-            if not line.startswith("gmount"):
+            if not line.startswith("gmount") and not line.startswith("ama"):
                 continue
             fields = line.split()
             [ fs, mountpoint, vfstype, fsopts ] = fields[0:4]
-            fsname, fstype = fs.split("#")
-            if fsname == "gmount" and vfstype == "fuse":
+            if new:
+                fstype, fsname = vfstype.split('.')
+            else:
+                fsname, fstype = fs.split("#")
+            if fsname == "gmount" and fstype == "fuse":
                 me = re.search("user=([^,]*)", fsopts)
                 if me is None:
                     es(("%s: warning: a fuse entry in /etc/mtab "
@@ -676,7 +680,14 @@ class GridMount:
     # operation primitivies
     def sshfsm_mount(self, targets, mountpoint, fsname):
         assert targets is not None and len(targets)
-        
+
+       	# for new sshfsmux higher rank host comes first
+		# temporarily solution
+        targets.reverse()
+        f_host, f_export = targets[0]
+        if f_export != self.exportdir:
+            targets.insert(0, (self.host, self.exportdir))
+
         # make sure the mountpoint does exist and is empty
         #if self.ensure_dir(mountpoint) == 1 and not self.dryrun:
         #    return 1
@@ -869,6 +880,10 @@ def parse_argv(argv):
                       dest="disable_cache", metavar="fuse/sshfsm/all",
                       default='no', help="disable cache (default: off)")
     
+    parser.add_option("--hpc", action="store_true",
+                      dest="enable_hpc", default=False,
+                      help="enable options for hpc")
+    
     parser.add_option("--force", action="store_true",
                       dest="force", default=False, 
                       help="force to perform action")
@@ -925,6 +940,15 @@ def parse_argv(argv):
             opts.fuse_opts.append("entry_timeout=0")
             opts.fuse_opts.append("attr_timeout=0")
             opts.fuse_opts.append("ac_attr_timeout=0")
+
+    opts.sshfsm_opts.append("no_check_root")
+    if opts.enable_hpc:
+        opts.sshfsm_opts.append("directport=5285")
+#        opts.sshfsm_opts.append("no_auth")
+        opts.sshfsm_opts.append("sftp_server=/home/dun/local/bin/sftp-server")
+        opts.sshfsm_opts.append("forward=/data/local/dun/shr")
+        opts.fuse_opts.append("kernel_cache")
+        opts.fuse_opts.append("big_writes")
 
     if opts.fuse_opts is not None:
         keywords = []
