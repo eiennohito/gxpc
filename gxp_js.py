@@ -1250,23 +1250,38 @@ class work_stream_socket(work_stream_base):
     def fileno(self):
         assert self.so is not None
         return self.so.fileno()
-    def readpkt(self, sz):
-        assert self.so is not None
-        x = self.so.recv(sz)
-        if 0: Es("work_stream_socket.readpkt(%d) -> %d\n" % (sz, len(x)))
-        return x
-
-class work_stream_socket_bidirectional(work_stream_socket):
-    def safe_send(self, so, msg):
+    def safe_recv(self, so, sz):
         try:
-            self.so.send(msg)
-            return 0                    # OK
+            return so.recv(sz)  # OK
         except socket.error,e:
-            return -1                   # NG
             if self.warnings_issued == 0:
                 Es("warning: could not send task termination notification %s, "
                    "probably the client program has gone\n" % (e.args,))
                 self.warnings_issued = 1
+            return ""           # NG
+        
+    def readpkt(self, sz):
+        assert self.so is not None
+        return self.safe_recv(self.so, sz)
+
+class work_stream_socket_bidirectional(work_stream_socket):
+    def safe_send(self, so, msg):
+        if so is None:
+            if self.warnings_issued == 0:
+                Es("warning: could not send task termination notification, "
+                   "probably the client program has gone\n")
+                self.warnings_issued = 1
+            return -1
+        else:
+            try:
+                so.send(msg)
+                return 0                    # OK
+            except socket.error,e:
+                if self.warnings_issued == 0:
+                    Es("warning: could not send task termination notification %s, "
+                       "probably the client program has gone\n" % (e.args,))
+                    self.warnings_issued = 1
+                return -1                   # NG
 
     def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
         if exit_status is None: exit_status = "-"
@@ -1485,7 +1500,7 @@ class work_generator:
 
     def mk_tmp_socket_name(self):
         session = self.server.session_file
-        cookie = "%d" % os.getpid()
+        cookie = "%d-%08d" % (os.getpid(), random.randint(0, 99999999))
         if session is None:
             dire,base = None,None
         else:
@@ -1770,6 +1785,7 @@ def mk_work_generator(conf, server, make_args):
     for cmd in conf.work_proc_sock:
         wkg.add_proc_sock(cmd, "", float("inf"), 0) # bidirectional = no
     for cmd in conf.work_proc_sock2:
+        print "------------------"
         wkg.add_proc_sock(cmd, "", float("inf"), 1) # bidirectional = yes
     if make_args is not None:
         make_cmdline = [ conf.make_cmd ] + make_args
@@ -3386,6 +3402,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.23  2011/03/01 11:48:59  ttaauu
+# fixed gxp_js.py -a work_proc_sock2 bug
+#
 # Revision 1.22  2011/01/20 16:11:40  ttaauu
 # *** empty log message ***
 #
