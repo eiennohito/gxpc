@@ -945,8 +945,7 @@ def parse_argv(argv):
     if opts.enable_hpc:
         opts.sshfsm_opts.append("directport=5285")
 #        opts.sshfsm_opts.append("no_auth")
-        opts.sshfsm_opts.append("sftp_server=/home/dun/local/bin/sftp-server")
-        opts.sshfsm_opts.append("forward=/data/local/dun/shr")
+        opts.sshfsm_opts.append("forward=%s" % opts.exportdir)
         opts.fuse_opts.append("kernel_cache")
         opts.fuse_opts.append("big_writes")
 
