@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh2,v 1.2 2010/12/22 06:18:54 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh2,v 1.3 2011/03/09 09:59:19 ttaauu Exp $
 # $Name:  $
 #
 
@@ -48,6 +48,15 @@ def recv_exit_or_die(so):
     else:
         os._exit(int(ex))
 
+
+def parse_cmd_attributes(cmd):
+    a = []
+    # Es("mksh2: cmd=%s\n" % cmd)
+    m = re.search("# *aff: *(.*)", cmd)
+    if m:
+        a.append("aff: %s\n" % string.strip(m.group(1)))
+    return a
+
 def submit(so_name, cmd):
     key_cf = "GXP_MAKE_EXIT_STATUS_CONNECT_FAILED"
     key_sd = "GXP_MAKE_EXIT_STATUS_SERVER_DIED"
@@ -67,6 +76,7 @@ def submit(so_name, cmd):
         if os.environ.has_key(var):
             varval = "%s=%s" % (var, os.environ[var])
             msgs.append("env: %s\n" % varval)
+    msgs.extend(parse_cmd_attributes(cmd))
     msgs.append("cmd: %s\n" % cmd)
     so = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
@@ -149,6 +159,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: mksh2,v $
+# Revision 1.3  2011/03/09 09:59:19  ttaauu
+# add # aff: name=xxx option to make
+#
 # Revision 1.2  2010/12/22 06:18:54  ttaauu
 # implemented work_db_text
 #

@@ -1134,10 +1134,12 @@ class work_stream_base:
                 requirement[var] = self.tk.token_val(val)
             elif kw == "aff:":
                 var_val = string.split(rest, "=", 1)
-                assert (len(var_val) == 2), element
-                [ var,val ] = var_val
-                # FIXIT: handle errors
-                affinity[var] = re.compile(val)
+                if len(var_val) != 2:
+                    Es("warning: invalid affinity cmd [aff: %s]. should be aff: name=xxx\n" % rest)
+                else:
+                    [ var,val ] = var_val
+                    # FIXIT: handle errors
+                    affinity[var] = re.compile(val)
             else:
                 assert (cmd is None), cmd
                 if kw == "cmd:":
@@ -3337,7 +3339,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
         return self.server_main(args, None)
         
-    def do_make2_cmd(self, args):
+    def do_make_cmd(self, args):
         """
         args : whatever is given after 'make2'
         """
@@ -3402,6 +3404,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.24  2011/03/09 09:59:19  ttaauu
+# add # aff: name=xxx option to make
+#
 # Revision 1.23  2011/03/01 11:48:59  ttaauu
 # fixed gxp_js.py -a work_proc_sock2 bug
 #

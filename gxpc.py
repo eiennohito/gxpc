@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.68 2011/02/20 05:30:28 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.69 2011/03/09 09:59:19 ttaauu Exp $
 # $Name:  $
 #
 
@@ -5055,7 +5055,7 @@ use.
             else:
                 return 0
     #
-    def usage_make_cmd(self, full):
+    def usage_make1_cmd(self, full):
         u = r"""Usage:
   gxpc make GNU-MAKE-ARGS [ -- GXPC-MAKE-ARGS ]
 """
@@ -5132,7 +5132,7 @@ Description:
         with_args = [ "---" ] + self.mk_with_args(self.opts)
         os.execvp(make, [ make ] + args + with_args)
 
-    def do_make_cmd(self, args):
+    def do_make1_cmd(self, args):
         self.make_makectl_cmd(args)
 
     def usage_makectl_cmd(self, full):
@@ -5282,11 +5282,11 @@ this command line.
     def usage_js_cmd(self, full):
         return self.usage_js_like_cmd("js", full)
     
-    def do_make2_cmd(self, args):
-        self.js_like_cmd("make2", args)
+    def do_make_cmd(self, args):
+        self.js_like_cmd("make", args)
 
-    def usage_make2_cmd(self, full):
-        return self.usage_js_like_cmd("make2", full)
+    def usage_make_cmd(self, full):
+        return self.usage_js_like_cmd("make", full)
     
 
     # ---------- dispatcher ----------
@@ -5364,6 +5364,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.69  2011/03/09 09:59:19  ttaauu
+# add # aff: name=xxx option to make
+#
 # Revision 1.68  2011/02/20 05:30:28  ttaauu
 # *** empty log message ***
 #
