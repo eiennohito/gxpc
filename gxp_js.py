@@ -181,6 +181,7 @@ class jobsched_config:
                   "no_dispatch_after", "interrupt_at",
                   "cpu_factor", "mem_factor", "translate_dir", "job_output",
                   "make_cmd",
+                  "gnu_parallel_cmd",
                   "make_exit_status_no_throw",
                   "make_exit_status_connect_failed",
                   "make_exit_status_server_died",
@@ -226,6 +227,7 @@ class jobsched_config:
         self.make_exit_status_connect_failed = 125
         self.make_exit_status_server_died = 126
         self.make_local_exec_cmd = None
+        self.gnu_parallel_cmd = "parallel"
 
         self.ctl = None
 
@@ -1525,7 +1527,7 @@ class work_generator:
         self.server.pm.add_object_to_poll(ss)
         return ss
 
-    def add_proc_pipe(self, cmd, outfd):
+    def add_proc_pipe_no_sh(self, cmdline, outfd):
         """
         run 'cmd' with its outfd connected to me with a pipe.
         it also makes another pipe to notice its death.
@@ -1534,7 +1536,6 @@ class work_generator:
         r,w = os.pipe()         # pipe to receive job
         pid = os.fork()
         if pid == 0:
-            cmdline = [ "/bin/sh", "-c", cmd ]
             os.close(x)
             os.close(r)
             os.dup2(w, outfd)
@@ -1550,7 +1551,14 @@ class work_generator:
             self.child_pipes[x] = (pid, None)
             self.server.pm.add_object_to_poll(x)
 
-    def add_proc_pipe2(self, cmd, outfd, infd):
+    def add_proc_pipe(self, cmd, outfd):
+        """
+        run 'cmd' with its outfd connected to me with a pipe.
+        it also makes another pipe to notice its death.
+        """
+        return self.add_pro_pipe_no_sh([ "/bin/sh", "-c", cmd ], outfd)
+
+    def add_proc_pipe2_no_sh(self, cmd, outfd, infd):
         """
         run 'cmd' with its outfd connected to me with a pipe.
         it also makes another pipe to notice its death.
@@ -1560,7 +1568,6 @@ class work_generator:
         r2,w2 = os.pipe()       # pipe to send notification
         pid = os.fork()
         if pid == 0:
-            cmdline = [ "/bin/sh", "-c", cmd ]
             os.close(x)
             os.close(r1)
             os.close(w2)
@@ -1576,6 +1583,9 @@ class work_generator:
                 self.add_work_stream(s)
             self.child_pipes[x] = (pid, None)
             self.server.pm.add_object_to_poll(x)
+
+    def add_proc_pipe2(self, cmd, outfd, infd):
+        return self.add_proc_pipe2_no_sh([ "/bin/sh", "-c", cmd ], outfd, infd)
 
     def add_proc_sock(self, cmd, addr, n_accepts, bidirectional):
         return self.add_proc_sock_no_sh([ "/bin/sh", "-c", cmd ], 
@@ -1764,7 +1774,7 @@ def set_make_environ(conf):
     os.environ["GXP_MAKE_PP"] = gxp_make_pp_inc
     os.environ["GXP_MAKE_MAPRED"] = gxp_make_mapred_inc
 
-def mk_work_generator(conf, server, make_args):
+def mk_work_generator(conf, server, make_args, gnu_parallel_args):
     wkg = work_generator(conf, server)
     # FIXIT. handle cases where some of them failed.
     # will require two step initializtion to avoid exception
@@ -1793,6 +1803,9 @@ def mk_work_generator(conf, server, make_args):
         make_cmdline = [ conf.make_cmd ] + make_args
         set_make_environ(conf)
         wkg.add_proc_sock_no_sh(make_cmdline, "", float("inf"), 1) # bidirectional = yes
+    if gnu_parallel_args is not None:
+        gnu_parallel_cmdline = [ conf.gnu_parallel_cmd, "--dry-run" ] + gnu_parallel_args
+        wkg.add_proc_pipe_no_sh(gnu_parallel_cmdline, 1)
     for addr in conf.work_server_sock:
         wkg.add_server_sock(addr, 1, 0) # bidirectional = no
     for addr in conf.work_server_sock2:
@@ -3231,7 +3244,7 @@ class job_scheduler(gxpc.cmd_interpreter):
             tid = "tid-%d" % self.self_pid
         return tid
 
-    def server_main_init(self, make_args):
+    def server_main_init(self, make_args, gnu_parallel_args):
         """
         real initialization
         """
@@ -3248,7 +3261,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         assert self.tid is not None
         # self.join_leave_rid_idx = 0
         self.work_idx = 0
-        self.wkg = mk_work_generator(self.conf, self, make_args)
+        self.wkg = mk_work_generator(self.conf, self, make_args, gnu_parallel_args)
         self.mang = man_generator(self.conf, self)
         self.mon = men_monitor(self.conf, self)
         self.works = mk_work_db(self.conf)
@@ -3274,10 +3287,10 @@ class job_scheduler(gxpc.cmd_interpreter):
         if self.send_initial_hello() == -1: return -1
         return 0
 
-    def server_main_with_log(self, make_args):
+    def server_main_with_log(self, make_args, gnu_parallel_args):
         if self.logfp:
             self.LOG("server_main_with_log: config\n%s\n" % self.conf)
-        if self.server_main_init(make_args) == -1: 
+        if self.server_main_init(make_args, gnu_parallel_args) == -1: 
             return cmd_interpreter.RET_NOT_RUN
         # if -a ctl=xxx is specified, return 
         if self.conf.ctl is not None:
@@ -3306,7 +3319,7 @@ class job_scheduler(gxpc.cmd_interpreter):
     def cur_time(self):
         return time.time() - self.time_start
         
-    def server_main(self, args, make_args):
+    def server_main(self, args, make_args, gnu_parallel_args):
         opts = jobsched_cmd_opts()
         if opts.parse(args) == -1:
             return gxpc.cmd_interpreter.RET_NOT_RUN
@@ -3328,7 +3341,7 @@ class job_scheduler(gxpc.cmd_interpreter):
                 return gxpc.cmd_interpreter.RET_NOT_RUN
         try:
             # real main with log opened
-            return self.server_main_with_log(make_args)
+            return self.server_main_with_log(make_args, gnu_parallel_args)
         finally:
             self.close_LOG()
 
@@ -3337,7 +3350,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         args : whatever is given after 'js'
         """
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
-        return self.server_main(args, None)
+        return self.server_main(args, None, None)
         
     def do_make_cmd(self, args):
         """
@@ -3352,7 +3365,29 @@ class job_scheduler(gxpc.cmd_interpreter):
             if a == "--": break
             make_args.append(a)
         # make_cmd = 'work_proc_sock2="make %s"' % (" ".join(make_args))
-        return self.server_main(args, make_args)
+        return self.server_main(args, make_args, None)
+
+    def do_p_cmd(self, args):
+        """
+        args : whatever is given after 'make2'
+        """
+        # FIXIT: parse args and give them to make
+        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
+        args = args + [ "-a", "work_fd=0" ]
+        return self.server_main(args, None, None)
+
+    def do_gnu_parallel_cmd(self, args):
+        """
+        args : whatever is given after 'make2'
+        """
+        # FIXIT: parse args and give them to make
+        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
+        gnu_parallel_args = []
+        while args:
+            a = args.pop(0)
+            if a == "--": break
+            gnu_parallel_args.append(a)
+        return self.server_main(args, None, gnu_parallel_args)
         
     # db related stuff
 
@@ -3404,6 +3439,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.25  2011/03/22 04:39:59  ttaauu
+# *** empty log message ***
+#
 # Revision 1.24  2011/03/09 09:59:19  ttaauu
 # add # aff: name=xxx option to make
 #

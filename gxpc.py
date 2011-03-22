@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.69 2011/03/09 09:59:19 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.70 2011/03/22 04:39:59 ttaauu Exp $
 # $Name:  $
 #
 
@@ -5288,6 +5288,18 @@ this command line.
     def usage_make_cmd(self, full):
         return self.usage_js_like_cmd("make", full)
     
+    def do_p_cmd(self, args):
+        self.js_like_cmd("p", args)
+
+    def usage_p_cmd(self, full):
+        return self.usage_js_like_cmd("p", full)
+    
+    def do_gnu_parallel_cmd(self, args):
+        self.js_like_cmd("parallel", args)
+
+    def usage_gnu_parallel_cmd(self, full):
+        return self.usage_js_like_cmd("gnu_parallel", full)
+    
 
     # ---------- dispatcher ----------
 
@@ -5364,6 +5376,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.70  2011/03/22 04:39:59  ttaauu
+# *** empty log message ***
+#
 # Revision 1.69  2011/03/09 09:59:19  ttaauu
 # add # aff: name=xxx option to make
 #
