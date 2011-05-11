@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.18 2010/03/05 05:27:09 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.19 2011/05/11 14:16:54 ttaauu Exp $
 # $Name:  $
 #
 
@@ -1336,7 +1336,11 @@ qsub_wrap hostname
                 self.delete_job()
 	    # wait a second for the system to copy the output/error file
 	    self.show_script_errors()
-            # we do not remove files when the submission failed
+            # this happens all the time HA8000, so we delete files
+            # even when this fails
+            time.sleep(1.0)
+            for f in self.files_to_remove:
+                self.safe_remove(f)
         elif self.opt.leave_output == 0:
             time.sleep(1.0)
             for f in self.files_to_remove:
@@ -1350,6 +1354,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: qsub_wrap,v $
+# Revision 1.19  2011/05/11 14:16:54  ttaauu
+# *** empty log message ***
+#
 # Revision 1.18  2010/03/05 05:27:09  ttaauu
 # stop extending PYTHONPATH. see 2010-3-5 ChangeLog
 #
