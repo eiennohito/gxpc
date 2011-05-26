@@ -6,7 +6,6 @@ use FileHandle;
 use IPC::Open2;
 
 our $fname_nodes = "targets2";
-our $fname_config = "vgxp.conf";
 our $fname_actives = "actives";
 our %nodes;
 our $SUFFIX = "default";
@@ -216,18 +215,6 @@ sub update_actives ($) {
   }
   close(FILE);
   return 1;
-}
-
-sub get_config ($) {
-  my $key = $_[0];
-  # open(FILE, "$fname_config") || die ( "config file ($fname_config) is not found" );
-  open(FILE, "$fname_config") || return undef;
-  while(<FILE>){
-    next if /^\s*#/;
-    my ($k, $v) = m/^\s*(\S+)\s*=\s*([^\r\n]*)/;
-    return $v if $key eq $k;
-  }
-  undef;
 }
 
 1;

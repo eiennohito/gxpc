@@ -103,6 +103,7 @@ GetOptions(\%opts,
            "w|web=s",
            "m|master=s",
            "i|interval=i",
+           "p|serverport=i",
            "h|help",
            "v|verbosity=i",
            "start",
@@ -115,6 +116,7 @@ $0 [options]
   -h(--help):      show help
   -i(--interval):  check interval (in seconds)
   -m(--master):    filename of master program
+  -p(--serverport):port number of server
   --start:         start VGXP in background
   --stop:          stop VGXP
   -v(--verbosity): set verbosity(0..3)
@@ -127,6 +129,7 @@ $vars->{CODEBASE} = $opts{w} if $opts{w};
 $vars->{MASTER_PATH} = $opts{m} if $opts{m};
 $vars->{PMASTER_CHECK_INTERVAL} = $opts{i} if $opts{i};
 $vars->{VERBOSITY} = $opts{v} if $opts{v};
+$vars->{SERVER_PORT} = $opts{p} if $opts{p};
 
 ##
 
@@ -139,6 +142,9 @@ my $pmaster = sv($vars, '%MASTER_PATH%');
 my $check_interval = sv($vars, '%PMASTER_CHECK_INTERVAL%');
 my $fname_notify = sv($vars, '%NOTIFY_FILENAME%');
 my $install_dir = sv($vars, '%INSTALL_DIR%');
+my $server_port = sv($vars, '%SERVER_PORT%');
+
+$ENV{'SERVER_PORT'} = $server_port;
 
 ##
 
@@ -193,7 +199,7 @@ dp(0, sprintf("URL to access VGXP is %s\n", sv($vars, '%CODEBASE%')));
 
 # Launch VGXP
 
-$ENV{PERLLIB} = $script_dir;
+$ENV{PERL5LIB} = $script_dir;
 my $log_dir = sv($vars, '%LOG_DIR%');
 my_mkdir $log_dir;
 
@@ -224,6 +230,7 @@ while(1){
   close $cmd_err;
   $mw_err =~ s/^(\d+)$/$pmaster_pid = $1;""/egm;
   $mw_err =~ s/^(.*)$/dp(1, "ERR: $1\n") if length($1)/egm;
+  dp(1, "PMASTER_PID is $pmaster_pid\n");
   wait;
   if($opts{start}){
     dp(0, "VGXP is started in background.\n");

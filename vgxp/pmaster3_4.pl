@@ -84,11 +84,7 @@ sub connect_agents($) {
 
 my $fname_notify = "notify_pmaster";
 
-my $server_str = VGXP::get_config("server");
-my $port;
-if($server_str){
- $port = ($server_str =~ m/[^:]*:(\d+)/);
-}
+my $port = $ENV{'SERVER_PORT'};
 if ( !defined $port ) {
   #die ( "you must specify the port to be listened" );
   $port = 0;
