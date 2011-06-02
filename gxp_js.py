@@ -1556,7 +1556,7 @@ class work_generator:
         run 'cmd' with its outfd connected to me with a pipe.
         it also makes another pipe to notice its death.
         """
-        return self.add_pro_pipe_no_sh([ "/bin/sh", "-c", cmd ], outfd)
+        return self.add_proc_pipe_no_sh([ "/bin/sh", "-c", cmd ], outfd)
 
     def add_proc_pipe2_no_sh(self, cmd, outfd, infd):
         """
@@ -3439,6 +3439,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.26  2011/06/02 17:30:14  ttaauu
+# *** empty log message ***
+#
 # Revision 1.25  2011/03/22 04:39:59  ttaauu
 # *** empty log message ***
 #

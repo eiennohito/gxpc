@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.19 2011/05/11 14:16:54 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.20 2011/06/02 17:30:16 ttaauu Exp $
 # $Name:  $
 #
 
@@ -899,6 +899,18 @@ qsub_wrap hostname
         for var,val in exports:
             os.environ[var] = os.path.expandvars(val)
     
+    def kick_qsub(self):
+        args = [ self.opt.qsub ] + self.opt.qarg
+        if self.sys_opt.qsub_stdout_flag is not None:
+            args.append(self.sys_opt.qsub_stdout_flag)
+            args.append("/dev/null")
+        if self.sys_opt.qsub_stderr_flag is not None:
+            args.append(self.sys_opt.qsub_stderr_flag)
+            args.append("/dev/null")
+        r,stdout_output,stderr_output = self.system(args, ":",
+                                                    self.opt.export)
+        # Es("kicked qsub %s %s %s\n" % (r,stdout_output,stderr_output))
+
     def search_job_id_from_qsub_output(self, qsub_output):
         if self.sys_opt is None:
             sys_options = self.sys_options.values()
@@ -1155,7 +1167,8 @@ qsub_wrap hostname
         timeout may be "" in which case we wait forever.
         We say something to stdout every display_progress_interval seconds.
         """
-        cur_time = time.time()
+        start_time = cur_time = time.time()
+        kicked = 0
         if queue_timeout == "":
             time_limit = ""
         else:
@@ -1197,8 +1210,10 @@ qsub_wrap hostname
                     Es("%s : %s (%s) : waiting for connection on %d (%.1f sec left)\n" \
                        % (self.cmd, self.hostname, self.connect_addr, self.port,
                           time_limit - cur_time))
+
             # calc how many secs to wait for clients to connect until next display
-            next_time_limit = min(cur_time + check_queue_interval, time_limit)
+            random_wait = random.random() - 0.5 # -0.5 <= x <= 0.5
+            next_time_limit = min(cur_time + check_queue_interval + random_wait, time_limit)
             next_timeout = max(0.0, next_time_limit - cur_time)
             A,_,_ = select.select([ so ], [], [], next_timeout)
             if so in A:
@@ -1206,6 +1221,11 @@ qsub_wrap hostname
                 new_so.send(hello)
                 return new_so
             cur_time = time.time()
+            # kick qsub to do rescheduling once
+            if kicked == 0:
+                kicked = 1
+                self.kick_qsub()
+
         if self.job_in_queue:
             self.delete_job()
             self.job_in_queue = 0
@@ -1354,6 +1374,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: qsub_wrap,v $
+# Revision 1.20  2011/06/02 17:30:16  ttaauu
+# *** empty log message ***
+#
 # Revision 1.19  2011/05/11 14:16:54  ttaauu
 # *** empty log message ***
 #
