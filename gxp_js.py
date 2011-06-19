@@ -880,11 +880,11 @@ class Run:
     # for field x for which get_td_x method exists, 
     # get_td_worker_time method is called and  its return value used .
     # so result column will be obtained by self.get_td_result(), etc.
-    db_fields = [ "run_idx", "result", "man_name", 
-                  "time_start", "time_end", "time_since_start",
-                  "worker_time_start", "worker_time_end", "worker_time",
-                  "utime", "stime", "maxrss", "ixrss", "idrss", "isrss",
-                  "minflt", "majflt", "io", "io_filename" ]
+    db_fields_1 = [ "run_idx", "result", "time_since_start", "man_name" ]
+    db_fields_2 = [ "time_start", "time_end", 
+                    "worker_time_start", "worker_time_end", "worker_time",
+                    "utime", "stime", "maxrss", "ixrss", "idrss", "isrss",
+                    "minflt", "majflt", "io", "io_filename" ]
 
     def get_td_result(self):
         if self.status == run_status.finished:
@@ -934,7 +934,8 @@ class Work:
     """
     a work or a job sent from clients
     """
-    db_fields = [ "work_idx", "cmd", "pid", "dirs", "time_req" ]
+    db_fields_1 = [ "work_idx", "cmd", ]
+    db_fields_2 = [ "pid", "dirs", "time_req" ]
 
     def init(self, cmd, pid, dirs, envs, req, affinity):
         # command line (string)
@@ -2060,7 +2061,8 @@ class work_db_text(work_db_base):
 
     def open_work_db(self):
         wp = open(os.path.join(self.conf.state_dir, self.db_file), "wb")
-        wp.write("%s\n" % ("\t".join(Work.db_fields + Run.db_fields)))
+        wp.write("%s\n" % ("\t".join(Work.db_fields_1 + Run.db_fields_1 
+                                     + Work.db_fields_2 + Run.db_fields_2)))
         return wp
 
     def add_work(self, work):
@@ -2148,9 +2150,11 @@ class work_db_text(work_db_base):
 
 
     def mk_work_run_text_row(self, work, run):
-        work_row = self.mk_object_row_text(Work.db_fields, work)
-        run_row = self.mk_object_row_text(Run.db_fields, run)
-        return "\t".join(work_row + run_row)
+        work_row_1 = self.mk_object_row_text(Work.db_fields_1, work)
+        work_row_2 = self.mk_object_row_text(Work.db_fields_2, work)
+        run_row_1 = self.mk_object_row_text(Run.db_fields_1, run)
+        run_row_2 = self.mk_object_row_text(Run.db_fields_2, run)
+        return "\t".join(work_row_1 + run_row_1 + work_row_2 + run_row_2)
 
     def update_lists(self):
         """
@@ -2436,13 +2440,18 @@ class html_generator:
 
     def mk_work_run_table(self, such):
         R = []
-        w_header_row = self.mk_header_row(Work.db_fields)
-        r_header_row = self.mk_header_row(Run.db_fields)
-        R.append("<tr>%s%s</tr>\n" % (w_header_row, r_header_row))
+        w_header_row_1 = self.mk_header_row(Work.db_fields_1)
+        w_header_row_2 = self.mk_header_row(Work.db_fields_2)
+        r_header_row_1 = self.mk_header_row(Run.db_fields_1)
+        r_header_row_2 = self.mk_header_row(Run.db_fields_2)
+        R.append("<tr>%s%s%s%s</tr>\n" 
+                 % (w_header_row_1, r_header_row_1, w_header_row_2, r_header_row_2))
         for w,r in self.server.works.list_such_runs(such):
-            w_row = self.mk_object_row(Work.db_fields, w, 1)
-            r_row = self.mk_object_row(Run.db_fields, r, 1)
-            R.append("<tr>%s%s</tr>\n" % (w_row, r_row))
+            w_row_1 = self.mk_object_row(Work.db_fields_1, w, 1)
+            w_row_2 = self.mk_object_row(Work.db_fields_2, w, 1)
+            r_row_1 = self.mk_object_row(Run.db_fields_1, r, 1)
+            r_row_2 = self.mk_object_row(Run.db_fields_2, r, 1)
+            R.append("<tr>%s%s%s%s</tr>\n" % (w_row_1, r_row_1, w_row_2, r_row_2))
         return "".join(R)
 
     def mk_link_to_work_runs(self):
@@ -3490,6 +3499,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.29  2011/06/19 20:45:42  ttaauu
+# *** empty log message ***
+#
 # Revision 1.28  2011/06/19 19:20:36  ttaauu
 # *** empty log message ***
 #
