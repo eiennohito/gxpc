@@ -192,9 +192,9 @@ class jobsched_config:
     
     def __init__(self, opts):
         self.opts = opts
-        self.work_file = []     # list of strings
-        self.work_fd = []       # list of ints
-        self.work_py_module = []       # list of strings
+        self.work_file = []             # list of strings
+        self.work_fd = []               # list of ints
+        self.work_py_module = []        # list of strings
         self.work_proc_pipe = []
         self.work_proc_pipe2 = []
         self.work_proc_sock = []
@@ -1631,6 +1631,7 @@ class work_generator:
         return self.add_proc_pipe2_no_sh([ "/bin/sh", "-c", cmd ], outfd, infd)
 
     def add_proc_sock(self, cmd, addr, n_accepts, bidirectional):
+        # Es("add_proc_sock(cmd=%s)\n" % cmd)
         return self.add_proc_sock_no_sh([ "/bin/sh", "-c", cmd ], 
                                         addr, n_accepts, bidirectional)
 
@@ -2736,7 +2737,6 @@ class job_scheduler(gxpc.cmd_interpreter):
 
     def check_completed(self, man, rid):
         if man.completed(rid):
-            Ws("gxp_js.py: man %s joins\n" % man)
             ### think twice if we should do it many times
             ### we may break capacity_left??
             ### also think twice how to maintain men_free
@@ -2753,6 +2753,7 @@ class job_scheduler(gxpc.cmd_interpreter):
                 man.reinit()
                 if self.logfp:
                     self.LOG("a man joined again\n%s\n" % man)
+            Ws("gxp_js.py: man %s joins\n" % man)
             if man in self.men_free:
                 if self.logfp:
                     self.LOG("a man already in free pool\n%s\n" % man)
@@ -3489,6 +3490,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.28  2011/06/19 19:20:36  ttaauu
+# *** empty log message ***
+#
 # Revision 1.27  2011/06/19 11:26:24  ttaauu
 # *** empty log message ***
 #
