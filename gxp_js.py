@@ -218,9 +218,11 @@ class jobsched_config:
         # "x"      : x through
         # "x,"     : x > /dev/null
         # "x,file" : x > file
-        self.redirect_output = [ "1", "2" ]
+        # self.redirect_output = [ "1", "2" ]
         self.echo_job_output = 1
-
+        self.deliver_job_output = 1
+        # it must go away at some point and become default
+        self.new_notification_format = 0
         # some make specific ones
         self.make_cmd = "make"
         self.make_exit_status_no_throw = 124
@@ -804,6 +806,8 @@ class Run:
             del self.io[fd]
             s = inline.getvalue()
             self.done_io[fd] = (s, filename)
+        if self.work.server.conf.deliver_job_output:
+            self.work.add_io(fd, payload, eof, self.man_name)
                     
     def get_io_filenames(self):
         fds = {}
@@ -974,6 +978,9 @@ class Work:
         msg = ("work '%s' will be retried\n" % self.cmd)
         if self.server.logfp: self.server.LOG(msg)
         self.make_run()
+
+    def add_io(self, fd, payload, eof, man_name):
+        self.server.wkg.add_io(self.work_idx, fd, payload, eof, man_name)
 
     def finish_or_retry(self, status, exit_status, term_sig, man_name):
         if status == run_status.worker_died \
@@ -1176,6 +1183,9 @@ class work_stream_base:
     def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
         self.server.LOG("work_stream_base.finish_work\n")
         return 0                        # OK
+    def add_io(self, work_idx, work, fd, payload, eof, man_name):
+        self.server.LOG("work_stream_base.send_io\n")
+        return 0                        # OK
 
 class work_stream_fd(work_stream_base):
     def init(self, fd):
@@ -1278,7 +1288,8 @@ class work_stream_socket_bidirectional(work_stream_socket):
             return -1
         else:
             try:
-                so.send(msg)
+                x = so.send(msg)
+                assert x == len(msg)
                 return 0                    # OK
             except socket.error,e:
                 if self.warnings_issued == 0:
@@ -1286,13 +1297,37 @@ class work_stream_socket_bidirectional(work_stream_socket):
                        "probably the client program has gone\n" % (e.args,))
                     self.warnings_issued = 1
                 return -1                   # NG
+    #
+    # message sent to the client is one of two kinds
+    #
+    # sz work_idx: exit_status term_sig man_name
+    # sz work_idx: io man_name fd eof payload_sz payload
+    #
+    # new format
+    #
+    # sz(9)   status: work_idx(9) man_name(99) exit_status(9) term_sig(9)
+    # sz(9)       io: work_idx(9) man_name(99) fd(9)          eof(9)      pay_sz(9) payload
+    #
+    def mk_finish_work_msg(self, work_idx, man_name, exit_status, term_sig):
+        content = ("%9s %9d %99s %9s %9s\n" 
+                   % ("status:", work_idx, man_name, exit_status, term_sig))
+        return "%9d %s" % (len(content), content)
+
+    def mk_io_msg(self, work_idx, fd, payload, eof, man_name):
+        pay_sz = len(payload)
+        content = ("%9s %9d %99s %9d %9d %9d %s\n" 
+                   % ("io:", work_idx, man_name, fd, eof, pay_sz, payload))
+        return "%9d %s" % (len(content), content)
 
     def finish_work(self, work_idx, work, exit_status, term_sig, man_name):
         if exit_status is None: exit_status = "-"
         if term_sig is None: term_sig = "-"
-        payload = ("%d: %s %s %s\n" 
-                   % (work_idx, exit_status, term_sig, man_name))
-        msg = "%9d %s" % (len(payload), payload)
+        if self.server.conf.new_notification_format: # obsolete format
+            msg = self.mk_finish_work_msg(work_idx, man_name, exit_status, term_sig)
+        else:
+            payload = ("%d: %s %s %s\n" 
+                       % (work_idx, exit_status, term_sig, man_name))
+            msg = "%9d %s" % (len(payload), payload)
         log_msg = ("work_stream_socket_bidirectional.finish_work: write notification [%s]\n"
                    % msg)
         self.server.LOG(log_msg)
@@ -1304,6 +1339,14 @@ class work_stream_socket_bidirectional(work_stream_socket):
         if 0:
             self.close()
         return r
+
+    def add_io(self, work_idx, work, fd, payload, eof, man_name):
+        msg = self.mk_io_msg(work_idx, fd, payload, eof, man_name)
+        log_msg = ("work_stream_socket_bidirectional.finish_work: write io [%s]\n"
+                   % msg)
+        self.server.LOG(log_msg)
+        if dbg>=2: Es(log_msg)
+        return self.safe_send(self.so, msg)
 
 class work_stream_generator(work_stream_base):
     def init(self, generator_module):
@@ -1712,6 +1755,14 @@ class work_generator:
         if ss and self.server_socks.has_key(ss):
             self.cleanup_server_sock(ss)
 
+    def add_io(self, work_idx, fd, payload, eof, man_name):
+        """
+        this is the place where we should notify the client
+        of the finished work.
+        """
+        ws,w = self.work_stream[work_idx]
+        return ws.add_io(work_idx, w, fd, payload, eof, man_name)
+
     def finish_work(self, work_idx, exit_status, term_sig, man_name):
         """
         this is the place where we should notify the client
@@ -1797,7 +1848,6 @@ def mk_work_generator(conf, server, make_args, gnu_parallel_args):
     for cmd in conf.work_proc_sock:
         wkg.add_proc_sock(cmd, "", float("inf"), 0) # bidirectional = no
     for cmd in conf.work_proc_sock2:
-        print "------------------"
         wkg.add_proc_sock(cmd, "", float("inf"), 1) # bidirectional = yes
     if make_args is not None:
         make_cmdline = [ conf.make_cmd ] + make_args
@@ -3439,6 +3489,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.27  2011/06/19 11:26:24  ttaauu
+# *** empty log message ***
+#
 # Revision 1.26  2011/06/02 17:30:14  ttaauu
 # *** empty log message ***
 #
