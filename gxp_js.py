@@ -220,9 +220,9 @@ class jobsched_config:
         # "x,file" : x > file
         # self.redirect_output = [ "1", "2" ]
         self.echo_job_output = 1
-        self.deliver_job_output = 1
+        self.deliver_job_output = 0
         # it must go away at some point and become default
-        self.new_notification_format = 0
+        self.new_notification_format = 1
         # some make specific ones
         self.make_cmd = "make"
         self.make_exit_status_no_throw = 124
@@ -3499,6 +3499,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.30  2011/06/27 17:47:53  ttaauu
+# *** empty log message ***
+#
 # Revision 1.29  2011/06/19 20:45:42  ttaauu
 # *** empty log message ***
 #

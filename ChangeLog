@@ -113,7 +113,7 @@
 	include $(GXP_MAKE_PP_INC),
 	include $(GXP_MAKE_MAPRED_INC),
 	or both (in fact they can be included arbitrary number of times).
-	
+
 2010-09-08 Taura
 	* gxp_js.py:
 	* gxpbin/worker_prof:
@@ -123,12 +123,12 @@
 	* gxpd.py:
 	* gxpm.py:
 	added to implement a new job scheduling framework (gxpc js)
-
 2010-09-09 Taura
 	* gxp_js.py: use poll to avoid the restriction on the 
 	select'able file descriptors in python
 	* gxp_js.py: tracks rss and memory usage 
 	* gxp_js.py: support gxpc make2
-	
 2010-09-13 Taura
 	* gxp_js.py: bug fix
+2011-06-28 Taura
+	* gxp_js.py: change notification format
