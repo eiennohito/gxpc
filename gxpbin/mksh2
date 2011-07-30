@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh2,v 1.5 2011/06/27 17:47:54 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/mksh2,v 1.6 2011/07/30 13:21:19 ttaauu Exp $
 # $Name:  $
 #
 
@@ -47,7 +47,8 @@ def recv_exit_or_die(so):
                   msg)
     if m is None:
         Es("mksh2: msg of wrong format (%s)\n" % msg)
-    ex,sig = m.group("ex_status", "term_sig")
+    idx,man_name,ex,sig = m.group("idx", "man_name", "ex_status", "term_sig")
+    print "work %s was executed by %s" % (idx, man_name)
     if ex == "-":
         os.kill(os.getpid(), int(sig))
     else:
@@ -97,7 +98,7 @@ def submit(so_name, cmd):
         else:
             raise
     so.send(string.join(msgs, ""))
-    if 0:
+    if 1:
         recv_exit_or_die(so)
     else:
         fd = so.fileno()
@@ -167,6 +168,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: mksh2,v $
+# Revision 1.6  2011/07/30 13:21:19  ttaauu
+# *** empty log message ***
+#
 # Revision 1.5  2011/06/27 17:47:54  ttaauu
 # *** empty log message ***
 #
