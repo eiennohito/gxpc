@@ -56,10 +56,7 @@ td.man_0_active {
 td.man_1_leaving {
   background-color:#ff4;
 }
-td.man_2_leave_now {
-  background-color:#c4f;
-}
-td.man_3_gone {
+td.man_2_gone {
   background-color:#c4c;
 }
 -->
@@ -191,6 +188,33 @@ More precisely, these values are obtained by:
 by the worker who executed the job - local time obtained by the master
 at the start of the entire make.
 </blockquote>
+</p>
+
+<p>
+<table border=0>
+<tr>
+<td class="job_queued">queued</td>
+<td class="job_running">running</td>
+<td class="job_success">success</td>
+<td class="job_failed">failed</td>
+<td class="job_killed">killed</td>
+<td class="job_worker_died">worker_died</td>
+<td class="job_worker_left">worker_left</td>
+<td class="job_no_throw">no_throw</td>
+<td class="job_interrupted">interrupted</td>
+</tr>
+</table>
+</p>
+
+<h1>Man Lists Legend</h1>
+<table border=0>
+<tr>
+<td class="man_0_active">active</a>
+<td class="man_1_leaving">leaving</a>
+<td class="man_2_gone">gone</a>
+</tr>
+</table>
+
 </p>
 <a name="All Jobs">
 <h1>All Jobs</h1>

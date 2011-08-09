@@ -2693,14 +2693,27 @@ class job_scheduler(gxpc.cmd_interpreter):
         rid = "run_%d_%d" % (run.work_idx, run.run_idx)
         del self.runs_running[rid]
         del man.runs_running[rid]
+
         self.ts["parallelism"].add_dx(ct, 0, -1)
         self.ts["run_counts"].add_dx(ct, 2, 1) # finished_runs += 1
         self.n_events = self.n_events + 1
         # return resource left for the man
         man.modify_resource(run.work.requirement, 1)
         # FIXIT: slow
-        if man not in self.men_free and man.state == man_state.active:
-            self.men_free.append(man)
+
+        if man.state == man_state.active:
+            if man not in self.men_free:
+                self.LOG("man %s back to men_free\n" % man)
+                self.men_free.append(man)
+        elif man.state == man_state.leaving:
+            if len(man.runs_running) == 0:
+                msg = "man %s now gone\n" % man
+                Ws("gxp_js.py: %s\n" % msg)
+                if self.logfp: self.LOG(msg)
+                man.state = man_state.gone
+            elif man not in self.men_free:
+                self.LOG("man %s back to men_free\n" % man)
+                self.men_free.append(man)
         return run.finish(ct)
 
     def handle_event_io_run(self, gupid, tid, ev):
@@ -2822,11 +2835,18 @@ class job_scheduler(gxpc.cmd_interpreter):
                      % (gupid, tid, ev.rid, ev.status))
         man = self.men.get(gupid)
         if man:
-            msg = ("man %s leaving after current job (if any)\n" % gupid)
-            Ws("gxp_js.py: %s" % msg)
-            if self.logfp:
-                self.LOG(msg)
-            man.state = man_state.leaving
+            if len(man.runs_running) > 0:
+                msg = ("man %s leaving after current job\n" % gupid)
+                Ws("gxp_js.py: %s" % msg)
+                if self.logfp:
+                    self.LOG(msg)
+                man.state = man_state.leaving
+            else:
+                msg = ("man %s immediately laves\n" % gupid)
+                Ws("gxp_js.py: %s" % msg)
+                if self.logfp:
+                    self.LOG(msg)
+                man.state = man_state.gone
 
     def handle_event_io(self, gupid, tid, ev):
         if self.logfp:
@@ -3499,6 +3519,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.31  2011/08/09 14:42:30  ttaauu
+# *** empty log message ***
+#
 # Revision 1.30  2011/06/27 17:47:53  ttaauu
 # *** empty log message ***
 #
