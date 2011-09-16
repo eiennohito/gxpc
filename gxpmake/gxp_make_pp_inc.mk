@@ -30,10 +30,18 @@ $(if $(1),\
   $(eval $(call make_rule_single)))
 endef
 
-define make_rule_recursive
+define make_rule_recursivey
 $(if $(1),\
   $(foreach $(firstword $(1)),\
             $(or $($(firstword $(1))),""),\
+     $(call make_rule_recursive,$(wordlist 2,$(words $(1)),$(1)))),\
+  $(eval $(call make_rule_single)))
+endef
+
+define make_rule_recursive
+$(if $(1),\
+  $(foreach $(firstword $(1)),\
+            $($(firstword $(1))),\
      $(call make_rule_recursive,$(wordlist 2,$(words $(1)),$(1)))),\
   $(eval $(call make_rule_single)))
 endef
@@ -42,30 +50,38 @@ endef
 # [2] set default parameters
 # 
 
-parameters:=$(or $(parameters),a b c)
+#parameters:=$(or $(parameters),a b c)
 target:=$(or $(target),gxp_pp_default_target)
 
-ifeq ($(output),)
-expanded_parameters:=$(call expand_parameters,$(parameters))
-output=gxp_pp_default_output$(expanded_parameters)
-endif
+$(target) : 
 
-ifeq ($(cmd),)
-cmd=echo $(call expand_parameters,$(parameters))
-endif
+#ifeq ($(output),)
+#expanded_parameters:=$(call expand_parameters,$(parameters))
+#output=gxp_pp_default_output$(expanded_parameters)
+#endif
+
+#ifeq ($(cmd),)
+#cmd=echo $(call expand_parameters,$(parameters))
+#endif
 
 #
 # [3] really define rules
 #
 
-$(eval $(call make_rule_recursive,$(parameters)))
+define define_rules
+$(if $(and $(parameters),$(cmd),$(output)),\
+  $(eval $(call make_rule_recursive,$(parameters))),\
+  $(warning "specify at least parameters:=..., cmd=..., and output=..."))
+endef
+
+$(and $(parameters),$(cmd),$(output),$(call define_rules))
 
 # 
 # [4] clear all variables
 #
-parameters:=
-target=
-input=
-output=
-cmd=
+#parameters:=
+#target=
+#input=
+#output=
+#cmd=
 
