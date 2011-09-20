@@ -68,13 +68,15 @@ $(target) :
 # [3] really define rules
 #
 
-define define_rules
+define define_rules_fun
 $(if $(and $(parameters),$(cmd),$(output)),\
   $(eval $(call make_rule_recursive,$(parameters))),\
   $(warning "specify at least parameters:=..., cmd=..., and output=..."))
 endef
 
-$(and $(parameters),$(cmd),$(output),$(call define_rules))
+define_rules=$(call define_rules_fun)
+
+$(and $(parameters),$(cmd),$(output),$(define_rules))
 
 # 
 # [4] clear all variables
