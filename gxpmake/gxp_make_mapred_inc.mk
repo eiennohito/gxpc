@@ -116,7 +116,6 @@ n_reducers:=$(or $(n_reducers),2)
 partitioner:=$(or $(partitioner),ex_partitioner)
 exchanger:=$(or $(exchanger),ex_exchanger)
 sorter:=$(or $(sorter),sort)
-combiner:=$(or $(combiner),ex_count_reducer)
 merger:=$(or $(merger),sort -m)
 
 int_dir:=$(or $(int_dir),$(output)_int_dir)

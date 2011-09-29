@@ -1827,7 +1827,15 @@ def set_make_environ(conf):
     os.environ["GXP_MAKE_PP"] = gxp_make_pp_inc
     os.environ["GXP_MAKE_MAPRED"] = gxp_make_mapred_inc
 
-def mk_work_generator(conf, server, make_args, gnu_parallel_args):
+def set_mapred_environ(conf):
+    gxpbin_dir = os.path.join(os.environ["GXP_DIR"], "gxpbin")
+    python_path = os.environ.get("PYTHONPATH")
+    if python_path is None:
+        os.environ["PYTHONPATH"] = gxpbin_dir
+    else:
+        os.environ["PYTHONPATH"] = ("%s:%s" % (python_path, gxpbin_dir))
+
+def mk_work_generator(conf, server, cmd, cmd_specific_args):
     wkg = work_generator(conf, server)
     # FIXIT. handle cases where some of them failed.
     # will require two step initializtion to avoid exception
@@ -1851,13 +1859,18 @@ def mk_work_generator(conf, server, make_args, gnu_parallel_args):
         wkg.add_proc_sock(cmd, "", float("inf"), 0) # bidirectional = no
     for cmd in conf.work_proc_sock2:
         wkg.add_proc_sock(cmd, "", float("inf"), 1) # bidirectional = yes
-    if make_args is not None:
-        make_cmdline = [ conf.make_cmd ] + make_args
+    if cmd == "make":
+        make_cmdline = [ conf.make_cmd ] + cmd_specific_args
         set_make_environ(conf)
         wkg.add_proc_sock_no_sh(make_cmdline, "", float("inf"), 1) # bidirectional = yes
-    if gnu_parallel_args is not None:
-        gnu_parallel_cmdline = [ conf.gnu_parallel_cmd, "--dry-run" ] + gnu_parallel_args
+    elif cmd == "gnu_parallel":
+        gnu_parallel_cmdline = [ conf.gnu_parallel_cmd, "--dry-run" ] + cmd_specific_args
         wkg.add_proc_pipe_no_sh(gnu_parallel_cmdline, 1)
+    elif cmd == "mapred":
+        mapred_cmdline = cmd_specific_args
+        # unnecessary. done in gxpd.py
+        set_mapred_environ(conf)
+        wkg.add_proc_sock_no_sh(mapred_cmdline, "", 1, 1)
     for addr in conf.work_server_sock:
         wkg.add_server_sock(addr, 1, 0) # bidirectional = no
     for addr in conf.work_server_sock2:
@@ -3324,7 +3337,7 @@ class job_scheduler(gxpc.cmd_interpreter):
             tid = "tid-%d" % self.self_pid
         return tid
 
-    def server_main_init(self, make_args, gnu_parallel_args):
+    def server_main_init(self, cmd, cmd_specific_args):
         """
         real initialization
         """
@@ -3341,7 +3354,7 @@ class job_scheduler(gxpc.cmd_interpreter):
         assert self.tid is not None
         # self.join_leave_rid_idx = 0
         self.work_idx = 0
-        self.wkg = mk_work_generator(self.conf, self, make_args, gnu_parallel_args)
+        self.wkg = mk_work_generator(self.conf, self, cmd, cmd_specific_args)
         self.mang = man_generator(self.conf, self)
         self.mon = men_monitor(self.conf, self)
         self.works = mk_work_db(self.conf)
@@ -3367,10 +3380,10 @@ class job_scheduler(gxpc.cmd_interpreter):
         if self.send_initial_hello() == -1: return -1
         return 0
 
-    def server_main_with_log(self, make_args, gnu_parallel_args):
+    def server_main_with_log(self, cmd, cmd_specific_args):
         if self.logfp:
             self.LOG("server_main_with_log: config\n%s\n" % self.conf)
-        if self.server_main_init(make_args, gnu_parallel_args) == -1: 
+        if self.server_main_init(cmd, cmd_specific_args) == -1: 
             return cmd_interpreter.RET_NOT_RUN
         # if -a ctl=xxx is specified, return 
         if self.conf.ctl is not None:
@@ -3399,7 +3412,7 @@ class job_scheduler(gxpc.cmd_interpreter):
     def cur_time(self):
         return time.time() - self.time_start
         
-    def server_main(self, args, make_args, gnu_parallel_args):
+    def server_main(self, cmd, args, cmd_specific_args):
         opts = jobsched_cmd_opts()
         if opts.parse(args) == -1:
             return gxpc.cmd_interpreter.RET_NOT_RUN
@@ -3421,7 +3434,7 @@ class job_scheduler(gxpc.cmd_interpreter):
                 return gxpc.cmd_interpreter.RET_NOT_RUN
         try:
             # real main with log opened
-            return self.server_main_with_log(make_args, gnu_parallel_args)
+            return self.server_main_with_log(cmd, cmd_specific_args)
         finally:
             self.close_LOG()
 
@@ -3430,11 +3443,11 @@ class job_scheduler(gxpc.cmd_interpreter):
         args : whatever is given after 'js'
         """
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
-        return self.server_main(args, None, None)
+        return self.server_main("js", args, None)
         
     def do_make_cmd(self, args):
         """
-        args : whatever is given after 'make2'
+        args : whatever is given after 'make'
         """
         # FIXIT: parse args and give them to make
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
@@ -3445,16 +3458,29 @@ class job_scheduler(gxpc.cmd_interpreter):
             if a == "--": break
             make_args.append(a)
         # make_cmd = 'work_proc_sock2="make %s"' % (" ".join(make_args))
-        return self.server_main(args, make_args, None)
+        return self.server_main("make", args, make_args)
 
     def do_p_cmd(self, args):
         """
-        args : whatever is given after 'make2'
+        args : whatever is given after 'p'
         """
         # FIXIT: parse args and give them to make
         if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
         args = args + [ "-a", "work_fd=0" ]
-        return self.server_main(args, None, None)
+        return self.server_main("p", args, None)
+
+    def do_mapred_cmd(self, args):
+        """
+        args : whatever is given after 'mapred'
+        """
+        # FIXIT: parse args and give them to make
+        if self.init3() == -1: return cmd_interpreter.RET_NOT_RUN
+        mapred_args = []
+        while args:
+            a = args.pop(0)
+            if a == "--": break
+            mapred_args.append(a)
+        return self.server_main("mapred", args, mapred_args)
 
     def do_gnu_parallel_cmd(self, args):
         """
@@ -3467,7 +3493,7 @@ class job_scheduler(gxpc.cmd_interpreter):
             a = args.pop(0)
             if a == "--": break
             gnu_parallel_args.append(a)
-        return self.server_main(args, None, gnu_parallel_args)
+        return self.server_main("gnu_parallel", args, gnu_parallel_args)
         
     # db related stuff
 
@@ -3519,6 +3545,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.32  2011/09/29 17:24:19  ttaauu
+# 2011-09-30 Taura
+#
 # Revision 1.31  2011/08/09 14:42:30  ttaauu
 # *** empty log message ***
 #

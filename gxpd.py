@@ -10,7 +10,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.22 2010/12/15 08:48:12 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.23 2011/09/29 17:24:19 ttaauu Exp $
 # $Name:  $
 #
 
@@ -2146,9 +2146,9 @@ class gxpd(ioman.ioman):
             pypath = os.environ.get("PYTHONPATH", "")
             pypath = self.append_path(pypath, gxp_dir)
             pypath = self.append_path(pypath,
-                                    os.path.join(gxp_dir, "gxpbin"))
+                                      os.path.join(gxp_dir, "gxpbin"))
             pypath = self.append_path(pypath,
-                                    os.path.join(gxp_dir, "gxpmake"))
+                                      os.path.join(gxp_dir, "gxpmake"))
         prefix,gxp_top = os.path.split(gxp_dir)
         # including these seem to make gxpc slower in
         # some environments
@@ -2158,7 +2158,7 @@ class gxpd(ioman.ioman):
                                   "GXP_GUPID"      : self.gupid,
                                   "GXP_ROOT_GUPID" : root_gupid,
                                   "PATH"           : path,
-                                  # "PYTHONPATH"     : pypath,
+                                  "PYTHONPATH"     : pypath,
                                   })
 
     def set_gxpd_environment(self, remove_self, root_gupid):
@@ -2314,6 +2314,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.23  2011/09/29 17:24:19  ttaauu
+# 2011-09-30 Taura
+#
 # Revision 1.22  2010/12/15 08:48:12  ttaauu
 # *** empty log message ***
 #

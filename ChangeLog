@@ -132,3 +132,6 @@
 	* gxp_js.py: bug fix
 2011-06-28 Taura
 	* gxp_js.py: change notification format
+2011-09-30 Taura
+	* gxp_mapred.py: added
+	* gxpd.py: now export PYTHONPATH again

@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.30 2010/12/17 08:28:35 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/inst_local.py,v 1.31 2011/09/29 17:24:19 ttaauu Exp $
 # $Name:  $
 #
 
@@ -111,6 +111,7 @@ default_src_files = [ "$GXP_DIR",
                       "$GXP_DIR/gxpbin/gxp_mom",
                       "$GXP_DIR/gxpbin/gxpm2.py",
                       "$GXP_DIR/gxpbin/ifconfig2.py",
+                      "$GXP_DIR/gxpbin/mapred.py",
                       "$GXP_DIR/gxpbin/opt2.py",
                       "$GXP_DIR/gxpbin/xmake",
                       "$GXP_DIR/gxpbin/xmake.20100414",
@@ -625,6 +626,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: inst_local.py,v $
+# Revision 1.31  2011/09/29 17:24:19  ttaauu
+# 2011-09-30 Taura
+#
 # Revision 1.30  2010/12/17 08:28:35  ttaauu
 # *** empty log message ***
 #

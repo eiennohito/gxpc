@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.72 2011/07/30 13:21:19 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.73 2011/09/29 17:24:19 ttaauu Exp $
 # $Name:  $
 #
 
@@ -5210,7 +5210,7 @@ outputs the final result.
 """
         return u
 
-    def do_mapred_cmd(self, args):
+    def do_mapred_make_cmd(self, args):
         # give --ctl option to xmake
         # ugly : init2 just to get gxp_dir ...
         if self.init2() == -1: return cmd_interpreter.RET_NOT_RUN
@@ -5288,6 +5288,12 @@ this command line.
 
     def usage_make_cmd(self, full):
         return self.usage_js_like_cmd("make", full)
+    
+    def do_mapred_cmd(self, args):
+        self.js_like_cmd("mapred", args)
+
+    def usage_mapred_cmd(self, full):
+        return self.usage_js_like_cmd("mapred", full)
     
     def do_p_cmd(self, args):
         self.js_like_cmd("p", args)
@@ -5377,6 +5383,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.73  2011/09/29 17:24:19  ttaauu
+# 2011-09-30 Taura
+#
 # Revision 1.72  2011/07/30 13:21:19  ttaauu
 # *** empty log message ***
 #
