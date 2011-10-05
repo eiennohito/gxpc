@@ -6,13 +6,11 @@
   <homepage href="%VGXPHOMEPAGE%" />
   <description>VGXP(Visual Grid Explorer)</description>
  </information>
- <resources os="Windows">
-  <property name="sun.java2d.noddraw" value="true"/>
- </resources>
  <resources>
   <jar href="%JARNAME%" />
-  <j2se version="1.6+" />
-  <extension name="jogl" href="%JOGLURL%" />
+  <j2se href="http://java.sun.com/products/autodl/j2se" version="1.6+"/>
+  <property name="sun.java2d.noddraw" value="true"/>
+  <extension name="jogl-all-awt" href="%JOGLURL%" />
  </resources>
  <application-desc main-class="Main">
   <argument>vgxp+%CODEBASE%/%PORTCONF_FILENAME%</argument>
