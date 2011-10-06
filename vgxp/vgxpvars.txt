@@ -3,7 +3,7 @@ JNLPNAME1=vgxp-direct.jnlp
 JNLPNAME2=vgxp-proxy.jnlp
 JARNAME=vgxp.jar
 TITLE=VGXP
-JOGLURL=http://download.java.net/media/jogl/builds/archive/jsr-231-webstart-current/jogl.jnlp
+JOGLURL=http://jogamp.org/deployment/jogamp-current/jogl-all-awt.jnlp
 VGXPHOMEPAGE=https://www.logos.ic.i.u-tokyo.ac.jp/~kamo/vgxp/
 
 LOG_DIR=logs
