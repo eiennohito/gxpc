@@ -135,3 +135,8 @@
 2011-09-30 Taura
 	* gxp_mapred.py: added
 	* gxpd.py: now export PYTHONPATH again
+2011-10-11 Taura
+	* gxp_js.py:mk_work_generator
+	fixed bug gxp make does not work with work_proc_sock2 etc
+	(thanks to Daisaku Yokoyama).
+

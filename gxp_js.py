@@ -1851,14 +1851,14 @@ def mk_work_generator(conf, server, cmd, cmd_specific_args):
         s = work_stream_fd(server)
         if s.init(fd) == 0: wkg.add_work_stream(s)
     # FIXIT eliminate those hardwired numbers
-    for cmd in conf.work_proc_pipe:
-        wkg.add_proc_pipe(cmd, 1)
-    for cmd in conf.work_proc_pipe2:
-        wkg.add_proc_pipe2(cmd, 1, 0)
-    for cmd in conf.work_proc_sock:
-        wkg.add_proc_sock(cmd, "", float("inf"), 0) # bidirectional = no
-    for cmd in conf.work_proc_sock2:
-        wkg.add_proc_sock(cmd, "", float("inf"), 1) # bidirectional = yes
+    for conf_cmd in conf.work_proc_pipe:
+        wkg.add_proc_pipe(conf_cmd, 1)
+    for conf_cmd in conf.work_proc_pipe2:
+        wkg.add_proc_pipe2(conf_cmd, 1, 0)
+    for conf_cmd in conf.work_proc_sock:
+        wkg.add_proc_sock(conf_cmd, "", float("inf"), 0) # bidirectional = no
+    for conf_cmd in conf.work_proc_sock2:
+        wkg.add_proc_sock(conf_cmd, "", float("inf"), 1) # bidirectional = yes
     if cmd == "make":
         make_cmdline = [ conf.make_cmd ] + cmd_specific_args
         set_make_environ(conf)
@@ -3545,6 +3545,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.33  2011/10/11 12:14:37  ttaauu
+# 2011-10-11 Taura
+#
 # Revision 1.32  2011/09/29 17:24:19  ttaauu
 # 2011-09-30 Taura
 #
