@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.20 2011/06/02 17:30:16 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.21 2012/04/03 13:00:30 ttaauu Exp $
 # $Name:  $
 #
 
@@ -694,6 +694,21 @@ class condor_system_option:
         self.qstat = "condor_q"
         self.qdel = "condor_rm"
         # self.qsub_stdin = 0
+
+class pjsub_system_option:
+    def __init__(self):
+        self.name = "pjsub"
+        self.qsub_pattern = re.compile(".* PJM [^ ]* pjsub Job (?P<job_id>\d+) submitted", re.DOTALL)
+        self.qstat_trust_status = 0
+        self.qstat_pattern = "\n%job_id%"
+        self.qstat_job_id_flag = None
+        self.qsub_stdout_flag = "-o"
+        self.qsub_stderr_flag = "-e"
+        self.qsub_shell_arg = []
+        self.qsub = "pjsub"
+        self.qstat = "pjstat"
+        self.qdel = "pjdel"
+        
         
 class qsub_wrap_server:
     def usage(self):
@@ -760,7 +775,9 @@ qsub_wrap hostname
                              "condor" : condor_system_option(),
                              "n1ge"   : n1ge_system_option(),
                              "nqs_hitachi" : nqs_hitachi_system_option(),
-                             "nqs_fujitsu" : nqs_fujitsu_system_option() }
+                             "nqs_fujitsu" : nqs_fujitsu_system_option(),
+                             "pjsub"  : pjsub_system_option(),
+                             }
         if sys == "guess":
             self.sys_opt = None         # unknown
         elif self.sys_options.has_key(sys):
@@ -1359,8 +1376,9 @@ qsub_wrap hostname
             # this happens all the time HA8000, so we delete files
             # even when this fails
             time.sleep(1.0)
-            for f in self.files_to_remove:
-                self.safe_remove(f)
+            if self.opt.leave_output == 0:
+                for f in self.files_to_remove:
+                    self.safe_remove(f)
         elif self.opt.leave_output == 0:
             time.sleep(1.0)
             for f in self.files_to_remove:
@@ -1374,6 +1392,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: qsub_wrap,v $
+# Revision 1.21  2012/04/03 13:00:30  ttaauu
+# *** empty log message ***
+#
 # Revision 1.20  2011/06/02 17:30:16  ttaauu
 # *** empty log message ***
 #

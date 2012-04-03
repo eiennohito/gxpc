@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.73 2011/09/29 17:24:19 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.74 2012/04/03 13:00:29 ttaauu Exp $
 # $Name:  $
 #
 
@@ -160,6 +160,8 @@ class login_method_configs:
                             "--qsub t2sub --qstat t2stat --qdel t2del %cmd% "
                              "-- -q %q% -W group_list=%group_list% -l walltime=%walltime:-1:00:00% "
                              "-l select=%nodes:-1%:ncpus=%ncpus:-12%:mem=%mem:-52%gb -l place=%place:-scatter%")
+        self.fx10 = "qsub_wrap --sys pjsub %cmd%"
+
 
 class mask_patterns:
     def __init__(self, hostmask, gupidmask, targetmask, idxmask):
@@ -5383,6 +5385,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.74  2012/04/03 13:00:29  ttaauu
+# *** empty log message ***
+#
 # Revision 1.73  2011/09/29 17:24:19  ttaauu
 # 2011-09-30 Taura
 #
