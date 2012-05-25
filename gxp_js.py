@@ -1407,8 +1407,9 @@ class work_stream_generator(work_stream_base):
         return cio.getvalue()
 
     def read_works(self):
-        assert self.cur_fileno == self.readable, \
-            (self.cur_fileno, self.readable, self.unreadable)
+        if 0:
+            assert self.cur_fileno == self.readable, \
+                (self.cur_fileno, self.readable, self.unreadable)
         s = self.server
         works = []
         for i in range(100):
@@ -1460,7 +1461,7 @@ class work_stream_generator(work_stream_base):
         self.cur_fileno = self.readable
         if self.fun_finish:
             try:
-                self.fun_finish(x, exit_status, term_sig, man_name)
+                self.fun_finish(work, exit_status, term_sig, man_name)
                 return 0
             except Exception,e:
                 Es("Error while calling fin() on %s.fin():\n\n%s\n"
@@ -3545,6 +3546,9 @@ if __name__ == "__main__":
     sys.exit(job_scheduler().main(sys.argv))
 
 # $Log: gxp_js.py,v $
+# Revision 1.34  2012/05/25 08:58:39  ttaauu
+# *** empty log message ***
+#
 # Revision 1.33  2011/10/11 12:14:37  ttaauu
 # 2011-10-11 Taura
 #
