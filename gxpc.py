@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.75 2012/07/04 14:46:14 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.76 2012/07/04 15:32:53 ttaauu Exp $
 # $Name:  $
 #
 
@@ -159,15 +159,31 @@ class login_method_configs:
                             "--timeout %timeout:-100%  "
                             "--qsub t2sub --qstat t2stat --qdel t2del %cmd% "
                              "-- -q %q% -W group_list=%group_list% -l walltime=%walltime:-1:00:00% "
-                             "-l select=%nodes:-1%:ncpus=%ncpus:-12%:mem=%mem:-52%gb -l place=%place:-scatter%")
+                             "-l select=%nodes:-1%:ncpus=%ncpus:-12%:mem=%mem:-52%gb "
+                             "-l place=%place:-scatter%")
         self.fx10 = "qsub_wrap --sys pjsub %cmd%"
-        # kyoto university MPP
-        self.kyoto_mpp = ("qsub_wrap --hostname `hostname` "
-                          "--sys lsf %cmd% "
-                          "-- -q %q% -ug %ug% "
-                          "-A p=%p:-1%:t=%t:-16%:c=%c:-16%:m=%m:-61440M% "
-                          "-W %W:-24:00%")
-        self.kyoto_cluster = ("qsub_wrap --hostname `hostname`-n3 "
+        # kyoto university MPP (system A)
+        # the script needs to invoke python by aprun python ...
+        # the address to connect back to is 10.7.x.x, among 
+        # other addrs like 10.5.x.x, 10.6.x.x, etc.
+        # usage example: request 3 nodes from host xe-????
+        #   gxpc use kyoto_mpp xe foo
+        #   gxpc explore -a q=queue_name -a ug=user_group_name foo 3
+        self.kyoto_mpp = [ "qsub_wrap", 
+                           "--python", "aprun python", 
+                           "--addr", "10.7",
+                           "--sys", "lsf", "%cmd%",
+                           "--",
+                           "-q", "%q%", "-ug", "%ug%",
+                           "-A", "p=%p:-1%:t=%t:-16%:c=%c:-16%:m=%m:-61440M%",
+                           "-W", "%W:-24:00%" ]
+        # kyoto university cluster (system B)
+        # the address to connect back to is 10.5.x.x, among 
+        # other addrs like 10.4.x.x, 10.6.x.x, etc.
+        # usage example: request 3 nodes from host ap-???
+        #   gxpc use kyoto_cluster ap foo
+        #   gxpc explore -a q=queue_name -a ug=user_group_name foo 3
+        self.kyoto_cluster = ("qsub_wrap --addr 10.5 "
                               "--sys lsf %cmd% "
                               "-- -q %q% -ug %ug% "
                               "-A p=%p:-1%:t=%t:-16%:c=%c:-16%:m=%m:-61440M% "
@@ -257,11 +273,14 @@ class session_state:
         # default login methods
         lm = login_method_configs()
         for name,cmdline in lm.__dict__.items():
-            c = cmdline[0]
-            if c not in string.letters:
-                cmd = string.split(cmdline[1:], c)
+            if type(cmdline) is types.ListType:
+                cmd = cmdline
             else:
-                cmd = string.split(cmdline)
+                c = cmdline[0]
+                if c not in string.letters:
+                    cmd = string.split(cmdline[1:], c)
+                else:
+                    cmd = string.split(cmdline)
             self.login_methods[name] = cmd
 
     def show(self, level):
@@ -5396,6 +5415,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.76  2012/07/04 15:32:53  ttaauu
+# added kyoto_cluster and kyoto_mpp support
+#
 # Revision 1.75  2012/07/04 14:46:14  ttaauu
 # added rsh kyoto_mpp and kyoto_cluster
 #
