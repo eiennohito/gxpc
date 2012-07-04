@@ -14,7 +14,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.74 2012/04/03 13:00:29 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpc.py,v 1.75 2012/07/04 14:46:14 ttaauu Exp $
 # $Name:  $
 #
 
@@ -161,6 +161,17 @@ class login_method_configs:
                              "-- -q %q% -W group_list=%group_list% -l walltime=%walltime:-1:00:00% "
                              "-l select=%nodes:-1%:ncpus=%ncpus:-12%:mem=%mem:-52%gb -l place=%place:-scatter%")
         self.fx10 = "qsub_wrap --sys pjsub %cmd%"
+        # kyoto university MPP
+        self.kyoto_mpp = ("qsub_wrap --hostname `hostname` "
+                          "--sys lsf %cmd% "
+                          "-- -q %q% -ug %ug% "
+                          "-A p=%p:-1%:t=%t:-16%:c=%c:-16%:m=%m:-61440M% "
+                          "-W %W:-24:00%")
+        self.kyoto_cluster = ("qsub_wrap --hostname `hostname`-n3 "
+                              "--sys lsf %cmd% "
+                              "-- -q %q% -ug %ug% "
+                              "-A p=%p:-1%:t=%t:-16%:c=%c:-16%:m=%m:-61440M% "
+                              "-W %W:-24:00%")
 
 
 class mask_patterns:
@@ -5385,6 +5396,9 @@ if __name__ == "__main__":
     sys.exit(cmd_interpreter().main(sys.argv))
     
 # $Log: gxpc.py,v $
+# Revision 1.75  2012/07/04 14:46:14  ttaauu
+# added rsh kyoto_mpp and kyoto_cluster
+#
 # Revision 1.74  2012/04/03 13:00:29  ttaauu
 # *** empty log message ***
 #

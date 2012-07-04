@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.23 2012/07/04 12:11:50 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.24 2012/07/04 14:46:14 ttaauu Exp $
 # $Name:  $
 #
 
@@ -541,7 +541,8 @@ class qsub_wrap_server_cmd_opts(cmd_opts):
         self.export     = ("s*", [])
         self.qarg       = ("s*", [])
         self.addr       = ("s", "")
-        self.hostname   = ("s", None)
+        self.hostname   = ("s", None) # name the client should connect back to
+        self.python     = ("s", "python")
         self.dbg        = ("i", 0)
         # historical stuff
         # self.qsub_stdin = ("i", 0)      # 1 if qsub takes stdin
@@ -794,6 +795,7 @@ qsub_wrap hostname
                              "condor" : condor_system_option(),
                              "n1ge"   : n1ge_system_option(),
                              "nqs_hitachi" : nqs_hitachi_system_option(),
+                             "lsf" : lsf_system_option(),
                              "nqs_fujitsu" : nqs_fujitsu_system_option(),
                              "pjsub"  : pjsub_system_option(),
                              }
@@ -1063,13 +1065,14 @@ qsub_wrap hostname
         client_cmd = self.opt.args[0]
         base64_client_cmd = base64.encodestring("%r" % client_cmd)
         qsub_wrap_content = self.get_qsub_wrap_content()
+        python = self.opt.python
         script_content = ("#!/bin/sh\n"
                           "cat <<EOFEOFEOF > %s\n"
                           "%s\n"
                           "EOFEOFEOF\n"
-                          "python %s --connect_to %s:%s --hello %s %s"
+                          "%s %s --connect_to %s:%s --hello %s %s"
                           " --base64cmd '%s'\n"
-                          % (client, qsub_wrap_content, client,
+                          % (client, qsub_wrap_content, python, client,
                              addr, port, hello, taskset, base64_client_cmd))
         
         args = [ self.opt.qsub ] + self.opt.qarg
@@ -1411,6 +1414,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: qsub_wrap,v $
+# Revision 1.24  2012/07/04 14:46:14  ttaauu
+# added rsh kyoto_mpp and kyoto_cluster
+#
 # Revision 1.23  2012/07/04 12:11:50  ttaauu
 # added lsf support (on Kyoto machines)
 #
