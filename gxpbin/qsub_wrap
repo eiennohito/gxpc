@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.22 2012/07/04 12:10:16 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.23 2012/07/04 12:11:50 ttaauu Exp $
 # $Name:  $
 #
 
@@ -622,7 +622,7 @@ class nqs_fujitsu_system_option:
 
 class lsf_system_option:
     """
-    LSF
+    LSF  (thanks to Dr. Daisuke Kawahara @ Kyoto University)
     """
     def __init__(self):
         self.name = "lsf"
@@ -1411,6 +1411,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: qsub_wrap,v $
+# Revision 1.23  2012/07/04 12:11:50  ttaauu
+# added lsf support (on Kyoto machines)
+#
 # Revision 1.22  2012/07/04 12:10:16  ttaauu
 # added lsf support (on Kyoto machines)
 #
