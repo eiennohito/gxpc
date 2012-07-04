@@ -10,7 +10,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.23 2011/09/29 17:24:19 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpd.py,v 1.24 2012/07/04 07:22:22 ttaauu Exp $
 # $Name:  $
 #
 
@@ -411,6 +411,7 @@ class gxpd(ioman.ioman):
     EX_OSERR = 71
     EX_CONFIG = 78
 
+
     def init(self, opts):
         self.opts = opts
         # set of files that should be cleaned up on exit
@@ -425,6 +426,7 @@ class gxpd(ioman.ioman):
         self.boot_time = self.get_boot_time()
         self.pid = os.getpid()
         self.gupid = self.get_gupid()
+        self.short_gupid = self.get_short_gupid()
         # log filename
         ioman.set_log_filename("log-%s" % self.gupid)
 
@@ -469,6 +471,20 @@ class gxpd(ioman.ioman):
         t = self.boot_time
         pid = self.pid
         return "%s-%s-%s-%s" % (h, u, t, pid)
+
+    def get_short_gupid(self):
+        """
+        short gupid used to name daemon socket file,
+        because unix domain socket does not allow too long
+        pathnames. It does not contain host/user information.
+        user information is (most of the time) included 
+        in the upper directory name (/tmp/gxp-USER-xxxxx/...).
+        exclusion of hostname is a potential source of conflict,
+        but since /tmp is not normally shared, it should be OK...
+        """
+        t = self.boot_time
+        pid = self.pid
+        return "%s-%s" % (t, pid)
 
     def get_gxp_tmp(self):
         suffix = os.environ.get("GXP_TMP_SUFFIX", "default")
@@ -538,7 +554,8 @@ class gxpd(ioman.ioman):
                     else:
                         prefix = "gxpd"
                 path = os.path.join(self.get_gxp_tmp(), 
-                                    ("%s-daemon-%s" % (name_prefix, self.gupid)))
+                                    ("%s-daemon-%s" % (name_prefix, 
+                                                       self.short_gupid)))
             return socket.AF_UNIX,path
         elif af_str == "NONE":
             return 0,None
@@ -2314,6 +2331,9 @@ if __name__ == "__main__":
     main()
 
 # $Log: gxpd.py,v $
+# Revision 1.24  2012/07/04 07:22:22  ttaauu
+# shorten unix domain socket name (again), so it no longer includes user name
+#
 # Revision 1.23  2011/09/29 17:24:19  ttaauu
 # 2011-09-30 Taura
 #
