@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.21 2012/04/03 13:00:30 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/qsub_wrap,v 1.22 2012/07/04 12:10:16 ttaauu Exp $
 # $Name:  $
 #
 
@@ -618,6 +618,25 @@ class nqs_fujitsu_system_option:
         self.qsub = "qsub"
         self.qstat = "qstat"
         self.qdel = "qdel"
+        # self.qsub_stdin = 0     # 1
+
+class lsf_system_option:
+    """
+    LSF
+    """
+    def __init__(self):
+        self.name = "lsf"
+        self.qsub_pattern = re.compile(".*Job <(?P<job_id>\d+)> is submitted to queue", re.DOTALL)
+        self.qstat_trust_status = 0
+        self.qstat_pattern = "\n%job_id%.+(RUN|PEND)"
+        self.qstat_job_id_flag = None
+        self.qsub_stdout_flag = "-o" 
+        self.qsub_stderr_flag = "-e"
+        # self.qsub_no_output_arg = [ "-o", "/dev/null", "-e", "/dev/null" ]
+        self.qsub_shell_arg = []
+        self.qsub = "qsub"
+        self.qstat = "qjobs"
+        self.qdel = "qkill"
         # self.qsub_stdin = 0     # 1
 
 class nqs_hitachi_system_option:
@@ -1392,6 +1411,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: qsub_wrap,v $
+# Revision 1.22  2012/07/04 12:10:16  ttaauu
+# added lsf support (on Kyoto machines)
+#
 # Revision 1.21  2012/04/03 13:00:30  ttaauu
 # *** empty log message ***
 #
