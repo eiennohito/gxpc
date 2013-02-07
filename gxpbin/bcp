@@ -15,11 +15,12 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/bcp,v 1.8 2010/03/05 05:27:09 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/bcp,v 1.9 2013/02/07 08:17:05 ttaauu Exp $
 # $Name:  $
 #
 
 import errno,os,random,re,select,socket,string,sys,time
+import cPickle
 import ifconfig2,opt2
 
 
@@ -439,6 +440,48 @@ class ring_connector:
                 Es("%s : last process received a token\n" % (self.host))
             self.right_so.send(x)
         return 0
+
+    def recv_bytes(self, so, min_sz, max_sz):
+        X = []
+        l = 0
+        while 1:
+            x = so.recv(max_sz - l)
+            if x == "": break
+            X.append(x)
+            l = l + len(x)
+            if l >= min_sz: break
+        return string.join(X, "")
+
+    def share_meta_info(self):
+        if self.rank == self.src_rank:
+            self.meta_info = os.stat(self.src_file)
+            meta_info_s = cPickle.dumps(self.meta_info)
+            meta_size = len(meta_info_s)
+            pkt = "%9d %s" % (meta_size, meta_info_s)
+            self.right_so.send(pkt)
+            meta_size_back = self.recv_bytes(self.left_so, 10, 10)
+            if meta_size_back != ("%9d " % meta_size):
+                Es("%s : could not begin transfer\n" % self.host)
+                return -1
+            if dbg>=3:
+                Es("%s : received a meta size token back. ring OK\n" \
+                   % (self.host))
+            meta_info_back = self.recv_bytes(self.left_so, int(meta_size_back), int(meta_size_back))
+            if meta_info_back != meta_info_s:
+                Es("%s : could not begin transfer\n" % self.host)
+                return -1
+            if dbg>=3:
+                Es("%s : received a meta info token back. ring OK\n" \
+                   % (self.host))
+        else:
+            if dbg>=3:
+                Es("%s : wait for a meta info\n" % (self.host))
+            meta_size = self.recv_bytes(self.left_so, 10, 10)
+            meta_info_s = self.recv_bytes(self.left_so, int(meta_size), int(meta_size))
+            self.right_so.send(meta_size + meta_info_s)
+            self.meta_info = cPickle.loads(meta_info_s)
+        return 0
+
         
     def setup(self, src_spec, dst_spec):
         self.master_fp = os.fdopen(4, "rb")
@@ -455,6 +498,7 @@ class ring_connector:
         if self.decide_roles(src_spec, dst_spec) == -1: return -1
         if self.make_ring() == -1: return -1
         if self.test_ring() == -1: return -1
+        if self.share_meta_info() == -1: return -1
         if re.match(self.opts.show_progress, self.host) or (dbg>=2 and self.rank == self.final_rank):
             self.show_progress = 1
         else:
@@ -462,17 +506,9 @@ class ring_connector:
         
         return 0                        # OK
 
-    def recv_bytes(self, so, min_sz, max_sz):
-        X = []
-        l = 0
-        while 1:
-            x = so.recv(max_sz - l)
-            if x == "": break
-            X.append(x)
-            l = l + len(x)
-            if l >= min_sz: break
-        return string.join(X, "")
-
+    def finish(self):
+        if self.rank != self.src_rank:
+            os.chmod(self.dst_file, self.meta_info.st_mode)
 
     def transfer(self):
         """
@@ -735,6 +771,7 @@ firewall between hosts for now.
         t1 = time.time()
         if self.transfer() == -1: return 1
         t2 = time.time()
+        if self.finish() == -1: return 1
         if self.rank == self.src_rank:
             Es(("%s : %.3f sec to setup, %.3f sec to transfer " \
                 "%d bytes (%.3f MB/sec)\n" % \
@@ -750,6 +787,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: bcp,v $
+# Revision 1.9  2013/02/07 08:17:05  ttaauu
+# fix bcp so it transfers file permission mode
+#
 # Revision 1.8  2010/03/05 05:27:09  ttaauu
 # stop extending PYTHONPATH. see 2010-3-5 ChangeLog
 #
