@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/bcp,v 1.9 2013/02/07 08:17:05 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/bcp,v 1.10 2013/02/07 10:20:35 ttaauu Exp $
 # $Name:  $
 #
 
@@ -45,8 +45,8 @@ class bcp_cmd_opts(opt2.cmd_opts):
         #   None : flag
 	opt2.cmd_opts.__init__(self)
         # log file
-        self.min_pkt_sz = ("i", 10000)
-        self.max_pkt_sz = ("i", 100000)
+        self.min_pkt_sz = ("i", 1000000)
+        self.max_pkt_sz = ("i", 10000000)
         self.show_progress = ("s", "^$")
         self.verbosity = ("i", 1)
         # --connect_prio 10.1,10.2
@@ -503,12 +503,12 @@ class ring_connector:
             self.show_progress = 1
         else:
             self.show_progress = 0
-        
         return 0                        # OK
 
     def finish(self):
         if self.rank != self.src_rank:
             os.chmod(self.dst_file, self.meta_info.st_mode)
+        return 0
 
     def transfer(self):
         """
@@ -551,7 +551,8 @@ class ring_connector:
             len_X = len(X)
             read = read + len(X)
 
-            if self.show_progress:
+            # this one too noisy. just written data is enough
+            if 0 and self.show_progress:
                 if up_fp is not None:
                     Es(("%s : read %d bytes in %.6f MB/s (cummulative : %d bytes in %.6f MB/s)\n"
                         % (self.host, len(X), len_X / MB / (t1 - t0),
@@ -579,13 +580,13 @@ class ring_connector:
             t1 = time.time()
             if self.show_progress:
                 if self.rank != self.final_rank:
-                    Es(("%s -> %s : sent %d bytes in %.6f MB/sec (cummulative : %d bytes in %.6f MB/s)\n"
-                        % (self.host, self.right_host, len_X, len_X / MB / (t1 - t0),
-                           written, written / MB / (t1 - T0))))
+                    if 0:               # this one is noisy too
+                        Es(("%s -> %s : sent %d bytes in %.6f MB/sec (cummulative : %d bytes in %.6f MB/s)\n"
+                            % (self.host, self.right_host, len_X, len_X / MB / (t1 - t0),
+                               written, written / MB / (t1 - T0))))
                 elif down_fp is not None:
-                    Es(("%s : written %d bytes in %.6f MB/sec (cummulative : %d bytes in %.6f MB/s)\n"
-                        % (self.host, len_X, len_X / MB / (t1 - t0),
-                           written, written / MB / (t1 - T0))))
+                    Es(("%s : written %d bytes in %.3f sec, throughput = %.3f MB/s\n"
+                        % (self.host, written, t1 - T0, written / MB / (t1 - T0))))
                 
             
         if down_fp is not None and written != self.src_sz:
@@ -787,6 +788,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: bcp,v $
+# Revision 1.10  2013/02/07 10:20:35  ttaauu
+# fixed bcp progres message. it now sets mode correctly
+#
 # Revision 1.9  2013/02/07 08:17:05  ttaauu
 # fix bcp so it transfers file permission mode
 #
