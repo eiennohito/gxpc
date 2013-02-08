@@ -15,7 +15,7 @@
 # a notice that the code was modified is included with the above
 # copyright notice.
 #
-# $Header: /cvsroot/gxp/gxp3/gxpbin/bcp,v 1.10 2013/02/07 10:20:35 ttaauu Exp $
+# $Header: /cvsroot/gxp/gxp3/gxpbin/bcp,v 1.11 2013/02/08 13:53:47 ttaauu Exp $
 # $Name:  $
 #
 
@@ -51,6 +51,7 @@ class bcp_cmd_opts(opt2.cmd_opts):
         self.verbosity = ("i", 1)
         # --connect_prio 10.1,10.2
         self.connect_prio = ("s", "")
+        self.src_idx = ("i", -1)
         self.help = (None, 0)
 
     def postcheck(self):
@@ -101,9 +102,20 @@ class ring_connector:
             if self.exec_idx == 0:
                 Es("bcp: wrong src_host_regexp %s %s\n" \
                    % (src_host_regexp, e,args))
-        if pat is None:
+        # 
+        if self.opts.src_idx != -1:
+            if self.opts.src_idx == self.exec_idx:
+                if os.path.exists(src_file):
+                    my_sz = os.path.getsize(src_file)
+                else:
+                    Es("%s : specified as src, yet it does not have file %s\n" 
+                       % (self.gxp_host, src_file))
+                    my_sz = -1  # does not have the file
+            else:
+                my_sz = -1
+        elif pat is None:
             my_sz = -1
-        elif os.path.isfile(src_file) and \
+        elif os.path.exists(src_file) and \
                  pat.match(self.gxp_host):
             # yes
             my_sz = os.path.getsize(src_file)
@@ -303,8 +315,8 @@ class ring_connector:
                 Es("%s : warning: %d receivers\n" % \
                    (self.host, n_receivers))
             else:
-                Es("%s : from %s to %d receivers\n" \
-                   % (self.host, src_host, n_receivers))
+                Es("%s : from %s (idx=%d) to %d receivers\n" \
+                   % (self.host, src_host, self.src_idx, n_receivers))
                 
         self.n_senders = n_senders
         self.n_receivers = n_receivers
@@ -788,6 +800,9 @@ if __name__ == "__main__":
     sys.exit(main())
 
 # $Log: bcp,v $
+# Revision 1.11  2013/02/08 13:53:47  ttaauu
+# added --src_idx option to bcp
+#
 # Revision 1.10  2013/02/07 10:20:35  ttaauu
 # fixed bcp progres message. it now sets mode correctly
 #
